@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+.DS_Store
+*.tsbuildinfo
+coverage/
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# claude code local permissions
+.claude/settings.local.json

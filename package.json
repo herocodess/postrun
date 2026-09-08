@@ -1,0 +1,36 @@
+{
+  "name": "postrun",
+  "version": "0.0.0",
+  "description": "Session review framework for AI coding agents",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "adapter:cc": "pnpm --silent --filter @postrun/core adapter:cc",
+    "adapter:cline": "pnpm --silent --filter @postrun/core adapter:cline",
+    "ingest": "pnpm --silent --filter @postrun/core ingest",
+    "sessions": "pnpm --silent --filter @postrun/core sessions",
+    "capture": "pnpm --silent --filter @postrun/core capture",
+    "capture:cc:setup": "pnpm --silent --filter @postrun/core capture:cc:setup",
+    "serve": "pnpm --filter @postrun/ui build && pnpm --filter @postrun/core serve",
+    "dev:core": "pnpm --filter @postrun/core serve",
+    "dev:ui": "pnpm --filter @postrun/ui dev"
+  },
+  "keywords": [
+    "postrun",
+    "session-review",
+    "ai-agents"
+  ],
+  "license": "MIT",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+/* Function over form. Legible defaults only. */
+body { font: 14px/1.4 system-ui, sans-serif; margin: 0; padding: 16px 24px; color: #111; background: #fff; }
+h1 { font-size: 18px; margin: 0 0 12px; }
+h2 { font-size: 15px; margin: 24px 0 8px; }
+a { color: #0b57d0; }
+.crumb { margin: 0 0 12px; }
+.muted { color: #666; }
+.small { font-size: 12px; }
+.mono { font-family: ui-monospace, monospace; word-break: break-all; }
+.nowrap { white-space: nowrap; }
+.error { color: #b00020; }
+.filter a { margin: 0 2px; }
+.filter a.active { font-weight: bold; text-decoration: none; color: #111; }
+
+.badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 12px; font-family: ui-monospace, monospace; background: #eee; margin-right: 6px; }
+.badge-claude-code { background: #e8f0fe; color: #174ea6; }
+.badge-cline { background: #e6f4ea; color: #137333; }
+.badge-mode { background: #fff3cd; color: #7a5200; margin-left: 6px; }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; padding: 4px 8px; border-bottom: 1px solid #ddd; }
+th { background: #f3f3f3; }
+
+table.sessions tr.session-row { cursor: pointer; }
+table.sessions tr.session-row:hover td { background: #fafafa; }
+
+dl.totals { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0 0 8px; }
+dl.totals dt { color: #555; }
+dl.totals dd { margin: 0; font-family: ui-monospace, monospace; word-break: break-all; }
+
+table.summary-table tr.written td.mono { font-weight: 600; }
+.failed-cell { color: #b00020; font-weight: bold; }
+
+details.turn { margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; padding: 4px 8px; }
+details.turn > summary { cursor: pointer; padding: 4px 0; }
+details.turn .prompt { color: #333; }
+
+table.timeline th { position: sticky; top: 0; }
+td.seq, td.type, td.status, td.decision { white-space: nowrap; font-family: ui-monospace, monospace; }
+td.summary { font-family: ui-monospace, monospace; word-break: break-all; }
+tr.failed td { background: #fff1f0; }
+tr.failed td.status { color: #b00020; font-weight: bold; }
+.ref-only { color: #8a5a00; font-style: italic; }
+.ref-path { color: #555; font-size: 12px; word-break: break-all; }
+td.summary details pre { margin: 4px 0 0; padding: 8px; background: #f7f7f7; max-height: 320px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+td.summary details summary { cursor: pointer; }

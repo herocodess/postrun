@@ -1,0 +1,74 @@
+{
+  "name": "@postrun/core",
+  "version": "0.0.0",
+  "description": "Postrun core: schema, adapters, capture, localhost server",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./src/schema/index.ts",
+      "default": "./dist/schema/index.js"
+    },
+    "./server": {
+      "types": "./src/server/server.ts",
+      "default": "./dist/server/server.js"
+    },
+    "./server/api": {
+      "types": "./src/server/api.ts",
+      "default": "./dist/server/api.js"
+    },
+    "./report": {
+      "types": "./src/report/index.ts",
+      "default": "./dist/report/index.js"
+    },
+    "./adapters/claude-code": {
+      "types": "./src/adapters/claude-code/index.ts",
+      "default": "./dist/adapters/claude-code/index.js"
+    },
+    "./adapters/cline": {
+      "types": "./src/adapters/cline/index.ts",
+      "default": "./dist/adapters/cline/index.js"
+    },
+    "./store": {
+      "types": "./src/store/index.ts",
+      "default": "./dist/store/index.js"
+    },
+    "./capture": {
+      "types": "./src/capture/index.ts",
+      "default": "./dist/capture/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "adapter:cc": "tsx src/adapters/claude-code/cli.ts",
+    "adapter:cline": "tsx src/adapters/cline/cli.ts",
+    "ingest": "tsx src/store/cli.ts ingest",
+    "sessions": "tsx src/store/cli.ts list",
+    "capture": "tsx src/capture/cli.ts",
+    "capture:cc:setup": "tsx src/capture/cli.ts setup",
+    "serve": "tsx src/server/cli.ts",
+    "start": "node dist/server/cli.js"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20.10.0",
+    "@vitest/ui": "^1.0.4",
+    "tsx": "^4.23.13",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.4"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  }
+}
