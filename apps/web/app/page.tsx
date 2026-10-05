@@ -11,7 +11,7 @@ const RECORD: TermLine[] = [
   { kind: "cmd", text: "postrun capture" },
   { kind: "out", text: "● recording claude-code, cline", tone: "ok", after: 300 },
   { kind: "out", text: "  telemetry  127.0.0.1:4318", tone: "muted" },
-  { kind: "out", text: "  store      ~/.postrun/postrun.db (0600)", tone: "muted", after: 900 },
+  { kind: "out", text: "  store      ~/.postrun  (0600)", tone: "muted", after: 900 },
   { kind: "out", text: "↳ 8f3c2a71  +24 steps · 1 failed", tone: "accent" },
 ];
 
