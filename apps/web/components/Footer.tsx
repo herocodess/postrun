@@ -12,7 +12,7 @@ export function Footer() {
         <nav aria-label="Footer" className="footer-links">
           <a href="/#how">How it works</a>
           <a href="/#faq">FAQ</a>
-          <a href="/example-report.html" target="_blank" rel="noopener">
+          <a href="/example-report.html" target="_blank" rel="noopener" data-track="Example report" data-track-where="footer">
             Example report
           </a>
           <a href="/privacy">Privacy</a>
@@ -20,7 +20,7 @@ export function Footer() {
           <a href="/privacy#cookies">Cookies</a>
         </nav>
       </div>
-      <div className="wrap footer-note muted">No cookies, no analytics, no tracking. [GITHUB OR CONTACT]</div>
+      <div className="wrap footer-note muted">No cookies. Visits are counted anonymously. [GITHUB OR CONTACT]</div>
     </footer>
   );
 }

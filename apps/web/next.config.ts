@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // Emit privacy/index.html rather than privacy.html so /privacy works on any static host.
   trailingSlash: true,
   images: { unoptimized: true },
+  // Vercel sets VERCEL=1 during its builds. Analytics loads only there, so local
+  // and non-Vercel builds ship with no tracking script at all.
+  env: { POSTRUN_ANALYTICS: process.env["VERCEL"] ? "1" : "" },
 };
 
 export default nextConfig;

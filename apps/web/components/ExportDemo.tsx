@@ -80,7 +80,7 @@ export function ExportDemo() {
       </div>
       <div className="export-actions">
         {phase === "ready" ? (
-          <a className="btn btn-primary" href="/example-report.html" target="_blank" rel="noopener">
+          <a className="btn btn-primary" href="/example-report.html" target="_blank" rel="noopener" data-track="Example report" data-track-where="export demo">
             Download report (32 KB)
           </a>
         ) : (

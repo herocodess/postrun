@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { useState, type FormEvent } from "react";
 
 /**
@@ -26,6 +27,7 @@ export function Waitlist() {
       const res = await fetch(ENDPOINT, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ email }) });
       if (!res.ok) throw new Error(String(res.status));
       setState({ kind: "done" });
+      track("Waitlist signup"); // the event only: the email is never sent to analytics
     } catch {
       setState({ kind: "error", message: "That didn't go through. Try again in a moment." });
     }

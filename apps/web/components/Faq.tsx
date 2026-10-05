@@ -36,7 +36,7 @@ export function Faq() {
         <Reveal delay={120} className="faq-list">
           {FAQS.map((f, i) => (
             <details key={f.q} className="faq-item" name="faq" open={i === 0}>
-              <summary>
+              <summary data-track="FAQ opened" data-track-where={String(i + 1)}>
                 <span className="faq-num mono">{String(i + 1).padStart(2, "0")}</span>
                 <span className="faq-q">{f.q}</span>
                 <span className="faq-icon" aria-hidden="true"></span>

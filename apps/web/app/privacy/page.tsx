@@ -3,7 +3,7 @@ import { LegalPage } from "@/components/LegalPage";
 
 export const metadata: Metadata = {
   title: "Privacy policy · postrun",
-  description: "How Postrun handles your data: the app sends us nothing, and the website only keeps an email if you join the waitlist. No cookies.",
+  description: "How Postrun handles your data: the app sends us nothing, the website keeps an email only if you join the waitlist, and visits are counted without cookies.",
 };
 
 const TOC = [
@@ -39,7 +39,7 @@ export default function Privacy() {
             <b>This website keeps one thing:</b> your email address, if you join the waitlist.
           </li>
           <li>
-            <b>No cookies, no analytics, no tracking</b> on this website.
+            <b>No cookies, and nothing that identifies you.</b> We count visits and button clicks anonymously, in aggregate.
           </li>
         </ul>
       }
@@ -92,16 +92,23 @@ export default function Privacy() {
         behalf.
       </p>
       <p>
-        <b>Hosting logs.</b> The site is served by [HOSTING PROVIDER]. Like any web server, it processes technical data such as your IP address, browser type and the pages
+        <b>Hosting logs.</b> The site is served by Vercel Inc. Like any web server, it processes technical data such as your IP address, browser type and the pages
         requested, so it can deliver the site and protect it against abuse. Our legal basis is our legitimate interest in running a secure website. We don&rsquo;t use these logs to
         identify you or build a profile of you.
       </p>
-      <p>We don&rsquo;t use analytics, advertising, social media plugins or any third-party scripts on this site. Fonts are served from our own domain.</p>
+      <p>
+        <b>Visit counts.</b> We use Vercel Web Analytics to see how many people visit, which pages they read, where they came from and which buttons they use (for example
+        &ldquo;Get early access&rdquo; or &ldquo;Example report&rdquo;). It does not use cookies. For each page view it records the page address, the referring site, your
+        country, region and city, your browser, operating system and device type, and the time. To count unique visitors without cookies, Vercel uses a hash created from the
+        request, which is discarded after 24 hours. We only see aggregated statistics, never individual visitors or their IP addresses, and we never send anything you type,
+        such as your email, to analytics. Our legal basis is our legitimate interest in understanding how the site is used.
+      </p>
+      <p>We don&rsquo;t use advertising, social media plugins or any other third-party scripts on this site. Fonts are served from our own domain.</p>
 
       <h2 id="cookies">Cookies</h2>
       <p>
-        This website doesn&rsquo;t set any cookies, and doesn&rsquo;t use local storage or similar technologies to store or read information on your device. That&rsquo;s why
-        there&rsquo;s no cookie banner: there is nothing to consent to.
+        This website doesn&rsquo;t set any cookies, and doesn&rsquo;t use local storage or similar technologies to store information on your device, including for the
+        visit counts described above. That&rsquo;s why there&rsquo;s no cookie banner: there is nothing to consent to.
       </p>
       <p>
         If that ever changes, we&rsquo;ll update this section first and, where the law requires it, ask for your consent before setting anything that isn&rsquo;t strictly
@@ -123,7 +130,7 @@ export default function Privacy() {
       <h2 id="retention">How long we keep data</h2>
       <p>
         We keep your waitlist email until you ask us to remove it or unsubscribe, or until we close the waitlist, whichever comes first. Hosting logs are kept for the period set
-        by [HOSTING PROVIDER], [LOG RETENTION PERIOD].
+        by Vercel, [LOG RETENTION PERIOD]. Visit counts are kept as aggregated statistics, and the hash used to count unique visitors is discarded after 24 hours.
       </p>
 
       <h2 id="rights">Your rights</h2>

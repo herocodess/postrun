@@ -74,13 +74,13 @@ export function Nav() {
           </a>
           <div className="nav-links">
             {LINKS.map((l) => (
-              <a key={l.href} href={l.href} {...(l.external ? { target: "_blank", rel: "noopener" } : {})}>
+              <a key={l.href} href={l.href} data-track={`Nav: ${l.label}`} data-track-where="nav" {...(l.external ? { target: "_blank", rel: "noopener" } : {})}>
                 {l.label}
               </a>
             ))}
           </div>
           <span className="grow"></span>
-          <a href="/#waitlist" className="btn btn-primary btn-sm nav-cta">
+          <a href="/#waitlist" className="btn btn-primary btn-sm nav-cta" data-track="Get early access" data-track-where="nav">
             <span className="cta-long">Get early access</span>
             <span className="cta-short">Early access</span>
           </a>
@@ -91,6 +91,7 @@ export function Nav() {
             aria-expanded={menuOpen}
             aria-controls="nav-menu"
             onClick={() => setMenuOpen((o) => !o)}
+            data-track={menuOpen ? undefined : "Menu opened"}
           >
             {/* The mark is the menu button: opening plays the steps and turns the play triangle down. */}
             <svg className="menu-mark" width="26" height="26" viewBox="0 0 64 64" fill="none" aria-hidden="true">
@@ -107,6 +108,8 @@ export function Nav() {
                 key={l.href}
                 href={l.href}
                 className={"cta" in l ? "menu-item menu-cta" : "menu-item"}
+                data-track={"cta" in l ? "Get early access" : `Nav: ${l.label}`}
+                data-track-where="menu"
                 style={{ ["--i" as string]: i }}
                 onClick={() => setMenuOpen(false)}
                 {...("external" in l && l.external ? { target: "_blank", rel: "noopener" } : {})}

@@ -23,7 +23,8 @@ Every animation starts when it scrolls into view and loops or holds. With the sy
 ## Before launch
 
 - `NEXT_PUBLIC_WAITLIST_URL`: an endpoint that accepts a JSON POST with `email` (Formspree, Tally, a Worker). Until it's set, the form says it isn't connected rather than pretending.
-- Legal placeholders in `/privacy` and `/terms`: [LEGAL ENTITY NAME], [REGISTERED ADDRESS], [PRIVACY EMAIL], [CONTACT EMAIL], [WAITLIST PROVIDER], [HOSTING PROVIDER], [LOG RETENTION PERIOD], [SOFTWARE LICENCE], [LIABILITY CAP], [GOVERNING LAW], [JURISDICTION]. Have a lawyer review both pages before launch.
-- No cookie banner, on purpose: the site sets no cookies and no browser storage, and loads nothing from other servers. If you add analytics, pick a cookieless one, name it in the privacy policy, and the banner stays unnecessary.
+- Legal placeholders in `/privacy` and `/terms`: [LEGAL ENTITY NAME], [REGISTERED ADDRESS], [PRIVACY EMAIL], [CONTACT EMAIL], [WAITLIST PROVIDER], [LOG RETENTION PERIOD], [SOFTWARE LICENCE], [LIABILITY CAP], [GOVERNING LAW], [JURISDICTION]. Have a lawyer review both pages before launch.
+- No cookie banner, on purpose: the site sets no cookies and no browser storage. Analytics is Vercel Web Analytics, which is cookieless, and it is described in `/privacy#website`.
+- Analytics: turn on Web Analytics for the project in the Vercel dashboard. It loads only on Vercel builds (`VERCEL=1`), so local builds have no tracking script. Clicks on anything with `data-track="Name"` (plus optional `data-track-where`) are sent as custom events by `components/ClickTracker.tsx`, and a successful waitlist sign-up sends `Waitlist signup`. Custom events need Vercel's Pro plan; on Hobby only page views are recorded.
 - Placeholders still in the copy: the install command (the Record terminal says "install ships with early access") and `[GITHUB OR CONTACT]` in the footer.
 - The terminals show a `postrun` CLI (`postrun capture`, `postrun export`). Today those are `pnpm capture` and `pnpm export` in the repo.

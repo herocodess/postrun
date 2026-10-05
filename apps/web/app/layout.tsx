@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { Analytics } from "@vercel/analytics/next";
+import { ClickTracker } from "@/components/ClickTracker";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import "./globals.css";
@@ -34,7 +36,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Marks JS as available so scroll reveals start hidden; without JS everything simply shows. */}
         <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* Cookieless visit counts on Vercel builds only; see /privacy#website. */}
+        {process.env["POSTRUN_ANALYTICS"] === "1" && (
+          <>
+            <Analytics />
+            <ClickTracker />
+          </>
+        )}
+      </body>
     </html>
   );
 }

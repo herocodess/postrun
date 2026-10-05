@@ -78,10 +78,10 @@ export default function Home() {
               </p>
             </Reveal>
             <Reveal delay={240} className="cta-row">
-              <a href="#waitlist" className="btn btn-primary btn-lg">
+              <a href="#waitlist" className="btn btn-primary btn-lg" data-track="Get early access" data-track-where="hero">
                 Get early access
               </a>
-              <a href="/example-report.html" target="_blank" rel="noopener" className="btn btn-ghost btn-lg">
+              <a href="/example-report.html" target="_blank" rel="noopener" className="btn btn-ghost btn-lg" data-track="Example report" data-track-where="hero">
                 See an example report <span aria-hidden="true">→</span>
               </a>
             </Reveal>
