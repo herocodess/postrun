@@ -93,12 +93,12 @@ pre,
 .wrap {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
 }
 .wrap-wide {
   max-width: 1140px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
 }
 .t-ok {
   color: var(--ok);
@@ -191,7 +191,7 @@ html.js .reveal[data-in] {
 .btn.is-busy {
   background: #2a2c5e;
   cursor: progress;
-  min-width: 220px;
+  min-width: min(220px, 100%);
 }
 .btn.is-busy:hover {
   transform: none;
@@ -264,40 +264,81 @@ html.js .reveal[data-in] {
   animation: play-nudge 2.6s var(--ease) infinite;
 }
 
-/* ---- nav ------------------------------------------------------------------- */
+/* ---- nav: translucent, folds into a pill on scroll down, expands on scroll up */
 .nav {
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 20;
-  border-bottom: 1px solid transparent;
-  transition:
-    background 0.3s,
-    border-color 0.3s;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  pointer-events: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
-.nav[data-scrolled] {
-  background: rgba(8, 9, 12, 0.9);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border-bottom-color: var(--line);
+.nav-spacer {
+  height: 64px;
 }
 .nav-inner {
-  max-width: 1200px;
+  pointer-events: auto;
+  position: relative;
   margin: 0 auto;
-  padding: 0 24px;
+  max-width: 100vw;
   height: 64px;
+  /* Content lines up with the page's 1200px column at the top. */
+  padding: 0 max(24px, calc((100% - 1152px) / 2));
   display: flex;
   align-items: center;
   gap: 32px;
+  background: rgba(8, 9, 12, 0.38);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+  transform: translateY(0);
+  transition:
+    max-width 0.6s var(--ease),
+    height 0.5s var(--ease),
+    padding 0.6s var(--ease),
+    gap 0.5s var(--ease),
+    border-radius 0.6s var(--ease),
+    transform 0.6s var(--ease),
+    background 0.4s,
+    border-color 0.4s,
+    box-shadow 0.5s;
+}
+.nav[data-state="expanded"] .nav-inner {
+  background: rgba(8, 9, 12, 0.72);
+  border-bottom-color: var(--line);
+}
+.nav[data-state="folded"] .nav-inner {
+  max-width: min(780px, calc(100vw - 24px));
+  height: 54px;
+  padding: 0 8px 0 18px;
+  gap: 24px;
+  border-radius: 999px;
+  transform: translateY(12px);
+  background: rgba(13, 15, 20, 0.66);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 12px 32px -12px rgba(0, 0, 0, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .brand {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
+  flex: none;
 }
 .nav-links {
   display: flex;
   gap: 26px;
   font-size: 14px;
+  white-space: nowrap;
+  transition: gap 0.5s var(--ease);
+}
+.nav[data-state="folded"] .nav-links {
+  gap: 20px;
+  font-size: 13.5px;
 }
 .nav-links a {
   color: var(--text-2);
@@ -305,6 +346,167 @@ html.js .reveal[data-in] {
 }
 .nav-links a:hover {
   color: var(--text);
+}
+.nav-cta {
+  flex: none;
+}
+.nav[data-state="folded"] .nav-cta {
+  border-radius: 999px;
+}
+.cta-short {
+  display: none;
+}
+.menu-btn {
+  display: none;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line-2);
+  border-radius: 13px;
+  cursor: pointer;
+  color: var(--text);
+  transition:
+    background 0.3s,
+    border-color 0.3s,
+    transform 0.15s var(--ease),
+    box-shadow 0.4s;
+}
+.menu-btn:active {
+  transform: scale(0.92);
+}
+.nav[data-menu] .menu-btn {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(129, 140, 248, 0.45);
+  box-shadow: 0 0 18px -4px rgba(99, 102, 241, 0.6);
+}
+.menu-mark .mm-step {
+  fill: var(--text);
+  transform-box: fill-box;
+  transform-origin: center;
+  /* Opening plays the steps top to bottom; closing rewinds bottom to top. */
+  transition:
+    fill 0.25s ease calc((3 - var(--i)) * 55ms),
+    transform 0.35s var(--ease) calc((3 - var(--i)) * 55ms);
+}
+.nav[data-menu] .menu-mark .mm-step {
+  fill: var(--accent-ink);
+  transform: scaleX(0.82);
+  transition:
+    fill 0.25s ease calc(var(--i) * 70ms),
+    transform 0.35s var(--ease) calc(var(--i) * 70ms);
+}
+.menu-mark .mm-play {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: 40% 50%;
+  transition:
+    transform 0.5s var(--ease) 0.05s,
+    fill 0.3s;
+}
+.nav[data-menu] .menu-mark .mm-play {
+  transform: rotate(90deg) translateX(3px);
+  fill: #fff;
+  transition-delay: 0.25s;
+}
+.nav-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border-radius: 18px;
+  /* Opaque, no blur of its own: a backdrop blur nested inside the blurred header
+     composites the page through it in Chromium. */
+  background: #0d0f14;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.8);
+  animation: menu-in 0.32s var(--ease);
+}
+.nav-menu[hidden] {
+  display: none;
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 0 12px;
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 15px;
+  animation: item-in 0.45s var(--ease) both;
+  animation-delay: calc(80ms + var(--i) * 60ms);
+}
+.menu-item + .menu-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+    background: rgba(99, 102, 241, 0.14);
+  }
+  60% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+.mi-seq {
+  font: 11px var(--mono);
+  color: var(--faint);
+  width: 22px;
+}
+.mi-label {
+  flex: 1;
+}
+.mi-arrow {
+  color: var(--muted);
+  transition: transform 0.25s var(--ease);
+}
+.menu-item:hover .mi-arrow {
+  transform: translateX(3px);
+  color: var(--text);
+}
+.menu-cta {
+  margin-top: 6px;
+  border-top: 0 !important;
+  background: var(--accent-btn);
+  color: #fff;
+  font-weight: 500;
+}
+.menu-cta:hover {
+  background: var(--accent-btn);
+  color: #fff;
+  filter: brightness(1.12);
+}
+.menu-cta .mi-seq,
+.menu-cta .mi-arrow {
+  color: rgba(255, 255, 255, 0.75);
+}
+.menu-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 6px;
+  font: 11px var(--mono);
+  color: var(--faint);
+  animation: item-in 0.45s var(--ease) both;
+  animation-delay: 420ms;
 }
 
 /* ---- hero ------------------------------------------------------------------ */
@@ -369,6 +571,7 @@ html.js .reveal[data-in] {
   gap: 18px;
 }
 .eyebrow {
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -393,7 +596,7 @@ html.js .reveal[data-in] {
   }
 }
 .hero h1 {
-  font-size: clamp(40px, 5.6vw, 70px);
+  font-size: clamp(32px, 5.6vw, 70px);
   line-height: 1.02;
   letter-spacing: -0.045em;
   max-width: 900px;
@@ -522,7 +725,7 @@ html.js .reveal[data-in] {
   font-size: 15px;
   font-weight: 500;
   flex: 1;
-  min-width: 220px;
+  min-width: min(220px, 100%);
 }
 .btn-mini {
   font-size: 12px;
@@ -813,7 +1016,7 @@ html.js .reveal[data-in] {
 /* ---- how it works ---------------------------------------------------------- */
 .how {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 16px;
 }
 .how-card {
@@ -914,7 +1117,7 @@ html.js .reveal[data-in] {
 /* ---- features -------------------------------------------------------------- */
 .features {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 16px;
 }
 .feature {
@@ -1083,7 +1286,7 @@ html.js .reveal[data-in] {
 /* ---- security -------------------------------------------------------------- */
 .sec-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 1px;
   background: var(--line);
   border: 1px solid var(--line);
@@ -1154,7 +1357,8 @@ html.js .reveal[data-in] {
   margin-top: 6px;
 }
 .wl-form input {
-  flex: 1 1 260px;
+  flex: 1 1 min(260px, 100%);
+  min-width: 0;
   min-height: 50px;
   background: var(--bg);
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -1211,10 +1415,23 @@ html.js .reveal[data-in] {
 }
 
 /* ---- small screens --------------------------------------------------------- */
-@media (max-width: 760px) {
+@media (max-width: 920px) {
   .nav-links {
     display: none;
   }
+  .menu-btn {
+    display: inline-flex;
+  }
+  .nav-inner,
+  .nav[data-state="folded"] .nav-inner {
+    gap: 10px;
+  }
+  .nav[data-state="folded"] .nav-inner {
+    max-width: min(520px, calc(100vw - 20px));
+    padding: 0 6px 0 14px;
+  }
+}
+@media (max-width: 760px) {
   .hero {
     padding-top: 56px;
   }
@@ -1253,6 +1470,188 @@ html.js .reveal[data-in] {
   }
   .stat .v {
     font-size: 16px;
+  }
+}
+
+
+/* ---- small phones and foldable cover screens (Galaxy Fold ~280 to 344px) -- */
+@media (max-width: 420px) {
+  .wrap,
+  .wrap-wide {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  .nav-inner {
+    padding: 0 max(16px, env(safe-area-inset-left));
+  }
+  .cta-long {
+    display: none;
+  }
+  .cta-short {
+    display: inline;
+  }
+  .eyebrow {
+    font-size: 11px;
+    padding: 6px 12px;
+    text-align: left;
+  }
+  .lede {
+    font-size: 16px;
+  }
+  .cta-row .btn {
+    flex: 1 1 100%;
+  }
+  .hero-shot {
+    margin-top: 32px;
+  }
+  .section h2 {
+    font-size: clamp(26px, 8vw, 34px);
+  }
+  .how-card,
+  .feature,
+  .export-card {
+    padding: 20px 16px;
+  }
+  .term-body {
+    padding: 10px 12px 12px;
+  }
+  .term-ghost,
+  .term-live {
+    font-size: 11.5px;
+  }
+  .detail-pre {
+    font-size: 11.5px;
+    padding: 10px;
+  }
+  .f-kind,
+  .f-where {
+    width: auto;
+  }
+  .cta-card {
+    padding: 40px 16px;
+  }
+  .wl-form .btn {
+    flex: 1 1 100%;
+  }
+}
+/* The narrowest cover screens: the header CTA moves into the menu. */
+@media (max-width: 340px) {
+  .nav-cta {
+    display: none;
+  }
+  .wordmark {
+    font-size: 16px !important;
+  }
+  .step-out {
+    display: none;
+  }
+}
+
+/* ---- dual-screen and spanned foldables (Surface Duo, Fold spanning) ------- */
+/* The page reads the hinge from the browser and lays each section out as two
+   columns, one per screen, with the gap over the hinge, so no text sits on the fold. */
+@media (horizontal-viewport-segments: 2) {
+  :root {
+    --hinge: calc(env(viewport-segment-left 1 0, 0px) - env(viewport-segment-right 0 0, 0px));
+    --seg-gap: calc(var(--hinge) + 40px);
+  }
+  .wrap,
+  .wrap-wide {
+    max-width: none;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .hero {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--seg-gap);
+    align-items: center;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .hero .wrap,
+  .hero .wrap-wide {
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
+  .hero-copy {
+    text-align: left;
+    align-items: flex-start;
+  }
+  .cta-row {
+    justify-content: flex-start;
+  }
+  .hero-shot {
+    margin-top: 0;
+  }
+  .hero h1 {
+    font-size: clamp(30px, 4vw, 48px);
+  }
+  .split,
+  .share,
+  .agents-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--seg-gap);
+    row-gap: 24px;
+  }
+  .agents-row {
+    justify-items: center;
+  }
+  .how,
+  .features {
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--seg-gap);
+  }
+  .sec-grid {
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--seg-gap);
+    row-gap: 12px;
+    background: none;
+    border: 0;
+  }
+  .sec-cell {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .cta-card {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--seg-gap);
+    grid-auto-flow: dense;
+    text-align: left;
+    align-items: center;
+    justify-items: start;
+  }
+  .cta-card > .mark,
+  .cta-card > h2 {
+    grid-column: 1;
+  }
+  .cta-card > p,
+  .cta-card > .wl-form,
+  .cta-card > span {
+    grid-column: 2;
+  }
+  .wl-form {
+    justify-content: flex-start;
+  }
+  .section-head {
+    max-width: calc((100% - var(--seg-gap)) / 2);
+  }
+  /* Keep the folded header on one screen instead of straddling the hinge. */
+  .nav[data-state="folded"] .nav-inner {
+    max-width: calc(env(viewport-segment-width 0 0, 50vw) - 24px);
+    margin-left: 12px;
+  }
+  .nav[data-state="folded"] .nav-links {
+    display: none;
+  }
+  .hero {
+    align-items: start;
+  }
+  .hero-copy {
+    padding-top: 48px !important;
   }
 }
 

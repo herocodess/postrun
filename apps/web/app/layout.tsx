@@ -21,6 +21,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#08090C",
   colorScheme: "dark",
+  // Lets the page draw under notches and home indicators; safe-area insets keep content clear.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
