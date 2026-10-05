@@ -136,9 +136,14 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
   const stop = () =>
     new Promise<void>((resolve, reject) => {
       server.close((err) => {
-        for (const s of streams.values()) s.end();
-        if (err) reject(err);
-        else resolve();
+        // Resolve only once every capture file is flushed and closed. Callers
+        // exit the process right after stop(), and createWriteStream opens its
+        // file asynchronously, so resolving on end() alone could drop the last
+        // export or leave a file that does not exist yet.
+        const flushed = [...streams.values()].map(
+          (s) => new Promise<void>((done) => (s.closed ? done() : s.once("close", () => done()).end())),
+        );
+        void Promise.all(flushed).then(() => (err ? reject(err) : resolve()));
       });
     });
 
