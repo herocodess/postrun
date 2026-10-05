@@ -16,7 +16,7 @@
  */
 
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
+import { ensurePrivateDir, ensurePrivateFile } from "../util/files.js";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import type { Actor, AgentInfo, SessionSegment, Step, Turn, Verdict, Workspace } from "../schema/index.js";
@@ -192,8 +192,14 @@ export class PostrunStore {
     this.path = opts.path ?? defaultDbPath();
     this.ownerId = opts.ownerId ?? LOCAL_OWNER_ID;
     this.capturedOn = opts.capturedOn ?? hostname();
-    if (this.path !== ":memory:") mkdirSync(dirname(this.path), { recursive: true });
+    if (this.path !== ":memory:") ensurePrivateDir(dirname(this.path));
     this.db = new Database(this.path);
+    if (this.path !== ":memory:") {
+      // The store holds full prompts and tool output: owner-only. SQLite gives
+      // the -wal and -shm files the database file's mode when it creates them,
+      // so tighten the main file before WAL is switched on, and any that exist.
+      for (const suffix of ["", "-wal", "-shm"]) ensurePrivateFile(this.path + suffix);
+    }
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000"); // capture (writer) and serve (reader) share the file

@@ -15,6 +15,8 @@
 # (default ~/.postrun/captures), shape {received_at, channel:"hook", payload}.
 
 set -u
+# Payloads hold full prompts and tool output: owner-only files and directory.
+umask 077
 DIR="${POSTRUN_CAPTURE_DIR:-$HOME/.postrun/captures}"
 mkdir -p "$DIR" 2>/dev/null || exit 0
 

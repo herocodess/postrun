@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { TopBar } from "@/components/TopBar";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,9 +9,14 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const port = process.env.PORT || "1234";
+
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <TopBar port={port} />
+        <div className="wrap">{children}</div>
+      </body>
     </html>
   );
 }

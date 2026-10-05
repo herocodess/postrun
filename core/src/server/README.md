@@ -17,3 +17,5 @@ Routes:
 - `GET /` and other paths serve the static Next export from `ui/out`; extensionless paths map to `<name>.html`.
 
 If the port is taken, it exits with a message naming the port and the `--port` / `PORT` overrides. No auth and no rate limiting, because it is never network-reachable.
+
+Hardening: requests whose `Host` header is not a loopback name get 421 (DNS rebinding guard, see `src/util/host.ts`); responses carry `x-content-type-options: nosniff`, `referrer-policy: no-referrer`, `cache-control: no-store`, and no CORS headers; malformed percent-encoding is a 400; internal errors are logged to stderr and returned as a generic 500; static paths are resolved and checked against the UI directory, and `..` in the path is refused outright.

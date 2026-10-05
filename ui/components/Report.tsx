@@ -14,6 +14,15 @@ function firstLine(s: string | undefined, max = 160): string {
   return line.length > max ? line.slice(0, max) + "…" : line;
 }
 
+function formatDate(isoDate: string): string {
+  const d = new Date(isoDate);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const date = String(d.getDate()).padStart(2, "0");
+  const hour = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${month}/${date.slice(-2)} ${hour}:${min}`;
+}
+
 export function Report() {
   const params = useSearchParams();
   const id = params.get("id") ?? "";
@@ -53,182 +62,202 @@ export function Report() {
   }
   const orphanTurns: Turn[] = [...stepsByTurn.keys()]
     .filter((tid) => !turns.some((t) => t.id === tid))
-    .map((tid, i) => ({ id: tid, session_id: summary.id, segment_index: 0, actor_id: "root", index: turns.length + i + 1, started_at: "", step_ids: [] }));
-  const modes = turns.reduce<Record<string, number>>((m, t) => {
-    const k = t.mode ?? "(no mode)";
-    m[k] = (m[k] ?? 0) + 1;
-    return m;
-  }, {});
+    .map((tid, i) => ({
+      id: tid,
+      session_id: summary.id,
+      segment_index: 0,
+      actor_id: "root",
+      index: turns.length + i + 1,
+      started_at: "",
+      step_ids: [],
+    }));
 
   return (
-    <article className="report">
-      <header>
-        <h1>
-          <span className={`badge badge-${summary.agent.kind}`}>{summary.agent.kind}</span> {firstLine(summary.title, 120) || summary.id}
-        </h1>
-        <dl className="totals">
-          <dt>session</dt>
-          <dd>{summary.id}</dd>
-          <dt>agent</dt>
-          <dd id="agent">
-            {summary.agent.kind} {summary.agent.version}
-          </dd>
-          <dt>workspace</dt>
-          <dd>
-            {summary.workspace.root}
-            {summary.workspace.repo ? ` (${summary.workspace.repo})` : ""}
-          </dd>
-          <dt>when</dt>
-          <dd>
-            {summary.started_at} → {summary.ended_at ?? "open"} · {segments.length} segment{segments.length === 1 ? "" : "s"}
-          </dd>
-          <dt>owner</dt>
-          <dd>
-            {summary.owner_id} on {summary.captured_on}
-          </dd>
-          <dt>steps</dt>
-          <dd id="step-count">
-            {summary.steps_total} · {summary.failed_count} failed · {summary.reference_only_count} reference-only · {summary.flag_count} flags
-          </dd>
-          <dt>turns</dt>
-          <dd id="turn-count">
-            {turns.length} (
-            {Object.entries(modes)
-              .map(([m, n]) => `${m} ${n}`)
-              .join(", ")}
-            )
-          </dd>
-          <dt>cost</dt>
-          <dd>
-            ${summary.metrics.cost_usd.toFixed(4)} over {summary.metrics.api_requests} API requests · tokens in {summary.metrics.tokens.input}, out {summary.metrics.tokens.output}, cache read{" "}
-            {summary.metrics.tokens.cache_read}, cache create {summary.metrics.tokens.cache_creation}
-          </dd>
-        </dl>
-      </header>
+    <>
+      {/* HERO */}
+      <div className="hero">
+        <div className="hero-glow"></div>
+        <div className="hero-card">
+          <div className="hero-top">
+            <span className={`badge ${summary.agent.kind === "cline" ? "cline" : "cc"}`}>{summary.agent.kind}</span>
+            <span className="title">{firstLine(summary.title, 140) || summary.id}</span>
+            <span className="ver">v{summary.agent.version}</span>
+          </div>
 
-      <section id="files">
-        <h2>
-          Files touched <span className="muted">({report.counts.files_touched}: {report.counts.files_created} created, {report.counts.files_edited} edited, {report.counts.files_read} read)</span>
-        </h2>
+          <div className="stats">
+            <div className="stat">
+              <div className="k">cost</div>
+              <div className="v mono">
+                ${summary.metrics.cost_usd.toFixed(4)} <span className="sub">/ {summary.metrics.api_requests} req</span>
+              </div>
+            </div>
+            <div className="stat">
+              <div className="k">steps</div>
+              <div className="v mono">{summary.steps_total}</div>
+            </div>
+            <div className="stat">
+              <div className="k">turns</div>
+              <div className="v mono">{turns.length}</div>
+            </div>
+            <div className="stat danger">
+              <div className="k">failed</div>
+              <div className="v mono">{summary.failed_count}</div>
+            </div>
+            <div className="stat warn">
+              <div className="k">reference-only</div>
+              <div className="v mono">{summary.reference_only_count}</div>
+            </div>
+          </div>
+
+          <div className="meta-row">
+            <span>
+              workspace <b className="mono">{summary.workspace.root}</b>
+            </span>
+            <span>
+              when <b className="mono">{formatDate(summary.started_at)} → {summary.ended_at ? formatDate(summary.ended_at) : "open"}</b> &middot; {segments.length} segment
+              {segments.length === 1 ? "" : "s"}
+            </span>
+            <span>
+              owner <b className="mono">{summary.owner_id}</b> on {summary.captured_on}
+            </span>
+            <span>
+              tokens <b className="mono">{summary.metrics.tokens.input} in / {summary.metrics.tokens.output} out</b>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* FILES TOUCHED */}
+      <div className="sec">
+        <div className="sec-h">
+          <h2>Files touched</h2>
+          <span className="count">
+            {report.counts.files_touched} &middot; {report.counts.files_created} created, {report.counts.files_edited} edited, {report.counts.files_read} read
+          </span>
+        </div>
         {report.files.length === 0 ? (
-          <p className="muted">No files were created, edited, or read.</p>
+          <p style={{ color: "var(--text-muted)" }}>No files were created, edited, or read.</p>
         ) : (
-          <table className="summary-table">
+          <table className="table">
             <thead>
               <tr>
                 <th>path</th>
-                <th>created</th>
-                <th>edited</th>
-                <th>read</th>
-                <th>failed</th>
+                <th className="num">created</th>
+                <th className="num">edited</th>
+                <th className="num">read</th>
+                <th className="num">failed</th>
               </tr>
             </thead>
             <tbody>
               {report.files.map((f) => (
-                <tr key={f.path} className={f.created + f.edited > 0 ? "written" : ""}>
-                  <td className="mono">{f.path}</td>
-                  <td>{f.created || ""}</td>
-                  <td>{f.edited || ""}</td>
-                  <td>{f.read || ""}</td>
-                  <td className={f.failed ? "failed-cell" : ""}>{f.failed || ""}</td>
+                <tr key={f.path} className={f.failed ? "failed" : ""}>
+                  <td className="path">{f.path}</td>
+                  <td className={`num ${f.created > 0 ? "hit" : ""}`}>{f.created > 0 ? f.created : ""}</td>
+                  <td className={`num ${f.edited > 0 ? "hit" : ""}`}>{f.edited > 0 ? f.edited : ""}</td>
+                  <td className={`num ${f.read > 0 ? "hit" : ""}`}>{f.read > 0 ? f.read : ""}</td>
+                  <td className={`fail-cell ${f.failed > 0 ? "" : ""}`}>{f.failed > 0 ? f.failed : ""}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </section>
+      </div>
 
-      <section id="commands">
-        <h2>
-          Commands run{" "}
-          <span className="muted">
-            ({report.counts.commands_run}: {report.counts.commands_failed} failed, {report.counts.commands_reference_only} output not inline)
+      {/* COMMANDS RUN */}
+      <div className="sec">
+        <div className="sec-h">
+          <h2>Commands run</h2>
+          <span className="count">
+            {report.counts.commands_run} &middot; {report.counts.commands_failed} failed, {report.counts.commands_reference_only} output not inline
           </span>
-        </h2>
+        </div>
         {report.commands.length === 0 ? (
-          <p className="muted">No commands were run.</p>
+          <p style={{ color: "var(--text-muted)" }}>No commands were run.</p>
         ) : (
-          <table className="summary-table">
+          <table className="table">
             <thead>
               <tr>
                 <th>command</th>
-                <th>runs</th>
-                <th>failed</th>
-                <th>exit</th>
-                <th>output</th>
+                <th className="num">runs</th>
+                <th className="exit">exit</th>
               </tr>
             </thead>
             <tbody>
               {report.commands.map((c) => (
                 <tr key={c.command + c.first_seq} className={c.failed ? "failed" : ""}>
-                  <td className="mono">{c.command === "(command not inline)" ? <span className="ref-only">{c.command}</span> : firstLine(c.command)}</td>
-                  <td>{c.count}</td>
-                  <td className={c.failed ? "failed-cell" : ""}>{c.failed || ""}</td>
-                  <td>{c.exit_codes.join(", ")}</td>
-                  <td>{c.reference_only ? <span className="ref-only">{c.reference_only} not inline</span> : ""}</td>
+                  <td className="cmd">
+                    {firstLine(c.command)} {c.reference_only > 0 && <span className="tag ref">output not inline</span>}
+                  </td>
+                  <td className={`num ${c.count > 0 ? "hit" : ""}`}>{c.count}</td>
+                  <td className={`exit ${c.failed > 0 ? "bad" : ""}`}>{c.exit_codes.join(", ")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </section>
+      </div>
 
-      <section id="timeline">
-        <h2>Timeline by turn</h2>
+      {/* TIMELINE */}
+      <div className="sec">
+        <div className="sec-h">
+          <h2>Timeline</h2>
+          <span className="count">
+            {turns.length} turns &middot; {summary.steps_total} steps
+          </span>
+        </div>
+
         {[...turns, ...orphanTurns].map((t) => {
           const list = stepsByTurn.get(t.id) ?? [];
           const prompt = list.find((s) => s.type === "message" && s.payload.role === "user");
           const promptText = prompt && prompt.type === "message" ? prompt.payload.text : undefined;
-          const failed = list.filter((s) => s.outcome === "failed").length;
+
           return (
-            <details key={t.id} className="turn" open data-turn-id={t.id}>
-              <summary>
-                <b>Turn {t.index}</b>
-                {t.mode ? <span className="badge badge-mode">{t.mode}</span> : null} <span className="muted">{t.started_at}</span> · {list.length} steps
-                {failed ? <span className="failed-cell"> · {failed} failed</span> : null}
-                {promptText ? <span className="prompt"> — {firstLine(promptText, 140)}</span> : null}
-              </summary>
-              <table className="timeline">
-                <thead>
-                  <tr>
-                    <th>seq</th>
-                    <th>type</th>
-                    <th>summary</th>
-                    <th>decision</th>
-                    <th>outcome</th>
-                  </tr>
-                </thead>
-                <tbody>{list.map((s) => <Row key={s.id} step={s} />)}</tbody>
-              </table>
-            </details>
+            <div key={t.id} className="turn">
+              <div className="turn-h">
+                <span className="turn-n">turn {t.index}</span>
+                <span className="txt">{firstLine(promptText || "", 120)}</span>
+                <span className="mode">{t.mode || "no mode"}</span>
+              </div>
+              {list.map((s) => (
+                <Step key={s.id} step={s} />
+              ))}
+            </div>
           );
         })}
-      </section>
-    </article>
+      </div>
+
+      <div className="foot">
+        postrun &middot; <span className="mono">session {summary.id}</span> &middot; local review, nothing left your machine
+      </div>
+    </>
   );
 }
 
-function Row({ step }: { step: Step }) {
+function Step({ step }: { step: Step }) {
   const sum = summarize(step);
+
+  let typeClass = "message";
+  if (step.type === "command") typeClass = "command";
+  else if (step.type === "edit") typeClass = "edit";
+  else if (step.type === "read") typeClass = "read";
+
+  let statusClass = "";
+  let statusText = "ok";
+  if (step.outcome === "failed") {
+    statusClass = "fail";
+    statusText = "failed";
+    if (step.error) statusText += ` · ${step.error.type}`;
+  } else if (sum.referenceOnly) {
+    statusClass = "refonly";
+    statusText = "reference-only";
+  }
+
   return (
-    <tr className={step.outcome} data-seq={step.seq} data-type={step.type} data-reference-only={String(sum.referenceOnly)}>
-      <td className="seq">{step.seq}</td>
-      <td className="type">{step.type}</td>
-      <td className="summary">
-        {sum.referenceOnly ? <span className="ref-only">{sum.text}</span> : sum.text}
-        {sum.ref ? <div className="ref-path">{(sum.referenceOnly ? "ref: " : "output persisted: ") + sum.ref}</div> : null}
-        {step.error ? (
-          <div className="error small">
-            {step.error.type}: {firstLine(step.error.message, 200)}
-          </div>
-        ) : null}
-        <details>
-          <summary className="muted small">payload · channels: {step.channels.join(", ")}</summary>
-          <pre>{JSON.stringify(step.payload, null, 2)}</pre>
-        </details>
-      </td>
-      <td className="decision">{step.decision}</td>
-      <td className="status">{step.outcome === "failed" ? "FAILED" : step.outcome}</td>
-    </tr>
+    <div className="step">
+      <span className="st-seq">{step.seq}</span>
+      <span className={`st-type ${typeClass}`}>{step.type}</span>
+      <span className="st-body">{sum.text}</span>
+      <span className={`st-status ${statusClass}`}>{statusText}</span>
+    </div>
   );
 }

@@ -7,12 +7,16 @@
  */
 
 import { createServer, type Server } from "node:http";
-import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { ensurePrivateDir, ensurePrivateFile, PRIVATE_FILE_MODE } from "../util/files.js";
+import { isLoopbackHost } from "../util/host.js";
 
 export const OTLP_HOST = "127.0.0.1";
 export const DEFAULT_OTLP_PORT = 4318;
+/** Largest export request accepted, before and after gzip. Claude Code batches are a few hundred KB at most. */
+export const MAX_BODY_BYTES = 32 * 1024 * 1024;
 
 const SIGNALS: Record<string, string> = {
   "/v1/logs": "otlp-logs.ndjson",
@@ -41,14 +45,16 @@ export class OtlpPortInUseError extends Error {
 }
 
 export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
-  mkdirSync(opts.captureDir, { recursive: true });
+  // Telemetry holds prompts and tool content: the directory and files are private to this user.
+  ensurePrivateDir(opts.captureDir);
+  for (const name of Object.values(SIGNALS)) ensurePrivateFile(join(opts.captureDir, name));
   const port = opts.port ?? DEFAULT_OTLP_PORT;
   const log = opts.log ?? (() => undefined);
   const streams = new Map<string, WriteStream>();
   const streamFor = (path: string): WriteStream => {
     let s = streams.get(path);
     if (!s) {
-      s = createWriteStream(join(opts.captureDir, SIGNALS[path] as string), { flags: "a" });
+      s = createWriteStream(join(opts.captureDir, SIGNALS[path] as string), { flags: "a", mode: PRIVATE_FILE_MODE });
       streams.set(path, s);
     }
     return s;
@@ -57,16 +63,42 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
 
   const server = createServer((req, res) => {
     const path = req.url ?? "";
-    if (req.method !== "POST" || !(path in SIGNALS)) {
+    if (!isLoopbackHost(req.headers.host)) {
+      res.writeHead(421).end();
+      return;
+    }
+    if (req.method !== "POST" || !Object.hasOwn(SIGNALS, path)) {
       res.writeHead(404).end();
       return;
     }
+    const declared = Number(req.headers["content-length"] ?? 0);
+    if (declared > MAX_BODY_BYTES) {
+      res.writeHead(413).end();
+      req.destroy();
+      return;
+    }
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
+    let received = 0;
+    let rejected = false;
+    req.on("data", (c: Buffer) => {
+      received += c.length;
+      if (received > MAX_BODY_BYTES) {
+        if (!rejected) {
+          rejected = true;
+          log(`${path}: export larger than ${MAX_BODY_BYTES} bytes rejected`);
+          res.writeHead(413).end();
+          req.destroy();
+        }
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => {
+      if (rejected) return;
       try {
         let body = Buffer.concat(chunks);
-        if (req.headers["content-encoding"] === "gzip") body = gunzipSync(body);
+        // maxOutputLength bounds decompression so a small gzip body cannot expand without limit.
+        if (req.headers["content-encoding"] === "gzip") body = gunzipSync(body, { maxOutputLength: MAX_BODY_BYTES });
         const ct = req.headers["content-type"] ?? "";
         if (!ct.includes("application/json")) {
           log(`${path}: got ${ct || "no content-type"}, expected application/json. Set OTEL_EXPORTER_OTLP_PROTOCOL=http/json before launching claude.`);

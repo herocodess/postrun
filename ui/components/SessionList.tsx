@@ -14,16 +14,61 @@ function basename(p: string): string {
 }
 
 function firstLine(s: string | undefined, max = 110): string {
-  if (!s) return "(no prompt text)";
+  if (!s) return "";
   const line = s.split("\n")[0] ?? "";
   return line.length > max ? line.slice(0, max) + "…" : line;
 }
 
-function counts(s: SessionSummary): string {
-  return Object.entries(s.step_counts)
+function relativeTime(isoDate: string): string {
+  const d = new Date(isoDate);
+  const now = new Date();
+  const ms = now.getTime() - d.getTime();
+  const mins = Math.floor(ms / 60000);
+  const hours = Math.floor(ms / 3600000);
+  const days = Math.floor(ms / 86400000);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (mins > 0) return `${mins}m ago`;
+  return "now";
+}
+
+function formatDate(isoDate: string): string {
+  const d = new Date(isoDate);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const date = String(d.getDate()).padStart(2, "0");
+  const hour = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${month}/${date.slice(-2)} ${hour}:${min}`;
+}
+
+function breakdownCounts(s: SessionSummary): React.ReactNode {
+  if (s.steps_total === 0) return <span style={{ color: "var(--text-muted)" }}>nothing ran</span>;
+
+  const entries = Object.entries(s.step_counts)
     .sort(([, a], [, b]) => b - a)
     .map(([t, n]) => `${n} ${t}`)
-    .join(", ");
+    .join(" · ");
+
+  const parts: React.ReactNode[] = [entries];
+  if (s.failed_count > 0) {
+    parts.push(" · ");
+    parts.push(
+      <span key="failed" className="fail">
+        {s.failed_count} failed
+      </span>
+    );
+  }
+  if (s.reference_only_count > 0) {
+    parts.push(" · ");
+    parts.push(
+      <span key="ref" className="ref">
+        {s.reference_only_count} ref
+      </span>
+    );
+  }
+
+  return parts;
 }
 
 export function SessionList() {
@@ -52,70 +97,66 @@ export function SessionList() {
   }, [agent]);
 
   if (state.kind === "loading") return <p>Loading…</p>;
-  if (state.kind === "error") return <p className="error">Could not load sessions: {state.message}. Is the server running on 127.0.0.1:1234?</p>;
+  if (state.kind === "error")
+    return <p className="error">Could not load sessions: {state.message}. Is the server running on 127.0.0.1:1234?</p>;
 
   const { sessions, agents } = state.data;
+  const totalCost = sessions.reduce((sum, s) => sum + s.metrics.cost_usd, 0);
+
   return (
     <>
-      <p className="filter" id="agent-filter">
-        agent:{" "}
-        <Link href="/" className={agent === "" ? "active" : ""}>
+      <div className="head">
+        <h1>Sessions</h1>
+        <span className="sub">everything your agents did, on this machine</span>
+      </div>
+
+      <div className="filters">
+        <span className="lbl">agent</span>
+        <Link href="/" className={`chip ${agent === "" ? "on" : ""}`}>
           all
         </Link>
         {agents.map((a) => (
-          <span key={a}>
-            {" · "}
-            <Link href={`/?agent=${encodeURIComponent(a)}`} className={agent === a ? "active" : ""}>
-              {a}
-            </Link>
-          </span>
+          <Link key={a} href={`/?agent=${encodeURIComponent(a)}`} className={`chip ${agent === a ? "on" : ""}`}>
+            {a}
+          </Link>
         ))}
-        <span className="muted"> ({sessions.length} session{sessions.length === 1 ? "" : "s"})</span>
-      </p>
+        <span className="right">
+          {sessions.length} session{sessions.length === 1 ? "" : "s"} &middot; <b>${totalCost.toFixed(2)}</b> total
+        </span>
+      </div>
+
       {sessions.length === 0 ? (
-        <p className="muted">No sessions in the store. Run: pnpm ingest --agent claude-code|cline &lt;source&gt;</p>
+        <p style={{ color: "var(--text-muted)" }}>No sessions in the store. Run: pnpm ingest --agent claude-code|cline &lt;source&gt;</p>
       ) : (
-        <table className="sessions" id="sessions">
-          <thead>
-            <tr>
-              <th>agent</th>
-              <th>workspace</th>
-              <th>prompt</th>
-              <th>started</th>
-              <th>steps</th>
-              <th>cost</th>
-              <th>flags</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sessions.map((s) => (
-              <tr key={s.id} data-session-id={s.id} data-agent={s.agent.kind} className="session-row" onClick={() => router.push(`/session?id=${encodeURIComponent(s.id)}`)}>
-                <td>
-                  <span className={`badge badge-${s.agent.kind}`}>{s.agent.kind}</span>
-                  <div className="muted small">{s.agent.version}</div>
-                </td>
-                <td title={s.workspace.root}>{basename(s.workspace.root)}</td>
-                <td>
-                  <Link href={`/session?id=${encodeURIComponent(s.id)}`} onClick={(e) => e.stopPropagation()}>
-                    {firstLine(s.title)}
-                  </Link>
-                  <div className="muted small">{s.id}</div>
-                </td>
-                <td className="nowrap">{s.started_at.replace("T", " ").replace(/\.\d+Z$/, "Z")}</td>
-                <td>
-                  {s.steps_total}
-                  <div className="muted small">{counts(s)}</div>
-                  <div className="muted small">
-                    {s.turn_count} turns · {s.failed_count} failed · {s.reference_only_count} ref-only
-                  </div>
-                </td>
-                <td className="nowrap">${s.metrics.cost_usd.toFixed(4)}</td>
-                <td>{s.flag_count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="list">
+          {sessions.map((s) => (
+            <Link key={s.id} href={`/session?id=${encodeURIComponent(s.id)}`} className="row">
+              <div className="agent">
+                <span className={`badge ${s.agent.kind === "cline" ? "cline" : "cc"}`}>{s.agent.kind}</span>
+                <span className="ver">{s.agent.version}</span>
+              </div>
+              <div className="prompt">
+                <div className="p">{firstLine(s.title) || "empty session · no activity captured"}</div>
+                <div className="id">{s.id.slice(0, 8)}</div>
+              </div>
+              <div className="ws">{basename(s.workspace.root)}</div>
+              <div className="when">
+                {formatDate(s.started_at)} <span className="rel">· {relativeTime(s.started_at)}</span>
+              </div>
+              <div className="steps">
+                <div className="n">{s.steps_total}</div>
+                <div className="brk">{breakdownCounts(s)}</div>
+              </div>
+              <div className={`cost ${s.metrics.cost_usd === 0 ? "zero" : ""}`}>${s.metrics.cost_usd.toFixed(2)}</div>
+              <div className={`flags ${s.flag_count > 0 ? "has" : ""}`}>{s.flag_count > 0 ? s.flag_count : "·"}</div>
+            </Link>
+          ))}
+        </div>
       )}
+
+      <div className="foot">
+        postrun &middot; <span className="mono">local review</span> &middot; nothing leaves your machine
+      </div>
     </>
   );
 }

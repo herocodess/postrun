@@ -17,7 +17,15 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, resolve, sep } from "node:path";
 import { sessionReport } from "../report/index.js";
 import { PostrunStore } from "../store/index.js";
+import { isLoopbackHost } from "../util/host.js";
 import type { ApiError, SessionDetailResponse, SessionListResponse } from "./api.js";
+
+/** Sent on every response. No CORS headers are ever set: only same-origin pages may read the API. */
+const BASE_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "cache-control": "no-store",
+} as const;
 
 export const LOCALHOST = "127.0.0.1";
 export const DEFAULT_PORT = 1234;
@@ -72,7 +80,9 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
     try {
       handle(req, res, store, uiRoot);
     } catch (err) {
-      json(res, 500, { error: (err as Error).message });
+      // Never echo internal error text (paths, SQL) to the client.
+      process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
+      json(res, 500, { error: "internal error" });
     }
   });
 
@@ -110,17 +120,35 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  res.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
+}
+
+function text(res: ServerResponse, status: number, body: string, extra: Record<string, string | number> = {}): void {
+  res.writeHead(status, { ...BASE_HEADERS, "content-type": "text/plain; charset=utf-8", ...extra });
+  res.end(body);
 }
 
 function handle(req: IncomingMessage, res: ServerResponse, store: PostrunStore, uiRoot: string): void {
   const method = req.method ?? "GET";
-  const url = new URL(req.url ?? "/", `http://${LOCALHOST}`);
+
+  // DNS rebinding guard: the socket is loopback, the Host header must be too.
+  if (!isLoopbackHost(req.headers.host)) {
+    text(res, 421, "misdirected request: this server only answers to 127.0.0.1 or localhost\n");
+    return;
+  }
 
   if (method !== "GET" && method !== "HEAD") {
-    res.writeHead(405, { "content-type": "text/plain; charset=utf-8", allow: "GET, HEAD" });
-    res.end("method not allowed\n");
+    text(res, 405, "method not allowed\n", { allow: "GET, HEAD" });
+    return;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(req.url ?? "/", `http://${LOCALHOST}`);
+    decodeURIComponent(url.pathname); // malformed percent-encoding is a client error, not a 500
+  } catch {
+    text(res, 400, "bad request\n");
     return;
   }
 
@@ -169,27 +197,24 @@ function resolveStatic(pathname: string, uiRoot: string): string | undefined {
 }
 
 function serveStatic(pathname: string, res: ServerResponse, uiRoot: string, headOnly: boolean): void {
-  if (pathname.includes("..")) {
-    res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
-    res.end("forbidden\n");
+  if (pathname.includes("..") || decodeURIComponent(pathname).includes("..") || pathname.includes("\0")) {
+    text(res, 403, "forbidden\n");
     return;
   }
   const filePath = resolveStatic(pathname, uiRoot);
   if (!filePath) {
     if (pathname === "/") {
-      res.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
-      res.end(`UI not built: ${join(uiRoot, "index.html")} is missing. Run "pnpm --filter @postrun/ui build" (or "pnpm serve" from the repo root, which builds first).\n`);
+      text(res, 503, `UI not built: ${join(uiRoot, "index.html")} is missing. Run "pnpm --filter @postrun/ui build" (or "pnpm serve" from the repo root, which builds first).\n`);
       return;
     }
-    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    res.end("not found\n");
+    text(res, 404, "not found\n");
     return;
   }
   const body = readFileSync(filePath);
   res.writeHead(200, {
+    ...BASE_HEADERS,
     "content-type": MIME[extname(filePath)] ?? "application/octet-stream",
     "content-length": body.byteLength,
-    "cache-control": "no-store",
   });
   res.end(headOnly ? undefined : body);
 }

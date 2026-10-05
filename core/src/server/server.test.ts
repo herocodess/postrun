@@ -1,9 +1,26 @@
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { request } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+
+/** fetch() refuses to send a custom Host header, so rebinding tests go through node:http. */
+function rawGet(base: string, path: string, host: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(base);
+    const req = request({ hostname: u.hostname, port: u.port, path, method: "GET", headers: { host } }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (c: string) => (body += c));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { locateClineSession } from "../adapters/cline/index.js";
 import { PostrunStore, claudeCodeRecord, clineRecord } from "../store/index.js";
+import { isLoopbackHost } from "../util/host.js";
 import type { SessionDetailResponse, SessionListResponse } from "./api.js";
 import { createPostrunServer, LOCALHOST, PortInUseError, type PostrunServer } from "./server.js";
 
@@ -89,9 +106,37 @@ describe.skipIf(!hasCaptures || !hasCline)("postrun server over the store", () =
     const session = await fetch(new URL("/session", url));
     expect(session.status).toBe(200);
     expect(session.headers.get("content-type")).toContain("text/html");
+    expect(session.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(session.headers.get("access-control-allow-origin")).toBeNull();
     expect((await fetch(new URL("/..%2f..%2fpackage.json", url))).status).toBe(403);
+    // The URL parser collapses %2e%2e segments before the handler sees them; nothing outside uiDir is reachable.
+    const dotted = await rawGet(url, "/%2e%2e/%2e%2e/package.json", `127.0.0.1:${port}`);
+    expect([403, 404]).toContain(dotted.status);
+    expect(dotted.body).not.toContain("workspaces");
+    const raw = await rawGet(url, "/../../package.json", `127.0.0.1:${port}`);
+    expect([403, 404]).toContain(raw.status);
+    expect(raw.body).not.toContain("workspaces");
     expect((await fetch(new URL("/nope.js", url))).status).toBe(404);
+    expect((await fetch(new URL("/%zz", url))).status).toBe(400);
     expect((await fetch(new URL("/api/sessions", url), { method: "POST" })).status).toBe(405);
+  });
+
+  it("refuses requests whose Host header is not loopback (DNS rebinding)", async () => {
+    // A missing or empty Host cannot be sent through node:http (it fills in the default), so that branch is unit-tested.
+    expect(isLoopbackHost(undefined)).toBe(false);
+    expect(isLoopbackHost("")).toBe(false);
+    expect(isLoopbackHost("127.0.0.1.evil.example:80")).toBe(false);
+    expect(isLoopbackHost("[::1]:1234")).toBe(true);
+    for (const host of ["evil.example", "evil.example:1234", "127.0.0.1.evil.example"]) {
+      const res = await rawGet(url, "/api/sessions", host);
+      expect(res.status).toBe(421);
+      expect(res.body).not.toContain('"sessions"');
+    }
+    for (const host of [`127.0.0.1:${port}`, "localhost", `LOCALHOST:${port}`, "[::1]:1234"]) {
+      const res = await rawGet(url, "/api/sessions", host);
+      expect(res.status).toBe(200);
+      expect(res.body).toContain('"sessions"');
+    }
   });
 
   it("fails with a clear message when the port is in use", async () => {

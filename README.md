@@ -43,6 +43,16 @@ pnpm serve --db /some/other/postrun.db
 
 **IMPORTANT**: No secrets or credentials ever go in this repository. All `.env` files are in `.gitignore` and must be created locally with secret values only. Never commit API keys, passwords, or authentication tokens of any kind.
 
+## Security model
+
+Postrun records full prompts, assistant responses, tool input, and tool output from this machine. Everything is local and single-user:
+
+- Both listeners (the API server on 1234 and the OTLP receiver on 4318) bind to 127.0.0.1 only and refuse any request whose `Host` header is not `127.0.0.1`, `localhost`, or `[::1]`. That closes DNS rebinding, where a web page points its own domain at 127.0.0.1 to read the API from a browser. No CORS headers are ever sent.
+- Everything Postrun writes under `~/.postrun` (captures, the SQLite store and its WAL) is created owner-only: directories 0700, files 0600. Older, wider files are tightened on open.
+- The receiver caps export requests at 32 MB before and after gzip. The server never echoes internal error text.
+- Postrun reads agent files (`~/.cline`, Claude Code hooks) but never writes them. The only file it edits outside `~/.postrun` is `~/.claude/settings.json`, backed up once and merged in place.
+- Postrun does not ask Claude Code to dump raw API bodies to disk. Capture files can still contain whatever a session printed, including the output of commands such as `env`; treat `~/.postrun` as sensitive.
+
 ## Architecture
 
 See `core/README.md`, `ui/README.md`, and the README in each `core/src/*` subdirectory.

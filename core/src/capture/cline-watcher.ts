@@ -48,6 +48,8 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
   let watcher: FSWatcher | undefined;
   let poll: NodeJS.Timeout | undefined;
 
+  // Session directory names are file system entries; only plain tokens are used to build paths or logged.
+  const SAFE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
   const sessionDir = (id: string) => join(opts.sessionsDir, id);
   const mtimeOf = (id: string): number => {
     const dir = sessionDir(id);
@@ -89,7 +91,7 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
 
   const listSessions = (): string[] => {
     if (!existsSync(opts.sessionsDir)) return [];
-    return readdirSync(opts.sessionsDir).filter((d) => existsSync(join(opts.sessionsDir, d, `${d}.messages.json`)));
+    return readdirSync(opts.sessionsDir).filter((d) => SAFE_ID.test(d) && existsSync(join(opts.sessionsDir, d, `${d}.messages.json`)));
   };
 
   const scan = (trigger: string) => {
@@ -119,7 +121,7 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
             const name = filename == null ? undefined : String(filename);
             if (!name) return;
             const id = name.split(/[\\/]/)[0];
-            if (!id) return;
+            if (!id || !SAFE_ID.test(id)) return;
             if (!/\.(messages\.)?json$/.test(name) && !existsSync(join(opts.sessionsDir, id, `${id}.messages.json`))) return;
             if (!known.has(id)) known.set(id, 0);
             schedule(id, "watch");

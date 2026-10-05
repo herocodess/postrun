@@ -1,10 +1,14 @@
 /**
  * pnpm capture              start the OTLP receiver and both watchers; keep running
  * pnpm capture --once       ingest everything that is on disk now, then exit
- * pnpm capture:cc:setup     print the ~/.claude/settings.json additions (no edits)
+ * pnpm capture:cc:setup     merge Postrun's env + hooks into ~/.claude/settings.json (backed up once)
+ *
+ * `pnpm capture` runs the setup step itself when the config is missing or
+ * out of date, and skips it silently when it is already present.
  *
  * Env: POSTRUN_CAPTURE_DIR (default ~/.postrun/captures), POSTRUN_CLINE_DIR
- * (default ~/.cline/data/sessions), POSTRUN_OTLP_PORT (default 4318), POSTRUN_DB.
+ * (default ~/.cline/data/sessions), POSTRUN_OTLP_PORT (default 4318), POSTRUN_DB,
+ * POSTRUN_CLAUDE_SETTINGS (default ~/.claude/settings.json).
  * Everything binds to 127.0.0.1.
  */
 
@@ -14,7 +18,7 @@ import { PostrunStore, defaultDbPath } from "../store/index.js";
 import { createClaudeCodeWatcher } from "./claude-code-watcher.js";
 import { createClineWatcher } from "./cline-watcher.js";
 import { createOtlpReceiver, DEFAULT_OTLP_PORT, OtlpPortInUseError } from "./receiver.js";
-import { renderSetup } from "./setup.js";
+import { configureClaudeCode, defaultSettingsPath, describeConfigure, isClaudeCodeConfigured } from "./setup.js";
 
 function env(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
@@ -28,16 +32,36 @@ async function main(argv: string[]): Promise<number> {
   const clineDir = resolve(env("POSTRUN_CLINE_DIR", join(homedir(), ".cline", "data", "sessions")));
   const otlpPort = Number(env("POSTRUN_OTLP_PORT", String(DEFAULT_OTLP_PORT)));
   const dbPath = defaultDbPath();
+  const settingsPath = resolve(env("POSTRUN_CLAUDE_SETTINGS", defaultSettingsPath()));
 
-  if (argv.includes("setup")) {
-    process.stdout.write(renderSetup(captureDir, otlpPort) + "\n");
-    return 0;
-  }
   if (!Number.isInteger(otlpPort) || otlpPort < 1 || otlpPort > 65535) {
     process.stderr.write(`postrun capture: invalid POSTRUN_OTLP_PORT "${process.env["POSTRUN_OTLP_PORT"]}"\n`);
     return 2;
   }
+  if (argv.includes("setup")) {
+    try {
+      process.stdout.write(describeConfigure(configureClaudeCode({ captureDir, otlpPort, settingsPath })) + "\n");
+      return 0;
+    } catch (err) {
+      process.stderr.write(`postrun capture setup: ${(err as Error).message}\n`);
+      return 1;
+    }
+  }
   const once = argv.includes("--once");
+
+  // Self-configure Claude Code before watching. Only the config path is
+  // touched here; capture itself is unchanged and starts either way.
+  if (!once) {
+    if (isClaudeCodeConfigured({ captureDir, otlpPort, settingsPath })) {
+      log(`claude-code config: already present in ${settingsPath}`);
+    } else {
+      try {
+        log(`claude-code config: ${describeConfigure(configureClaudeCode({ captureDir, otlpPort, settingsPath }))}`);
+      } catch (err) {
+        log(`claude-code config: NOT applied (${(err as Error).message}); run \`pnpm capture:cc:setup\` after fixing it`);
+      }
+    }
+  }
 
   const store = new PostrunStore({ path: dbPath });
   const cc = createClaudeCodeWatcher({ captureDir, store, log });
@@ -69,7 +93,7 @@ async function main(argv: string[]): Promise<number> {
   log(`store: ${dbPath}`);
   cc.start();
   cline.start();
-  log(`claude-code hooks: ${captureDir}/hooks.ndjson (run \`pnpm capture:cc:setup\` if hooks/env are not configured)`);
+  log(`claude-code hooks: ${captureDir}/hooks.ndjson`);
   log(`watching. ctrl-c to stop.`);
 
   let stopping = false;

@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { chmodSync, existsSync, mkdtempSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { locateClineSession } from "../adapters/cline/index.js";
@@ -85,6 +85,27 @@ describe("store (in-memory)", () => {
     expect(full.steps[0]!.error).toBeUndefined();
     expect(store.listSessions({ agent: "nope" })).toEqual([]);
     expect(store.getSession("missing")).toBeUndefined();
+    store.close();
+  });
+});
+
+describe("store on disk", () => {
+  it("creates the directory 0700 and the database, wal, and shm files 0600, and tightens existing wide files", () => {
+    const root = mkdtempSync(join(tmpdir(), "postrun-store-"));
+    const dir = join(root, "data");
+    const path = join(dir, "postrun.db");
+    let store = new PostrunStore({ path });
+    store.ingest(tinyRecord("a", "2026-09-01T00:00:00Z"));
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    for (const suffix of ["", "-wal", "-shm"]) expect(statSync(path + suffix).mode & 0o777).toBe(0o600);
+    store.close();
+    // A pre-existing world-readable store from an older build is tightened on open.
+    chmodSync(path, 0o644);
+    chmodSync(dir, 0o755);
+    store = new PostrunStore({ path });
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(store.listSessions()).toHaveLength(1);
     store.close();
   });
 });

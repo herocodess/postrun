@@ -47,6 +47,8 @@ interface HookLine {
   payload?: { session_id?: string; hook_event_name?: string };
 }
 
+const SAFE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
+
 export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeCodeWatcher {
   const file = join(opts.captureDir, "hooks.ndjson");
   const pollMs = opts.pollMs ?? 1000;
@@ -73,7 +75,7 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
       if (/not found in otlp-logs|no session found/.test(msg)) {
         if (!skipped.has(sessionId)) {
           skipped.add(sessionId);
-          log(`claude-code ${sessionId}: hooks only, no OTel data (launch claude with the capture env from \`pnpm capture:cc:setup\`); skipped`);
+          log(`claude-code ${sessionId}: hooks only, no OTel data (this claude was started before Postrun's env was configured; restart it); skipped`);
         }
       } else {
         log(`claude-code ${sessionId}: ingest failed on ${trigger}: ${msg}`);
@@ -103,7 +105,8 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
     }
     const sid = parsed.payload?.session_id;
     const ev = parsed.payload?.hook_event_name;
-    if (!sid || !ev) return;
+    // Ids and event names come from a file other processes append to; only plain tokens reach logs and lookups.
+    if (!sid || !ev || !SAFE_ID.test(sid) || !SAFE_ID.test(ev)) return;
     const s = seen.get(sid) ?? { ended: false, last_event: ev };
     s.last_event = ev;
     if (ev === "SessionEnd") s.ended = true;

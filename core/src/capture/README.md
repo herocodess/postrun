@@ -3,10 +3,20 @@
 Live capture: records new sessions as they happen and ingests them into the store. Everything binds to 127.0.0.1. Read only on every agent source file; the only writes are the receiver appending its own `otlp-*.ndjson` files and the hook script appending `hooks.ndjson`.
 
 ```bash
-pnpm capture:cc:setup   # print the env + hooks block to merge into ~/.claude/settings.json (never edits it)
-pnpm capture            # OTLP receiver on 127.0.0.1:4318 + both watchers; keeps running
-pnpm capture --once     # ingest whatever is on disk now, then exit
+pnpm capture            # self-configures Claude Code if needed, then OTLP receiver on 127.0.0.1:4318 + both watchers; keeps running
+pnpm capture --once     # ingest whatever is on disk now, then exit (no configuration step)
+pnpm capture:cc:setup   # only the configuration step: merge Postrun's env + hooks into ~/.claude/settings.json
 ```
+
+## Claude Code configuration
+
+`setup.ts` edits `~/.claude/settings.json` (override with `POSTRUN_CLAUDE_SETTINGS`) so that Claude Code exports OTel to the receiver and runs the hook script. Rules:
+
+- The original file is copied to `~/.claude/settings.json.postrun-backup` before the first change, and never again, so the backup stays the true original. Nothing is ever deleted.
+- The merge adds Postrun's env vars and one Postrun hook for each of `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `SessionEnd`. Every other top-level key, env var, hook group, and matcher is carried over unchanged. Postrun's hooks are recognised by their command path (the repo's `capture-hook.sh`, or an earlier Postrun `capture.sh` under a `postrun` directory, since both append to the same `hooks.ndjson`) and updated in place, so running it again changes nothing and never duplicates an entry. A Postrun env key that already holds a different value is replaced and the old value is printed.
+- The write is atomic (temp file plus rename), keeps the file's mode, and the hook script is made executable. If the file is not valid JSON nothing is written and the error names the file. The hook command path is single-quoted when it contains characters the shell would interpret. The retired `OTEL_LOG_RAW_API_BODIES` key is removed when its value points inside `~/.postrun`, because it made Claude Code write every raw API request to disk and Postrun never read them.
+- `pnpm capture` runs the same check on start: already configured means a one-line "already present" and no write; otherwise it configures and prints what it did. `--once` skips this.
+- Claude Code reads `settings.json` only at launch. A session that was already running when the config was written keeps its old settings until it is restarted; it shows up in the watcher log as "hooks only, no OTel data" and is skipped.
 
 ## Claude Code
 
@@ -23,3 +33,7 @@ pnpm capture --once     # ingest whatever is on disk now, then exit
 `POSTRUN_CAPTURE_DIR` (default `~/.postrun/captures`), `POSTRUN_CLINE_DIR` (default `~/.cline/data/sessions`), `POSTRUN_OTLP_PORT` (default 4318), `POSTRUN_DB` (default `~/.postrun/postrun.db`).
 
 The store is opened with a 5s busy timeout so `pnpm capture` (writer) and `pnpm serve` (reader) share the SQLite file; the server re-queries on every request, so new sessions show up without a restart.
+
+## Hardening
+
+The receiver refuses non-loopback `Host` headers (421), caps each export at 32 MB before and after gzip (413 or 400), and only accepts the three signal paths as own properties. The capture directory is created 0700 and every file it writes is 0600; the hook script sets `umask 077` for the same reason. Session ids read from `hooks.ndjson` and from Cline's session directory names must be plain tokens (letters, digits, `_ . -`) before they are used in paths or logs.
