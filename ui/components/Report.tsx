@@ -6,6 +6,7 @@ import { useLiveVersion } from "@/lib/live";
 import type { Step, Turn } from "@postrun/core/schema";
 import type { SessionDetailResponse } from "@postrun/core/server/api";
 import { summarize } from "@/lib/summarize";
+import { ExportPanel } from "@/components/ExportPanel";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: SessionDetailResponse };
 
@@ -28,6 +29,7 @@ export function Report() {
   const params = useSearchParams();
   const id = params.get("id") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [exporting, setExporting] = useState(false);
   // Bumps when this session is written (a running agent, a late hook record) and on reconnect.
   const live = useLiveVersion(id || undefined);
 
@@ -86,6 +88,9 @@ export function Report() {
             <span className={`badge ${summary.agent.kind === "cline" ? "cline" : "cc"}`}>{summary.agent.kind}</span>
             <span className="title">{firstLine(summary.title, 140) || summary.id}</span>
             <span className="ver">v{summary.agent.version}</span>
+            <button type="button" className="btn" onClick={() => setExporting((v) => !v)} aria-expanded={exporting}>
+              Export report
+            </button>
           </div>
 
           <div className="stats">
@@ -130,6 +135,8 @@ export function Report() {
           </div>
         </div>
       </div>
+
+      {exporting && <ExportPanel sessionId={summary.id} onClose={() => setExporting(false)} />}
 
       {/* FILES TOUCHED */}
       <div className="sec">

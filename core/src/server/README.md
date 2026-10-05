@@ -15,6 +15,7 @@ Routes:
 - `GET /api/sessions[?agent=<kind>]` returns `{ sessions, agents }`, newest first. Counts, title, and flag count are projected on read.
 - `GET /api/sessions/:id` returns the full session (summary, segments, actors, turns, steps) plus `report` (files touched, commands run).
 - `GET /api/events[?session=<id>]` is a live stream (server-sent events) of which sessions changed (below).
+- `GET /api/sessions/:id/export` downloads the redacted HTML report (`content-disposition: attachment`, `content-security-policy: sandbox`); `GET /api/sessions/:id/export/review` returns what it would mask, for the UI to show first. See `core/src/export` and `core/src/redact`.
 - `POST /api/ingest` accepts one v1.2 batch from an adapter (see below). The only write route.
 - `GET /` and other paths serve the static Next export from `ui/out`; extensionless paths map to `<name>.html`.
 

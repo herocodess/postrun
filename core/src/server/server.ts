@@ -9,6 +9,8 @@
  *
  *   GET  /api/sessions[?agent=kind]  history list, newest first
  *   GET  /api/sessions/:id           one full session plus report projections
+ *   GET  /api/sessions/:id/export    redacted, self-contained HTML report (download)
+ *   GET  /api/sessions/:id/export/review   what that export would mask, as JSON
  *   POST /api/ingest                 push a v1.2 batch (bearer token; see ingest.ts, token.ts)
  *   GET  /api/events[?session=id]    live change stream, server-sent events (see live.ts)
  *   GET  /                           the built UI (ui/out)
@@ -18,10 +20,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, resolve, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { exportSession } from "../export/index.js";
 import { sessionReport } from "../report/index.js";
 import { PostrunStore } from "../store/index.js";
 import { isLoopbackHost } from "../util/host.js";
-import type { ApiError, IngestErrorResponse, IngestResponse, SessionDetailResponse, SessionListResponse } from "./api.js";
+import type { ApiError, ExportReviewResponse, IngestErrorResponse, IngestResponse, SessionDetailResponse, SessionListResponse } from "./api.js";
 import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
 import { LiveFeed, SSE_HEADERS, type LiveFeedOptions } from "./live.js";
 import { bearerMatches, loadOrCreateToken } from "./token.js";
@@ -223,6 +226,33 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
     }
     const body: SessionDetailResponse = { ...session, report: sessionReport(session.steps) };
     json(res, 200, body);
+    return;
+  }
+
+  const ex = /^\/api\/sessions\/([^/]+)\/export(\/review)?$/.exec(url.pathname);
+  if (ex) {
+    const id = decodeURIComponent(ex[1] as string);
+    const session = store.getSession(id);
+    if (!session) {
+      json(res, 404, { error: `session ${id} not found` } satisfies ApiError);
+      return;
+    }
+    const result = exportSession(session);
+    if (ex[2]) {
+      const body: ExportReviewResponse = { filename: result.filename, bytes: Buffer.byteLength(result.html), redaction: result.redaction };
+      json(res, 200, body);
+      return;
+    }
+    const html = Buffer.from(result.html, "utf8");
+    res.writeHead(200, {
+      ...BASE_HEADERS,
+      "content-type": "text/html; charset=utf-8",
+      "content-length": html.byteLength,
+      // A download, never rendered from this origin: the file is meant to be opened elsewhere.
+      "content-disposition": `attachment; filename="${result.filename}"`,
+      "content-security-policy": "sandbox",
+    });
+    res.end(method === "HEAD" ? undefined : html);
     return;
   }
 

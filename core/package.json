@@ -43,6 +43,10 @@
     "./capture": {
       "types": "./src/capture/index.ts",
       "default": "./dist/capture/index.js"
+    },
+    "./export": {
+      "types": "./src/export/index.ts",
+      "default": "./dist/export/index.js"
     }
   },
   "scripts": {
@@ -58,7 +62,8 @@
     "capture": "tsx src/capture/cli.ts",
     "capture:cc:setup": "tsx src/capture/cli.ts setup",
     "serve": "tsx src/server/cli.ts",
-    "start": "node dist/server/cli.js"
+    "start": "node dist/server/cli.js",
+    "export": "tsx src/export/cli.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
