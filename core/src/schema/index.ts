@@ -29,3 +29,16 @@ export type {
   ContentStatus,
   StepError,
 } from "./types.js";
+
+export {
+  validateStep,
+  validateSteps,
+  validateTurn,
+  validateActor,
+  validateSegment,
+  EVENT_SCHEMA_VERSION,
+  STEP_TYPES,
+  CONTENT_STATUSES,
+  FLAG_SEVERITIES,
+} from "./validate.js";
+export type { ValidationError, ValidationResult } from "./validate.js";
