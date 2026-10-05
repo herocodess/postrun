@@ -102,6 +102,17 @@ body {
   animation: pulse 2s infinite;
 }
 
+.live[data-status="connecting"] .led {
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
+}
+
+.live[data-status="offline"] .led {
+  background: var(--text-muted);
+  box-shadow: none;
+  animation: none;
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.45;

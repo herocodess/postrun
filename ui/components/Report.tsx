@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useLiveVersion } from "@/lib/live";
 import type { Step, Turn } from "@postrun/core/schema";
 import type { SessionDetailResponse } from "@postrun/core/server/api";
 import { summarize } from "@/lib/summarize";
@@ -27,6 +28,8 @@ export function Report() {
   const params = useSearchParams();
   const id = params.get("id") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
+  // Bumps when this session is written (a running agent, a late hook record) and on reconnect.
+  const live = useLiveVersion(id || undefined);
 
   useEffect(() => {
     if (!id) {
@@ -43,12 +46,13 @@ export function Report() {
         if (!cancelled) setState({ kind: "ready", data });
       })
       .catch((err: unknown) => {
-        if (!cancelled) setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+        // A failed live refetch keeps what is on screen; the top bar already shows the server is offline.
+        if (!cancelled) setState((prev) => (prev.kind === "ready" && prev.data.summary.id === id ? prev : { kind: "error", message: err instanceof Error ? err.message : String(err) }));
       });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, live]);
 
   if (state.kind === "loading") return <p>Loading…</p>;
   if (state.kind === "error") return <p className="error">Could not load session: {state.message}</p>;

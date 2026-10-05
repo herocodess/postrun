@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { TopBar } from "@/components/TopBar";
+import { LiveProvider } from "@/lib/live";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,8 +15,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <TopBar port={port} />
-        <div className="wrap">{children}</div>
+        <LiveProvider>
+          <TopBar port={port} />
+          <div className="wrap">{children}</div>
+        </LiveProvider>
       </body>
     </html>
   );

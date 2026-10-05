@@ -475,6 +475,24 @@ export class PostrunStore {
     return { summary, segments, actors, turns, steps };
   }
 
+  /**
+   * Sessions whose row changed at or after a timestamp, oldest first. Every
+   * write path (ingest, appendBatch) bumps sessions.updated_at in the same
+   * transaction as the children, so this sees writes from any process.
+   */
+  changedSince(since: string): Array<{ id: string; updated_at: string }> {
+    return this.db.prepare("SELECT id, updated_at FROM sessions WHERE updated_at >= ? ORDER BY updated_at, id").all(since) as Array<{
+      id: string;
+      updated_at: string;
+    }>;
+  }
+
+  /** Latest updated_at across all sessions, or undefined for an empty store. */
+  lastUpdatedAt(): string | undefined {
+    const row = this.db.prepare("SELECT max(updated_at) AS m FROM sessions").get() as { m: string | null };
+    return row.m ?? undefined;
+  }
+
   /** Projected step counts by type for one session. */
   stepCounts(id: string): Record<string, number> {
     const rows = this.db.prepare("SELECT type, count(*) AS n FROM steps WHERE session_id = ? GROUP BY type").all(id) as Array<{ type: string; n: number }>;

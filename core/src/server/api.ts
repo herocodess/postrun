@@ -5,10 +5,12 @@
  *   GET /api/sessions/:id              -> SessionDetailResponse | ApiError (404)
  *   POST /api/ingest  IngestRequest    -> IngestResponse (201 created, 200 updated)
  *                                         | IngestErrorResponse (400, 401, 409, 413, 415)
+ *   GET /api/events[?session=<id>]     -> text/event-stream of LiveChange (see live.ts)
  */
 
 import type { SessionReport } from "../report/index.js";
 import type { Actor, SessionSegment, Step, Turn, ValidationError } from "../schema/index.js";
+export type { LiveChange } from "./live.js";
 import type { IngestResult, SessionHeader, SessionSummary, StoredSession } from "../store/types.js";
 
 export interface SessionListResponse {

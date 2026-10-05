@@ -32,7 +32,7 @@ pnpm test                        # both packages
 pnpm build                       # both packages
 ```
 
-Adapters outside core can also push v1.2 batches to `POST /api/ingest` with the bearer token in `~/.postrun/ingest-token` (created on first serve); see `core/src/server/README.md`.
+Adapters outside core can also push v1.2 batches to `POST /api/ingest` with the bearer token in `~/.postrun/ingest-token` (created on first serve); see `core/src/server/README.md`. The UI updates live as sessions are written, through `GET /api/events`.
 
 Sessions are stored in `~/.postrun/postrun.db` (SQLite, override with `POSTRUN_DB` or `--db`). The server reads the store; it never runs adapters. Port precedence: `--port` flag, then `PORT` env, then 1234. It binds to 127.0.0.1 only.
 

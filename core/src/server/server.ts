@@ -10,6 +10,7 @@
  *   GET  /api/sessions[?agent=kind]  history list, newest first
  *   GET  /api/sessions/:id           one full session plus report projections
  *   POST /api/ingest                 push a v1.2 batch (bearer token; see ingest.ts, token.ts)
+ *   GET  /api/events[?session=id]    live change stream, server-sent events (see live.ts)
  *   GET  /                           the built UI (ui/out)
  */
 
@@ -22,6 +23,7 @@ import { PostrunStore } from "../store/index.js";
 import { isLoopbackHost } from "../util/host.js";
 import type { ApiError, IngestErrorResponse, IngestResponse, SessionDetailResponse, SessionListResponse } from "./api.js";
 import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
+import { LiveFeed, SSE_HEADERS, type LiveFeedOptions } from "./live.js";
 import { bearerMatches, loadOrCreateToken } from "./token.js";
 
 /** Sent on every response. No CORS headers are ever set: only same-origin pages may read the API. */
@@ -45,11 +47,14 @@ export interface ServerOptions {
   dbPath?: string;
   /** Bearer token for POST /api/ingest. Default: read or create ~/.postrun/ingest-token. */
   ingestToken?: string;
+  /** Live feed tuning (poll interval, heartbeat, client cap). Tests shorten these. */
+  live?: LiveFeedOptions;
 }
 
 export interface PostrunServer {
   server: Server;
   store: PostrunStore;
+  live: LiveFeed;
   /** Resolves with the bound port once listening. Rejects with a friendly Error on EADDRINUSE. */
   start(): Promise<{ host: string; port: number; url: string }>;
   stop(): Promise<void>;
@@ -82,10 +87,11 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
   const store = opts.store ?? new PostrunStore(opts.dbPath !== undefined ? { path: opts.dbPath } : {});
   const uiRoot = resolve(opts.uiDir);
   const ingestToken = opts.ingestToken ?? loadOrCreateToken();
+  const live = new LiveFeed(store, opts.live);
 
   const server = createServer((req, res) => {
     Promise.resolve()
-      .then(() => handle(req, res, store, uiRoot, ingestToken))
+      .then(() => handle(req, res, { store, uiRoot, ingestToken, live }))
       .catch((err: unknown) => {
         // Never echo internal error text (paths, SQL) to the client.
         process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
@@ -117,14 +123,17 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
 
   const stop = () =>
     new Promise<void>((resolvePromise, reject) => {
+      // Event streams never end on their own; close them so server.close() can finish.
+      live.close();
       server.close((err) => {
         if (ownsStore) store.close();
         if (err) reject(err);
         else resolvePromise();
       });
+      server.closeIdleConnections();
     });
 
-  return { server, store, start, stop };
+  return { server, store, live, start, stop };
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -137,7 +146,15 @@ function text(res: ServerResponse, status: number, body: string, extra: Record<s
   res.end(body);
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse, store: PostrunStore, uiRoot: string, ingestToken: string): Promise<void> {
+interface Ctx {
+  store: PostrunStore;
+  uiRoot: string;
+  ingestToken: string;
+  live: LiveFeed;
+}
+
+async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
+  const { store, uiRoot } = ctx;
   const method = req.method ?? "GET";
 
   // DNS rebinding guard: the socket is loopback, the Host header must be too.
@@ -161,12 +178,28 @@ async function handle(req: IncomingMessage, res: ServerResponse, store: PostrunS
       text(res, 405, "method not allowed\n", { allow: "POST" });
       return;
     }
-    await handleIngest(req, res, store, ingestToken);
+    await handleIngest(req, res, ctx);
     return;
   }
 
   if (method !== "GET" && method !== "HEAD") {
     text(res, 405, "method not allowed\n", { allow: "GET, HEAD" });
+    return;
+  }
+
+  if (url.pathname === "/api/events") {
+    const session = url.searchParams.get("session") ?? undefined;
+    if (ctx.live.clientCount >= ctx.live.maxClients) {
+      json(res, 503, { error: "too many live connections" });
+      return;
+    }
+    res.writeHead(200, { ...BASE_HEADERS, ...SSE_HEADERS });
+    if (method === "HEAD") {
+      res.end();
+      return;
+    }
+    res.flushHeaders();
+    ctx.live.attach(res, session);
     return;
   }
 
@@ -201,7 +234,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, store: PostrunS
   serveStatic(url.pathname, res, uiRoot, method === "HEAD");
 }
 
-async function handleIngest(req: IncomingMessage, res: ServerResponse, store: PostrunStore, token: string): Promise<void> {
+async function handleIngest(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
+  const { store, ingestToken: token } = ctx;
   const fail = (status: number, body: IngestErrorResponse, extra: Record<string, string> = {}) => {
     res.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json; charset=utf-8", ...extra });
     res.end(JSON.stringify(body));
@@ -268,6 +302,7 @@ async function handleIngest(req: IncomingMessage, res: ServerResponse, store: Po
   }
   const result: IngestResponse = store.appendBatch(checked.batch);
   json(res, result.created ? 201 : 200, result);
+  ctx.live.nudge();
 }
 
 /** Read a request body up to max bytes. Resolves "too_large" as soon as the limit is crossed. */

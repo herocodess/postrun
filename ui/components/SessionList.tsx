@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useLiveVersion } from "@/lib/live";
 import type { SessionListResponse } from "@postrun/core/server/api";
 import type { SessionSummary } from "@postrun/core/store";
 
@@ -76,6 +77,8 @@ export function SessionList() {
   const router = useRouter();
   const agent = params.get("agent") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
+  // Bumps on any session write and on reconnect: the list refetches in place.
+  const live = useLiveVersion();
 
   useEffect(() => {
     let cancelled = false;
@@ -89,12 +92,13 @@ export function SessionList() {
         if (!cancelled) setState({ kind: "ready", data });
       })
       .catch((err: unknown) => {
-        if (!cancelled) setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+        // A failed live refetch keeps what is on screen; the top bar already shows the server is offline.
+        if (!cancelled) setState((prev) => (prev.kind === "ready" ? prev : { kind: "error", message: err instanceof Error ? err.message : String(err) }));
       });
     return () => {
       cancelled = true;
     };
-  }, [agent]);
+  }, [agent, live]);
 
   if (state.kind === "loading") return <p>Loading…</p>;
   if (state.kind === "error")
