@@ -8,6 +8,37 @@ importers:
 
   .: {}
 
+  apps/ui:
+    dependencies:
+      next:
+        specifier: ^16.3.4
+        version: 16.3.4(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@postrun/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.7
+        version: 19.2.7(@types/react@19.2.18)
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+      vitest:
+        specifier: ^1.0.4
+        version: 1.6.1(@types/node@20.19.43)(@vitest/ui@1.6.1)
+
   apps/web:
     dependencies:
       geist:
@@ -54,37 +85,6 @@ importers:
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
-      typescript:
-        specifier: ^5.3.3
-        version: 5.9.3
-      vitest:
-        specifier: ^1.0.4
-        version: 1.6.1(@types/node@20.19.43)(@vitest/ui@1.6.1)
-
-  ui:
-    dependencies:
-      next:
-        specifier: ^16.3.4
-        version: 16.3.4(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react:
-        specifier: ^19.2.8
-        version: 19.2.8
-      react-dom:
-        specifier: ^19.2.8
-        version: 19.2.8(react@19.2.8)
-    devDependencies:
-      '@postrun/core':
-        specifier: workspace:*
-        version: link:../core
-      '@types/node':
-        specifier: ^20.10.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.2.18
-        version: 19.2.18
-      '@types/react-dom':
-        specifier: ^19.2.7
-        version: 19.2.7(@types/react@19.2.18)
       typescript:
         specifier: ^5.3.3
         version: 5.9.3

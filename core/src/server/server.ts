@@ -13,7 +13,7 @@
  *   GET  /api/sessions/:id/export/review   what that export would mask, as JSON
  *   POST /api/ingest                 push a v1.2 batch (bearer token; see ingest.ts, token.ts)
  *   GET  /api/events[?session=id]    live change stream, server-sent events (see live.ts)
- *   GET  /                           the built UI (ui/out)
+ *   GET  /                           the built UI (apps/ui/out)
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";

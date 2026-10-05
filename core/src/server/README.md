@@ -17,7 +17,7 @@ Routes:
 - `GET /api/events[?session=<id>]` is a live stream (server-sent events) of which sessions changed (below).
 - `GET /api/sessions/:id/export` downloads the redacted HTML report (`content-disposition: attachment`, `content-security-policy: sandbox`); `GET /api/sessions/:id/export/review` returns what it would mask, for the UI to show first. See `core/src/export` and `core/src/redact`.
 - `POST /api/ingest` accepts one v1.2 batch from an adapter (see below). The only write route.
-- `GET /` and other paths serve the static Next export from `ui/out`; extensionless paths map to `<name>.html`.
+- `GET /` and other paths serve the static Next export from `apps/ui/out`; extensionless paths map to `<name>.html`.
 
 If the port is taken, it exits with a message naming the port and the `--port` / `PORT` overrides. Read routes have no auth and nothing has rate limiting, because the server is never network-reachable. The ingest route needs a bearer token.
 
@@ -73,4 +73,4 @@ data: {"session_id":"3ac04cde-...","updated_at":"2026-10-05T22:14:03.512Z"}
 - **No replay.** `ready` arrives on every connect and reconnect, and clients should refetch on it. Changes made while disconnected are covered by that refetch.
 - **Limits.** 32 simultaneous streams (503 beyond that), a comment line every 15 s to keep idle connections open, and all streams end when the server stops. Same Host check and no CORS headers as every other route, so other sites cannot read it.
 
-The UI opens one stream per tab (`ui/lib/live.tsx`). The top bar pill shows `live`, `connecting`, or `server offline` from that connection, and the session list and session view refetch in place.
+The UI opens one stream per tab (`apps/ui/lib/live.tsx`). The top bar pill shows `live`, `connecting`, or `server offline` from that connection, and the session list and session view refetch in place.

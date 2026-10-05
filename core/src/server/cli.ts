@@ -20,7 +20,7 @@ interface Args {
 function defaultUiDir(): string {
   // This file runs from core/src/server (tsx) or core/dist/server (node); both are three levels below the repo root.
   const here = dirname(fileURLToPath(import.meta.url));
-  return resolve(here, "..", "..", "..", "ui", "out");
+  return resolve(here, "..", "..", "..", "apps", "ui", "out");
 }
 
 function parseArgs(argv: string[], env: NodeJS.ProcessEnv): Args {
@@ -45,7 +45,7 @@ function parseArgs(argv: string[], env: NodeJS.ProcessEnv): Args {
         `usage: pnpm serve [--port <n>] [--db <path>] [--ui <dir>]\n` +
           `  --port  port on 127.0.0.1 (flag > PORT env > ${DEFAULT_PORT})\n` +
           `  --db    SQLite store (flag > POSTRUN_DB env > ~/.postrun/postrun.db)\n` +
-          `  --ui    built UI directory (default <repo>/ui/out)\n` +
+          `  --ui    built UI directory (default <repo>/apps/ui/out)\n` +
           `Adapters can push v1.2 batches to POST /api/ingest with the token in\n` +
           `POSTRUN_INGEST_TOKEN_FILE or ~/.postrun/ingest-token (created on first run).\n` +
           `Ingest sessions first: pnpm ingest --agent claude-code|cline <source>\n`,

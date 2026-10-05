@@ -1,4 +1,4 @@
-/* postrun.app: tokens match the session app (ui/) so site and product read as one. */
+/* postrun.app: tokens match the session app (apps/ui) so site and product read as one. */
 :root {
   --bg: #08090c;
   --bg-2: #0b0d11;

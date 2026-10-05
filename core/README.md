@@ -9,7 +9,7 @@ src/
   adapters/cline/       ~/.cline/data/sessions/<id> -> Step[], Turn[] with plan/act mode, one root actor (read only)
   store/                SQLite store (better-sqlite3): ingest adapter output idempotently, list and load sessions
   report/               read projections: files touched, commands run
-  server/               localhost-only HTTP server over the store: GET /api/sessions, GET /api/sessions/:id, GET / (ui/out)
+  server/               localhost-only HTTP server over the store: GET /api/sessions, GET /api/sessions/:id, GET / (apps/ui/out)
   capture/              later
   ai/                   later
   index.ts              public surface
