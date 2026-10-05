@@ -20,7 +20,7 @@ import { ensurePrivateDir, ensurePrivateFile } from "../util/files.js";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import type { Actor, AgentInfo, SessionSegment, Step, Turn, Verdict, Workspace } from "../schema/index.js";
-import type { IngestResult, SessionMetrics, SessionRecord, SessionSummary, StoreCounts, StoredSession } from "./types.js";
+import type { IngestResult, SessionBatch, SessionMetrics, SessionRecord, SessionRefs, SessionSummary, StoreCounts, StoredSession } from "./types.js";
 
 export const LOCAL_OWNER_ID = "local";
 export const SCHEMA_VERSION = 1;
@@ -267,46 +267,136 @@ export class PostrunStore {
           updated_at: now,
         });
 
-      const seg = this.db.prepare(
-        `INSERT INTO segments (session_id, idx, start_reason, started_at, ended_at, source_files)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(session_id, idx) DO UPDATE SET start_reason = excluded.start_reason, started_at = excluded.started_at,
-           ended_at = excluded.ended_at, source_files = excluded.source_files`,
-      );
-      for (const g of r.segments) seg.run(r.id, g.index, g.start_reason, g.started_at, g.ended_at ?? null, JSON.stringify(g.source_files));
-
-      const act = this.db.prepare(
-        `INSERT INTO actors (session_id, id, parent_id, type, label) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(session_id, id) DO UPDATE SET parent_id = excluded.parent_id, type = excluded.type, label = excluded.label`,
-      );
-      for (const a of r.actors) act.run(r.id, a.id, a.parent_id ?? null, a.type, a.label ?? null);
-
-      const turn = this.db.prepare(
-        `INSERT INTO turns (session_id, id, segment_index, actor_id, idx, prompt_id, mode, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(session_id, id) DO UPDATE SET segment_index = excluded.segment_index, actor_id = excluded.actor_id, idx = excluded.idx,
-           prompt_id = excluded.prompt_id, mode = excluded.mode, started_at = excluded.started_at`,
-      );
-      for (const t of r.turns) turn.run(r.id, t.id, t.segment_index, t.actor_id, t.index, t.prompt_id ?? null, t.mode ?? null, t.started_at);
-
-      const step = this.db.prepare(
-        `INSERT INTO steps (session_id, id, segment_index, turn_id, actor_id, seq, at, type, decision, outcome, content_status,
-           error_type, error_message, channels, payload, flags)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(session_id, id) DO UPDATE SET segment_index = excluded.segment_index, turn_id = excluded.turn_id,
-           actor_id = excluded.actor_id, seq = excluded.seq, at = excluded.at, type = excluded.type, decision = excluded.decision,
-           outcome = excluded.outcome, content_status = excluded.content_status, error_type = excluded.error_type,
-           error_message = excluded.error_message, channels = excluded.channels, payload = excluded.payload, flags = excluded.flags`,
-      );
-      for (const s of r.steps) {
-        step.run(
-          r.id, s.id, s.segment_index, s.turn_id, s.actor_id, s.seq, s.at, s.type, s.decision, s.outcome, s.content_status,
-          s.error?.type ?? null, s.error?.message ?? null, JSON.stringify(s.channels), JSON.stringify(s.payload), JSON.stringify(s.flags),
-        );
-      }
+      this.writeChildren(r.id, r);
 
       return { session_id: r.id, created: !existing, steps: r.steps.length, turns: r.turns.length, segments: r.segments.length, actors: r.actors.length };
     });
     return run(record);
+  }
+
+  // ---- push ingest ------------------------------------------------------------
+
+  /**
+   * Merge one pushed batch into a session, creating the session on first push.
+   *
+   * Unlike ingest(), which replaces a whole session from a capture, a batch is
+   * incremental: children are upserted by key and nothing is deleted. On an
+   * existing session, ended_at, source, and metrics change only when the batch
+   * carries them, so a batch of steps never zeroes the cost or reopens a
+   * finished session. The verdict is never touched by a push.
+   */
+  appendBatch(b: SessionBatch): IngestResult {
+    const now = new Date().toISOString();
+    const run = this.db.transaction((batch: SessionBatch): IngestResult => {
+      const h = batch.session;
+      const existing = this.db.prepare("SELECT ingested_at FROM sessions WHERE id = ?").get(h.id) as { ingested_at: string } | undefined;
+      const m = h.metrics;
+      this.db
+        .prepare(
+          `INSERT INTO sessions (id, owner_id, captured_on, agent_kind, agent_version, agent_format_version, workspace_root, workspace_repo,
+             started_at, ended_at, source, cost_usd, api_requests, tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation,
+             ingested_at, updated_at)
+           VALUES (@id, @owner_id, @captured_on, @agent_kind, @agent_version, @agent_format_version, @workspace_root, @workspace_repo,
+             @started_at, @ended_at, @source, coalesce(@cost_usd, 0), coalesce(@api_requests, 0), coalesce(@tokens_input, 0),
+             coalesce(@tokens_output, 0), coalesce(@tokens_cache_read, 0), coalesce(@tokens_cache_creation, 0), @now, @now)
+           ON CONFLICT(id) DO UPDATE SET
+             agent_kind = excluded.agent_kind, agent_version = excluded.agent_version,
+             agent_format_version = coalesce(@agent_format_version, sessions.agent_format_version),
+             workspace_root = excluded.workspace_root, workspace_repo = coalesce(@workspace_repo, sessions.workspace_repo),
+             started_at = excluded.started_at,
+             ended_at = coalesce(@ended_at, sessions.ended_at),
+             source = coalesce(@source_given, sessions.source),
+             cost_usd = coalesce(@cost_usd, sessions.cost_usd), api_requests = coalesce(@api_requests, sessions.api_requests),
+             tokens_input = coalesce(@tokens_input, sessions.tokens_input), tokens_output = coalesce(@tokens_output, sessions.tokens_output),
+             tokens_cache_read = coalesce(@tokens_cache_read, sessions.tokens_cache_read),
+             tokens_cache_creation = coalesce(@tokens_cache_creation, sessions.tokens_cache_creation),
+             updated_at = @now`,
+        )
+        .run({
+          id: h.id,
+          owner_id: this.ownerId,
+          captured_on: this.capturedOn,
+          agent_kind: h.agent.kind,
+          agent_version: h.agent.version,
+          agent_format_version: h.agent.format_version ?? null,
+          workspace_root: h.workspace.root,
+          workspace_repo: h.workspace.repo ?? null,
+          started_at: h.started_at,
+          ended_at: h.ended_at ?? null,
+          source: h.source ?? `push:${h.agent.kind}`,
+          source_given: h.source ?? null,
+          cost_usd: m?.cost_usd ?? null,
+          api_requests: m?.api_requests ?? null,
+          tokens_input: m?.tokens.input ?? null,
+          tokens_output: m?.tokens.output ?? null,
+          tokens_cache_read: m?.tokens.cache_read ?? null,
+          tokens_cache_creation: m?.tokens.cache_creation ?? null,
+          now,
+        });
+      this.writeChildren(h.id, batch);
+      return {
+        session_id: h.id,
+        created: !existing,
+        steps: batch.steps.length,
+        turns: batch.turns.length,
+        segments: batch.segments.length,
+        actors: batch.actors.length,
+      };
+    });
+    return run(b);
+  }
+
+  /** What a session already holds, for checking a pushed batch's references before it is written. */
+  sessionRefs(id: string): SessionRefs {
+    const ids = (sql: string) => (this.db.prepare(sql).all(id) as Array<{ v: string | number }>).map((r) => r.v);
+    return {
+      exists: this.db.prepare("SELECT 1 FROM sessions WHERE id = ?").get(id) !== undefined,
+      segments: new Set(ids("SELECT idx AS v FROM segments WHERE session_id = ?") as number[]),
+      actors: new Set(ids("SELECT id AS v FROM actors WHERE session_id = ?") as string[]),
+      turns: new Set(ids("SELECT id AS v FROM turns WHERE session_id = ?") as string[]),
+      stepIdBySeq: new Map(
+        (this.db.prepare("SELECT seq, id FROM steps WHERE session_id = ?").all(id) as Array<{ seq: number; id: string }>).map((r) => [r.seq, r.id]),
+      ),
+    };
+  }
+
+  private writeChildren(sessionId: string, c: Pick<SessionRecord, "segments" | "actors" | "turns" | "steps">): void {
+    const seg = this.db.prepare(
+      `INSERT INTO segments (session_id, idx, start_reason, started_at, ended_at, source_files)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, idx) DO UPDATE SET start_reason = excluded.start_reason, started_at = excluded.started_at,
+         ended_at = excluded.ended_at, source_files = excluded.source_files`,
+    );
+    for (const g of c.segments) seg.run(sessionId, g.index, g.start_reason, g.started_at, g.ended_at ?? null, JSON.stringify(g.source_files));
+
+    const act = this.db.prepare(
+      `INSERT INTO actors (session_id, id, parent_id, type, label) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, id) DO UPDATE SET parent_id = excluded.parent_id, type = excluded.type, label = excluded.label`,
+    );
+    for (const a of c.actors) act.run(sessionId, a.id, a.parent_id ?? null, a.type, a.label ?? null);
+
+    const turn = this.db.prepare(
+      `INSERT INTO turns (session_id, id, segment_index, actor_id, idx, prompt_id, mode, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, id) DO UPDATE SET segment_index = excluded.segment_index, actor_id = excluded.actor_id, idx = excluded.idx,
+         prompt_id = excluded.prompt_id, mode = excluded.mode, started_at = excluded.started_at`,
+    );
+    for (const t of c.turns) turn.run(sessionId, t.id, t.segment_index, t.actor_id, t.index, t.prompt_id ?? null, t.mode ?? null, t.started_at);
+
+    const step = this.db.prepare(
+      `INSERT INTO steps (session_id, id, segment_index, turn_id, actor_id, seq, at, type, decision, outcome, content_status,
+         error_type, error_message, channels, payload, flags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, id) DO UPDATE SET segment_index = excluded.segment_index, turn_id = excluded.turn_id,
+         actor_id = excluded.actor_id, seq = excluded.seq, at = excluded.at, type = excluded.type, decision = excluded.decision,
+         outcome = excluded.outcome, content_status = excluded.content_status, error_type = excluded.error_type,
+         error_message = excluded.error_message, channels = excluded.channels, payload = excluded.payload, flags = excluded.flags`,
+    );
+    for (const s of c.steps) {
+      step.run(
+        sessionId, s.id, s.segment_index, s.turn_id, s.actor_id, s.seq, s.at, s.type, s.decision, s.outcome, s.content_status,
+        s.error?.type ?? null, s.error?.message ?? null, JSON.stringify(s.channels), JSON.stringify(s.payload), JSON.stringify(s.flags),
+      );
+    }
   }
 
   // ---- query ----------------------------------------------------------------

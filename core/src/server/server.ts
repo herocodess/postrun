@@ -7,18 +7,22 @@
  * Reads from the SQLite store; it never runs adapters. Ingest first with
  * `pnpm ingest`.
  *
- *   GET /api/sessions[?agent=kind]   history list, newest first
- *   GET /api/sessions/:id            one full session plus report projections
- *   GET /                            the built UI (ui/out)
+ *   GET  /api/sessions[?agent=kind]  history list, newest first
+ *   GET  /api/sessions/:id           one full session plus report projections
+ *   POST /api/ingest                 push a v1.2 batch (bearer token; see ingest.ts, token.ts)
+ *   GET  /                           the built UI (ui/out)
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, resolve, sep } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { sessionReport } from "../report/index.js";
 import { PostrunStore } from "../store/index.js";
 import { isLoopbackHost } from "../util/host.js";
-import type { ApiError, SessionDetailResponse, SessionListResponse } from "./api.js";
+import type { ApiError, IngestErrorResponse, IngestResponse, SessionDetailResponse, SessionListResponse } from "./api.js";
+import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
+import { bearerMatches, loadOrCreateToken } from "./token.js";
 
 /** Sent on every response. No CORS headers are ever set: only same-origin pages may read the API. */
 const BASE_HEADERS = {
@@ -39,6 +43,8 @@ export interface ServerOptions {
   store?: PostrunStore;
   /** SQLite file to open when no store is given. Default ~/.postrun/postrun.db. Closed by stop(). */
   dbPath?: string;
+  /** Bearer token for POST /api/ingest. Default: read or create ~/.postrun/ingest-token. */
+  ingestToken?: string;
 }
 
 export interface PostrunServer {
@@ -75,15 +81,17 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
   const ownsStore = !opts.store;
   const store = opts.store ?? new PostrunStore(opts.dbPath !== undefined ? { path: opts.dbPath } : {});
   const uiRoot = resolve(opts.uiDir);
+  const ingestToken = opts.ingestToken ?? loadOrCreateToken();
 
   const server = createServer((req, res) => {
-    try {
-      handle(req, res, store, uiRoot);
-    } catch (err) {
-      // Never echo internal error text (paths, SQL) to the client.
-      process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
-      json(res, 500, { error: "internal error" });
-    }
+    Promise.resolve()
+      .then(() => handle(req, res, store, uiRoot, ingestToken))
+      .catch((err: unknown) => {
+        // Never echo internal error text (paths, SQL) to the client.
+        process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
+        if (!res.headersSent) json(res, 500, { error: "internal error" });
+        else res.destroy();
+      });
   });
 
   const start = () =>
@@ -129,17 +137,12 @@ function text(res: ServerResponse, status: number, body: string, extra: Record<s
   res.end(body);
 }
 
-function handle(req: IncomingMessage, res: ServerResponse, store: PostrunStore, uiRoot: string): void {
+async function handle(req: IncomingMessage, res: ServerResponse, store: PostrunStore, uiRoot: string, ingestToken: string): Promise<void> {
   const method = req.method ?? "GET";
 
   // DNS rebinding guard: the socket is loopback, the Host header must be too.
   if (!isLoopbackHost(req.headers.host)) {
     text(res, 421, "misdirected request: this server only answers to 127.0.0.1 or localhost\n");
-    return;
-  }
-
-  if (method !== "GET" && method !== "HEAD") {
-    text(res, 405, "method not allowed\n", { allow: "GET, HEAD" });
     return;
   }
 
@@ -149,6 +152,21 @@ function handle(req: IncomingMessage, res: ServerResponse, store: PostrunStore, 
     decodeURIComponent(url.pathname); // malformed percent-encoding is a client error, not a 500
   } catch {
     text(res, 400, "bad request\n");
+    return;
+  }
+
+  // The one write route. Everything else is read-only.
+  if (url.pathname === "/api/ingest") {
+    if (method !== "POST") {
+      text(res, 405, "method not allowed\n", { allow: "POST" });
+      return;
+    }
+    await handleIngest(req, res, store, ingestToken);
+    return;
+  }
+
+  if (method !== "GET" && method !== "HEAD") {
+    text(res, 405, "method not allowed\n", { allow: "GET, HEAD" });
     return;
   }
 
@@ -181,6 +199,106 @@ function handle(req: IncomingMessage, res: ServerResponse, store: PostrunStore, 
   }
 
   serveStatic(url.pathname, res, uiRoot, method === "HEAD");
+}
+
+async function handleIngest(req: IncomingMessage, res: ServerResponse, store: PostrunStore, token: string): Promise<void> {
+  const fail = (status: number, body: IngestErrorResponse, extra: Record<string, string> = {}) => {
+    res.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json; charset=utf-8", ...extra });
+    res.end(JSON.stringify(body));
+  };
+
+  // Auth first, so an unauthenticated caller never gets the body parsed.
+  if (!bearerMatches(req.headers.authorization, token)) {
+    req.resume();
+    fail(401, { error: "missing or invalid bearer token (see ~/.postrun/ingest-token)" }, { "www-authenticate": 'Bearer realm="postrun"' });
+    return;
+  }
+  const ct = req.headers["content-type"] ?? "";
+  if (!/^application\/json\s*(;|$)/i.test(ct)) {
+    req.resume();
+    fail(415, { error: `content-type must be application/json, got ${ct || "none"}` });
+    return;
+  }
+  const encoding = (req.headers["content-encoding"] ?? "identity").toLowerCase();
+  if (encoding !== "identity" && encoding !== "gzip") {
+    req.resume();
+    fail(415, { error: `unsupported content-encoding ${encoding}; use gzip or none` });
+    return;
+  }
+  if (Number(req.headers["content-length"] ?? 0) > MAX_INGEST_BYTES) {
+    fail(413, { error: `body larger than ${MAX_INGEST_BYTES} bytes` }, { connection: "close" });
+    req.destroy();
+    return;
+  }
+
+  let raw = await readBody(req, MAX_INGEST_BYTES);
+  if (raw === "too_large") {
+    fail(413, { error: `body larger than ${MAX_INGEST_BYTES} bytes` }, { connection: "close" });
+    req.destroy();
+    return;
+  }
+  if (encoding === "gzip") {
+    try {
+      // maxOutputLength bounds decompression so a small gzip body cannot expand without limit.
+      raw = gunzipSync(raw, { maxOutputLength: MAX_INGEST_BYTES });
+    } catch (err) {
+      const tooBig = (err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE";
+      fail(tooBig ? 413 : 400, { error: tooBig ? `decompressed body larger than ${MAX_INGEST_BYTES} bytes` : "invalid gzip body" });
+      return;
+    }
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(raw.toString("utf8"));
+  } catch {
+    fail(400, { error: "body is not valid JSON" });
+    return;
+  }
+
+  // Check and write run synchronously with no await between them, so no other
+  // request can change the session's refs in between.
+  const checked = checkIngest(body, store);
+  if (!checked.ok) {
+    const out: IngestErrorResponse = { error: checked.error };
+    if (checked.details) out.details = checked.details;
+    if (checked.omitted) out.omitted = checked.omitted;
+    fail(checked.status, out);
+    return;
+  }
+  const result: IngestResponse = store.appendBatch(checked.batch);
+  json(res, result.created ? 201 : 200, result);
+}
+
+/** Read a request body up to max bytes. Resolves "too_large" as soon as the limit is crossed. */
+function readBody(req: IncomingMessage, max: number): Promise<Buffer | "too_large"> {
+  return new Promise((resolvePromise, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let done = false;
+    req.on("data", (c: Buffer) => {
+      if (done) return;
+      size += c.length;
+      if (size > max) {
+        done = true;
+        resolvePromise("too_large");
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      if (!done) {
+        done = true;
+        resolvePromise(Buffer.concat(chunks));
+      }
+    });
+    req.on("error", (err) => {
+      if (!done) {
+        done = true;
+        reject(err);
+      }
+    });
+  });
 }
 
 /** Resolve a request path to a file under the UI root. Extensionless paths map to Next's static export (<name>.html). */

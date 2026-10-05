@@ -1,6 +1,6 @@
 # Server
 
-Localhost-only HTTP server (Node built-in `http`) over the SQLite session store. Binds to `127.0.0.1` and nothing else; the host is not configurable. It never runs adapters: ingest first.
+Localhost-only HTTP server (Node built-in `http`) over the SQLite session store. Binds to `127.0.0.1` and nothing else; the host is not configurable. It never runs adapters: sessions arrive through `pnpm ingest` (whole captures) or `POST /api/ingest` (pushed batches).
 
 ```bash
 pnpm ingest --agent claude-code ~/.postrun/captures
@@ -14,8 +14,38 @@ Routes:
 
 - `GET /api/sessions[?agent=<kind>]` returns `{ sessions, agents }`, newest first. Counts, title, and flag count are projected on read.
 - `GET /api/sessions/:id` returns the full session (summary, segments, actors, turns, steps) plus `report` (files touched, commands run).
+- `POST /api/ingest` accepts one v1.2 batch from an adapter (see below). The only write route.
 - `GET /` and other paths serve the static Next export from `ui/out`; extensionless paths map to `<name>.html`.
 
-If the port is taken, it exits with a message naming the port and the `--port` / `PORT` overrides. No auth and no rate limiting, because it is never network-reachable.
+If the port is taken, it exits with a message naming the port and the `--port` / `PORT` overrides. Read routes have no auth and nothing has rate limiting, because the server is never network-reachable. The ingest route needs a bearer token.
 
 Hardening: requests whose `Host` header is not a loopback name get 421 (DNS rebinding guard, see `src/util/host.ts`); responses carry `x-content-type-options: nosniff`, `referrer-policy: no-referrer`, `cache-control: no-store`, and no CORS headers; malformed percent-encoding is a 400; internal errors are logged to stderr and returned as a generic 500; static paths are resolved and checked against the UI directory, and `..` in the path is refused outright.
+
+## Push ingest: `POST /api/ingest`
+
+For adapters that run outside core (Cursor, Codex, anything new) and stream a session as it happens. Wire types are `IngestRequest`, `IngestResponse`, and `IngestErrorResponse` in `api.ts`; the checks live in `ingest.ts`, the store write in `PostrunStore.appendBatch`.
+
+```bash
+TOKEN=$(cat ~/.postrun/ingest-token)   # created on first `pnpm serve`; POSTRUN_INGEST_TOKEN_FILE overrides the path
+curl -X POST http://127.0.0.1:1234/api/ingest \
+  -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
+  -d @batch.json
+```
+
+```jsonc
+{
+  "schema_version": "1.2",
+  "session": { "id": "...", "agent": { "kind": "cursor", "version": "1.2.0" }, "workspace": { "root": "/repo" },
+               "started_at": "2026-10-05T22:00:00Z" },   // optional: ended_at, source, metrics
+  "segments": [], "actors": [], "turns": [], "steps": []  // each optional
+}
+```
+
+- **Incremental.** Children are upserted by id (segments by index) and nothing is deleted, so a re-sent batch is a no-op. On an existing session, `ended_at`, `source`, and `metrics` change only when sent; a steps-only batch never zeroes cost. Pushes never touch the verdict.
+- **Checked before writing**, all or nothing: envelope and session header, then every child through the v1.2 runtime validator (`schema/validate.ts`), then references. A child's turn, actor, and segment must already be stored or be in the same batch, and `session_id` must match. `Turn.step_ids` is accepted and ignored; it is projected from steps.
+- **seq is unique per session.** Re-sending a step with its own seq is fine; a different step id on a taken seq is a 409.
+- **Limits.** 8 MB per body, before and after gzip (`content-encoding: gzip` is accepted). 5000 items of each kind per batch; split bigger sessions. Error responses list up to 100 problems, each with a path such as `steps[3].payload.exit_code`.
+
+Status codes: 201 session created, 200 updated, 400 invalid (with `details`), 401 bad or missing token, 405 not POST, 409 seq conflict, 413 too large, 415 not JSON or unknown encoding.
+
+Why a token on a loopback server: the Host check stops DNS rebinding, but any web page can still fire a blind cross-site POST at 127.0.0.1. A browser cannot attach an `Authorization` header to that without a CORS preflight, which this server never approves. The token file is 0600, which also keeps other local users out. Delete it to rotate.

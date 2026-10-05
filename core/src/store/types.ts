@@ -80,3 +80,38 @@ export interface StoreCounts {
   turns: number;
   steps: number;
 }
+
+/**
+ * The session-level fields a pushed batch carries. Required fields identify
+ * the session and are written on every push; optional fields change the
+ * stored value only when present.
+ */
+export interface SessionHeader {
+  id: string;
+  agent: AgentInfo;
+  workspace: Workspace;
+  started_at: string;
+  ended_at?: string;
+  /** Provenance. Defaults to "push:<agent kind>" on first push. */
+  source?: string;
+  /** Latest cumulative API metrics for the session, when the pusher knows them. */
+  metrics?: SessionMetrics;
+}
+
+/** One incremental push: a session header plus any new or changed children. */
+export interface SessionBatch {
+  session: SessionHeader;
+  segments: SessionSegment[];
+  actors: Actor[];
+  turns: Turn[];
+  steps: Step[];
+}
+
+/** Keys a session already holds, used to check a batch's references before writing. */
+export interface SessionRefs {
+  exists: boolean;
+  segments: Set<number>;
+  actors: Set<string>;
+  turns: Set<string>;
+  stepIdBySeq: Map<number, string>;
+}

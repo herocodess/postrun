@@ -32,6 +32,8 @@ pnpm test                        # both packages
 pnpm build                       # both packages
 ```
 
+Adapters outside core can also push v1.2 batches to `POST /api/ingest` with the bearer token in `~/.postrun/ingest-token` (created on first serve); see `core/src/server/README.md`.
+
 Sessions are stored in `~/.postrun/postrun.db` (SQLite, override with `POSTRUN_DB` or `--db`). The server reads the store; it never runs adapters. Port precedence: `--port` flag, then `PORT` env, then 1234. It binds to 127.0.0.1 only.
 
 ```bash
@@ -48,8 +50,9 @@ pnpm serve --db /some/other/postrun.db
 Postrun records full prompts, assistant responses, tool input, and tool output from this machine. Everything is local and single-user:
 
 - Both listeners (the API server on 1234 and the OTLP receiver on 4318) bind to 127.0.0.1 only and refuse any request whose `Host` header is not `127.0.0.1`, `localhost`, or `[::1]`. That closes DNS rebinding, where a web page points its own domain at 127.0.0.1 to read the API from a browser. No CORS headers are ever sent.
-- Everything Postrun writes under `~/.postrun` (captures, the SQLite store and its WAL) is created owner-only: directories 0700, files 0600. Older, wider files are tightened on open.
+- Everything Postrun writes under `~/.postrun` (captures, the SQLite store and its WAL, the ingest token) is created owner-only: directories 0700, files 0600. Older, wider files are tightened on open.
 - The receiver caps export requests at 32 MB before and after gzip. The server never echoes internal error text.
+- The API server has one write route, `POST /api/ingest`. It requires the bearer token in `~/.postrun/ingest-token` (0600), which a cross-site browser request cannot send, and caps bodies at 8 MB before and after gzip. Every batch is validated against v1.2 before anything is written.
 - Postrun reads agent files (`~/.cline`, Claude Code hooks) but never writes them. The only file it edits outside `~/.postrun` is `~/.claude/settings.json`, backed up once and merged in place.
 - Postrun does not ask Claude Code to dump raw API bodies to disk. Capture files can still contain whatever a session printed, including the output of commands such as `env`; treat `~/.postrun` as sensitive.
 

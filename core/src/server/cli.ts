@@ -9,6 +9,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultDbPath } from "../store/index.js";
 import { createPostrunServer, DEFAULT_PORT, PortInUseError } from "./server.js";
+import { defaultTokenPath, loadOrCreateToken } from "./token.js";
 
 interface Args {
   port: number;
@@ -45,6 +46,8 @@ function parseArgs(argv: string[], env: NodeJS.ProcessEnv): Args {
           `  --port  port on 127.0.0.1 (flag > PORT env > ${DEFAULT_PORT})\n` +
           `  --db    SQLite store (flag > POSTRUN_DB env > ~/.postrun/postrun.db)\n` +
           `  --ui    built UI directory (default <repo>/ui/out)\n` +
+          `Adapters can push v1.2 batches to POST /api/ingest with the token in\n` +
+          `POSTRUN_INGEST_TOKEN_FILE or ~/.postrun/ingest-token (created on first run).\n` +
           `Ingest sessions first: pnpm ingest --agent claude-code|cline <source>\n`,
       );
       process.exit(0);
@@ -73,9 +76,18 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  const tokenPath = defaultTokenPath(process.env);
+  let ingestToken: string;
+  try {
+    ingestToken = loadOrCreateToken(tokenPath);
+  } catch (err) {
+    process.stderr.write(`postrun serve: ingest token: ${(err as Error).message}\n`);
+    return 1;
+  }
+
   let app;
   try {
-    app = createPostrunServer({ port: args.port, dbPath: args.dbPath, uiDir: args.uiDir });
+    app = createPostrunServer({ port: args.port, dbPath: args.dbPath, uiDir: args.uiDir, ingestToken });
   } catch (err) {
     process.stderr.write(`postrun serve: could not open store ${args.dbPath}: ${(err as Error).message}\n`);
     return 1;
@@ -88,6 +100,7 @@ async function main(): Promise<number> {
     for (const s of sessions) process.stdout.write(`  ${s.started_at}  ${s.agent.kind.padEnd(11)} ${s.id}  ${s.steps_total} steps\n`);
     if (sessions.length === 0) process.stdout.write(`  (none yet; run: pnpm ingest --agent claude-code|cline <source>)\n`);
     process.stdout.write(`serving UI from ${args.uiDir}\n`);
+    process.stdout.write(`ingest: POST ${url}api/ingest  (bearer token in ${tokenPath})\n`);
     process.stdout.write(`listening on ${url}  (127.0.0.1 only; ctrl-c to stop)\n`);
   } catch (err) {
     if (err instanceof PortInUseError) {
