@@ -311,7 +311,7 @@ html.js .reveal[data-in] {
   border-bottom-color: var(--line);
 }
 .nav[data-state="folded"] .nav-inner {
-  max-width: min(780px, calc(100vw - 24px));
+  max-width: min(860px, calc(100vw - 24px));
   height: 54px;
   padding: 0 8px 0 18px;
   gap: 24px;
@@ -1286,7 +1286,8 @@ html.js .reveal[data-in] {
 /* ---- security -------------------------------------------------------------- */
 .sec-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  /* 300px minimum: 3 x 2 on desktop, 2 x 3 on tablets, 1 column on phones, never a half-empty row. */
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: 1px;
   background: var(--line);
   border: 1px solid var(--line);
@@ -1414,8 +1415,297 @@ html.js .reveal[data-in] {
   letter-spacing: -0.02em;
 }
 
+
+/* ---- FAQ ------------------------------------------------------------------- */
+.faq-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr);
+  gap: 48px;
+  align-items: start;
+}
+.faq-head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 96px;
+}
+.faq-list {
+  border-top: 1px solid var(--line);
+}
+.faq-item {
+  border-bottom: 1px solid var(--line);
+  interpolate-size: allow-keywords;
+}
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 64px;
+  padding: 14px 4px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--text);
+  transition: color 0.2s;
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary:hover .faq-q {
+  color: #fff;
+}
+.faq-num {
+  font-size: 11px;
+  color: var(--faint);
+  width: 22px;
+  flex: none;
+}
+.faq-q {
+  flex: 1;
+  color: #dfe2ea;
+}
+.faq-icon {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  transition:
+    background 0.3s,
+    border-color 0.3s;
+}
+.faq-icon::before,
+.faq-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 1.5px;
+  margin: -0.75px 0 0 -5px;
+  background: var(--text-2);
+  border-radius: 2px;
+  transition: transform 0.35s var(--ease);
+}
+.faq-icon::after {
+  transform: rotate(90deg);
+}
+.faq-item[open] .faq-icon {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(129, 140, 248, 0.45);
+}
+.faq-item[open] .faq-icon::after {
+  transform: rotate(0deg);
+}
+.faq-item[open] .faq-icon::before,
+.faq-item[open] .faq-icon::after {
+  background: var(--accent-ink);
+}
+/* Smooth open/close where the browser can animate to auto height. */
+.faq-item::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition:
+    block-size 0.4s var(--ease),
+    content-visibility 0.4s allow-discrete;
+}
+.faq-item[open]::details-content {
+  block-size: auto;
+}
+.faq-a {
+  padding: 0 4px 22px 42px;
+  color: var(--text-2);
+  font-size: 15.5px;
+  line-height: 1.65;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.faq-a code,
+.legal-body code {
+  font-size: 0.88em;
+  color: #d4d8e1;
+  background: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+/* ---- legal pages ----------------------------------------------------------- */
+.legal {
+  padding: 48px 0 96px;
+}
+.legal-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+}
+.legal-head h1 {
+  font-size: clamp(34px, 5vw, 56px);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.legal-draft {
+  font-size: 13px;
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.07);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.legal-summary {
+  margin: 32px 0 48px;
+  max-width: 760px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+}
+.legal-points {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.legal-points li {
+  position: relative;
+  padding-left: 30px;
+  color: var(--text-2);
+}
+.legal-points li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 5px;
+  width: 16px;
+  height: 16px;
+  background: no-repeat center / 16px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234ADE80' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+.legal-points b {
+  color: var(--text);
+  font-weight: 500;
+}
+.legal-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 760px);
+  gap: 56px;
+  align-items: start;
+}
+.legal-toc {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.legal-toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+}
+.legal-toc a {
+  display: block;
+  padding: 6px 0 6px 14px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  margin-left: -1px;
+  border-left: 1px solid transparent;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+.legal-toc a:hover {
+  color: var(--text);
+  border-left-color: var(--accent-ink);
+}
+.legal-body h2 {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin: 40px 0 12px;
+  scroll-margin-top: 96px;
+}
+.legal-body h2:first-child {
+  margin-top: 0;
+}
+.legal-body p,
+.legal-body li {
+  color: var(--text-2);
+  font-size: 15.5px;
+  line-height: 1.7;
+}
+.legal-body p + p {
+  margin-top: 12px;
+}
+.legal-body ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+.legal-body b {
+  color: var(--text);
+  font-weight: 500;
+}
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+}
+.footer-note {
+  margin-top: 18px;
+  font-size: 12px;
+}
+.footer-brand {
+  color: var(--text);
+}
+
+@media (max-width: 860px) {
+  .faq-layout,
+  .legal-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+  .faq-head,
+  .legal-toc {
+    position: static;
+  }
+  .legal-toc ol {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-left: 0;
+  }
+  .legal-toc a {
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    margin: 0;
+    font-size: 12.5px;
+  }
+}
+@media (max-width: 420px) {
+  .faq-item summary {
+    font-size: 15.5px;
+    gap: 12px;
+  }
+  .faq-a {
+    padding-left: 4px;
+  }
+  .legal-summary {
+    padding: 18px 16px;
+  }
+}
+
 /* ---- small screens --------------------------------------------------------- */
-@media (max-width: 920px) {
+@media (max-width: 1000px) {
   .nav-links {
     display: none;
   }
@@ -1638,6 +1928,11 @@ html.js .reveal[data-in] {
   }
   .section-head {
     max-width: calc((100% - var(--seg-gap)) / 2);
+  }
+  .faq-layout,
+  .legal-grid {
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--seg-gap);
   }
   /* Keep the folded header on one screen instead of straddling the hinge. */
   .nav[data-state="folded"] .nav-inner {

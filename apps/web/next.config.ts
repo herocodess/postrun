@@ -8,6 +8,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "export",
+  // Emit privacy/index.html rather than privacy.html so /privacy works on any static host.
+  trailingSlash: true,
   images: { unoptimized: true },
 };
 

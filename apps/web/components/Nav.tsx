@@ -16,9 +16,10 @@ const TOP_ZONE = 24;
 const FOLD_DELTA = 8;
 
 const LINKS = [
-  { href: "#how", label: "How it works" },
-  { href: "#share", label: "Sharing" },
-  { href: "#security", label: "Security" },
+  { href: "/#how", label: "How it works" },
+  { href: "/#share", label: "Sharing" },
+  { href: "/#security", label: "Security" },
+  { href: "/#faq", label: "FAQ" },
   { href: "/example-report.html", label: "Example report", external: true },
 ];
 
@@ -68,7 +69,7 @@ export function Nav() {
     <>
       <header className="nav" data-state={state} data-menu={menuOpen || undefined}>
         <nav aria-label="Main" className="nav-inner">
-          <a href="#top" className="brand" aria-label="postrun home">
+          <a href="/" className="brand" aria-label="postrun home">
             <Wordmark />
           </a>
           <div className="nav-links">
@@ -79,7 +80,7 @@ export function Nav() {
             ))}
           </div>
           <span className="grow"></span>
-          <a href="#waitlist" className="btn btn-primary btn-sm nav-cta">
+          <a href="/#waitlist" className="btn btn-primary btn-sm nav-cta">
             <span className="cta-long">Get early access</span>
             <span className="cta-short">Early access</span>
           </a>
@@ -101,7 +102,7 @@ export function Nav() {
           </button>
           <div id="nav-menu" className="nav-menu" hidden={!menuOpen}>
             {/* Links arrive like steps in a session timeline. */}
-            {[...LINKS, { href: "#waitlist", label: "Get early access", cta: true }].map((l, i) => (
+            {[...LINKS, { href: "/#waitlist", label: "Get early access", cta: true }].map((l, i) => (
               <a
                 key={l.href}
                 href={l.href}

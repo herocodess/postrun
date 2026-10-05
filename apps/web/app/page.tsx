@@ -1,4 +1,6 @@
 import { ExportDemo } from "@/components/ExportDemo";
+import { Faq } from "@/components/Faq";
+import { Footer } from "@/components/Footer";
 import { LiveSession } from "@/components/LiveSession";
 import { Mark } from "@/components/Logo";
 import { Nav } from "@/components/Nav";
@@ -219,6 +221,8 @@ export default function Home() {
           </div>
         </section>
 
+        <Faq />
+
         {/* CTA */}
         <section id="waitlist" className="section cta">
           <div className="wrap">
@@ -234,21 +238,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="footer">
-        <div className="wrap footer-row">
-          <span className="footer-brand">
-            <Mark size={20} /> postrun
-          </span>
-          <span className="muted">The flight recorder for coding agents.</span>
-          <span className="grow"></span>
-          <a href="#how">How it works</a>
-          <a href="#security">Security</a>
-          <a href="/example-report.html" target="_blank" rel="noopener">
-            Example report
-          </a>
-          <span className="muted">[GITHUB OR CONTACT]</span>
-        </div>
-      </footer>
+      <Footer />
     </>
   );
 }
