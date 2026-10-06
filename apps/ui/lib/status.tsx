@@ -36,14 +36,18 @@ const Ctx = createContext<{ state: StatusState; refresh: () => void; set: (s: Ap
 });
 
 export function StatusProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<StatusState>(DEMO ? { kind: "ready", status: DEMO_STATUS } : { kind: "loading" });
+  const [state, setState] = useState<StatusState>({ kind: "loading" });
   const [tick, setTick] = useState(0);
   const live = useLiveVersion();
   const refresh = useCallback(() => setTick((t) => t + 1), []);
   const set = useCallback((status: AppStatus) => setState({ kind: "ready", status }), []);
 
   useEffect(() => {
-    if (DEMO) return;
+    // The demo's status is fixed, but it is set after the first paint so times match the visitor's clock and zone.
+    if (DEMO) {
+      setState((prev) => (prev.kind === "ready" ? prev : { kind: "ready", status: { ...DEMO_STATUS, recording: { ...DEMO_STATUS.recording, since: new Date().toISOString() } } }));
+      return;
+    }
     let cancelled = false;
     fetch(api.status())
       .then(async (res) => {
@@ -59,7 +63,11 @@ export function StatusProvider({ children }: { children: ReactNode }) {
   }, [tick, live]);
 
   useEffect(() => {
-    if (DEMO) return;
+    // The demo's status is fixed, but it is set after the first paint so times match the visitor's clock and zone.
+    if (DEMO) {
+      setState((prev) => (prev.kind === "ready" ? prev : { kind: "ready", status: { ...DEMO_STATUS, recording: { ...DEMO_STATUS.recording, since: new Date().toISOString() } } }));
+      return;
+    }
     const t = setInterval(refresh, 15_000);
     return () => clearInterval(t);
   }, [refresh]);

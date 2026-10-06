@@ -129,6 +129,42 @@ function usePill(active: number) {
   return { nav, pill };
 }
 
+/** Shown only when "Check for new versions" is on in Settings and npm has a newer Postrun. */
+function UpdateBanner() {
+  const { state } = useStatus();
+  const [hidden, setHidden] = useState(false);
+  const u = state.kind === "ready" ? state.status.update : undefined;
+  useEffect(() => {
+    try {
+      if (u && localStorage.getItem("postrun.update-dismissed") === u.latest) setHidden(true);
+    } catch {
+      /* storage blocked: show it */
+    }
+  }, [u]);
+  if (!u?.newer || hidden) return null;
+  return (
+    <aside className="update-banner" role="status">
+      <span>
+        Postrun <b>{u.latest}</b> is out (you have {u.current}). Update with <code>npm install -g postrun@latest</code>, then <code>postrun restart</code>.
+      </span>
+      <button
+        type="button"
+        className="link-btn"
+        onClick={() => {
+          setHidden(true);
+          try {
+            localStorage.setItem("postrun.update-dismissed", u.latest);
+          } catch {
+            /* fine */
+          }
+        }}
+      >
+        Dismiss
+      </button>
+    </aside>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname().replace(/\/$/, "") || "/";
   const { state } = useStatus();
@@ -166,6 +202,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <a href="/login/?mode=signup">Get started →</a>
           </aside>
         )}
+        <UpdateBanner />
         <div className="wrap page-in" key={pathname}>
           {children}
         </div>

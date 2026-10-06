@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
 import { stagger, useArrivals } from "@/lib/motion";
 import { api, DEMO } from "@/lib/api";
@@ -11,6 +12,31 @@ import { DeletePanel } from "@/components/DeletePanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import { StepRow } from "@/components/StepRow";
 import { Tape } from "@/components/Tape";
+import { projectHref } from "@/components/Projects";
+import { ChangesView, GitPanel, RiskPanel, ShortcutHelp, VerdictPanel } from "@/components/ReviewPanels";
+import { changesByFile, commitsOf, plainSummary, prSummary } from "@/lib/review";
+
+type Tab = "timeline" | "changes" | "files";
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Older browsers, or a page without clipboard permission: select a hidden textarea and copy.
+    const t = document.createElement("textarea");
+    t.value = text;
+    t.style.position = "fixed";
+    t.style.opacity = "0";
+    document.body.appendChild(t);
+    t.select();
+    const ok = document.execCommand("copy");
+    t.remove();
+    return ok;
+  }
+}
+
+const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: SessionDetailResponse };
 
@@ -39,6 +65,18 @@ export function Report() {
   const [shownTurns, setShownTurns] = useState(() => (typeof window !== "undefined" && window.location.hash.startsWith("#step-") ? Infinity : RECENT_TURNS));
   // Bumps when this session is written (a running agent, a late hook record) and on reconnect.
   const live = useLiveVersion(id || undefined);
+  const [tab, setTab] = useState<Tab>("timeline");
+  const [help, setHelp] = useState(false);
+  const [copied, setCopied] = useState<"idle" | "ok" | "fail">("idle");
+  // The verdict keys on the session page fire the panel's buttons, so the panel stays the one place that saves.
+  const verdictKeys = useRef<{ approve?: () => void; needs?: () => void }>({});
+
+  const copyPr = useCallback(async () => {
+    if (state.kind !== "ready") return;
+    const ok = await copyText(prSummary(state.data));
+    setCopied(ok ? "ok" : "fail");
+    window.setTimeout(() => setCopied("idle"), 2200);
+  }, [state]);
 
   // The data on screen, readable from inside the fetch effect without re-running it, and a full
   // load still in flight, so a live update that lands during it waits for it instead of loading twice.
@@ -98,6 +136,85 @@ export function Report() {
   // Steps an agent writes while you watch get a brief highlight. Before the early returns: hooks run every render.
   const arrived = useArrivals(state.kind === "ready" && state.data.summary.id === id ? state.data.steps.map((s) => s.id) : undefined, id);
 
+  // Keyboard review: j/k move through steps, f jumps to the next failure, e opens the current one.
+  const cur = useRef(-1);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const steps = () => [...document.querySelectorAll<HTMLDetailsElement>("details.step-d")];
+      const focus = (list: HTMLDetailsElement[], i: number) => {
+        const el = list[i];
+        if (!el) return;
+        list.forEach((d) => d.classList.remove("kbd-current"));
+        cur.current = i;
+        el.classList.add("kbd-current");
+        el.querySelector("summary")?.focus({ preventScroll: true });
+        el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      };
+      const fromFocus = (list: HTMLDetailsElement[]) => {
+        const at = list.findIndex((d) => d.contains(document.activeElement));
+        return at >= 0 ? at : cur.current;
+      };
+      switch (e.key) {
+        case "j":
+        case "k": {
+          if (tab !== "timeline") setTab("timeline");
+          const list = steps();
+          const at = fromFocus(list);
+          focus(list, Math.max(0, Math.min(list.length - 1, at + (e.key === "j" ? 1 : -1))));
+          break;
+        }
+        case "f": {
+          if (tab !== "timeline") setTab("timeline");
+          const list = steps();
+          const at = fromFocus(list);
+          const next = list.findIndex((d, i) => i > at && d.classList.contains("failed"));
+          const wrap = next >= 0 ? next : list.findIndex((d) => d.classList.contains("failed"));
+          if (wrap >= 0) focus(list, wrap);
+          break;
+        }
+        case "e": {
+          const list = steps();
+          const el = list[fromFocus(list)];
+          if (el) el.open = !el.open;
+          break;
+        }
+        case "g":
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          cur.current = -1;
+          break;
+        case "1":
+          setTab("timeline");
+          break;
+        case "2":
+          setTab("changes");
+          break;
+        case "3":
+          setTab("files");
+          break;
+        case "a":
+          verdictKeys.current.approve?.();
+          break;
+        case "n":
+          verdictKeys.current.needs?.();
+          break;
+        case "c":
+          void copyPr();
+          break;
+        case "?":
+          setHelp((h) => !h);
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, copyPr]);
+
   if (state.kind === "loading") return <ReportSkeleton />;
   if (state.kind === "error")
     return /-> 404$/.test(state.message) ? (
@@ -112,6 +229,7 @@ export function Report() {
 
   /** Open a step in the timeline and bring it into view (from the tape). Shows every turn first if needed. */
   const jumpTo = (seq: number) => {
+    setTab("timeline");
     setShownTurns(Infinity);
     window.history.replaceState(null, "", `#step-${seq}`);
     requestAnimationFrame(() =>
@@ -144,8 +262,34 @@ export function Report() {
       step_ids: [],
     }));
 
+  const changes = changesByFile(steps, summary.workspace.root);
+  const commits = commitsOf(steps);
+  const setVerdict = (v: typeof summary.verdict | undefined) =>
+    setState((prev) => {
+      if (prev.kind !== "ready") return prev;
+      const { verdict: _old, ...rest } = prev.data.summary;
+      return { kind: "ready", data: { ...prev.data, summary: v ? { ...rest, verdict: v } : rest } };
+    });
+  const TABS: [Tab, string, number][] = [
+    ["timeline", "Timeline", summary.steps_total],
+    ["changes", "Changes", changes.length],
+    ["files", "Files and commands", report.counts.files_touched + report.counts.commands_run],
+  ];
+
   return (
     <>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link href="/sessions">Sessions</Link>
+        <span aria-hidden="true">/</span>
+        <Link href={projectHref(summary.workspace.root)}>{basename(summary.workspace.root)}</Link>
+        <span aria-hidden="true">/</span>
+        <span className="crumb-here">{firstLine(summary.title, 60) || "Session"}</span>
+        <span className="grow"></span>
+        <button type="button" className="kbd-hint" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
+          <kbd>?</kbd> shortcuts
+        </button>
+      </nav>
+
       {/* HERO */}
       <div className="hero enter">
         <div className="hero-glow"></div>
@@ -154,6 +298,11 @@ export function Report() {
             <span className={`badge ${summary.agent.kind === "cline" ? "cline" : "cc"}`}>{summary.agent.kind}</span>
             <h1 className="title">{firstLine(summary.title, 140) || summary.id}</h1>
             {summary.agent.version && summary.agent.version !== "unknown" ? <span className="ver">v{summary.agent.version}</span> : null}
+            <button type="button" className={`btn copy-btn ${copied}`} onClick={() => void copyPr()} title="Markdown for a pull request description (c)">
+              <span className="copy-label" key={copied}>
+                {copied === "ok" ? "Copied" : copied === "fail" ? "Could not copy" : "Copy as PR summary"}
+              </span>
+            </button>
             <button type="button" className="btn" onClick={() => (setExporting((v) => !v), setDeleting(false))} aria-expanded={exporting}>
               Export report
             </button>
@@ -163,6 +312,12 @@ export function Report() {
               </button>
             )}
           </div>
+
+          <p className="plain-sum">
+            {plainSummary(state.data)
+              .split(/(`[^`]+`)/)
+              .map((part, i) => (part.startsWith("`") && part.endsWith("`") ? <code key={i}>{part.slice(1, -1)}</code> : part))}
+          </p>
 
           <div className="stats">
             <div className="stat">
@@ -208,8 +363,16 @@ export function Report() {
 
           <div className="meta-row">
             <span>
-              workspace <b className="mono">{summary.workspace.root}</b>
+              workspace{" "}
+              <Link className="mono meta-link" href={projectHref(summary.workspace.root)}>
+                {summary.workspace.root}
+              </Link>
             </span>
+            {summary.git_branch ? (
+              <span>
+                branch <b className="mono">{summary.git_branch}</b>
+              </span>
+            ) : null}
             <span>
               when <b className="mono">{formatDate(summary.started_at)} → {summary.ended_at ? formatDate(summary.ended_at) : "open"}</b> &middot; {segments.length} segment
               {segments.length === 1 ? "" : "s"}
@@ -229,8 +392,31 @@ export function Report() {
       {exporting && <ExportPanel sessionId={summary.id} onClose={() => setExporting(false)} />}
       {deleting && <DeletePanel sessionId={summary.id} agent={summary.agent.kind} steps={summary.steps_total} onClose={() => setDeleting(false)} />}
 
+      <div className={`review-row enter${commits.length || summary.git_branch ? " three" : ""}`} style={stagger(1, 12, 60)}>
+        <VerdictPanel summary={summary} onSaved={setVerdict} bind={verdictKeys} />
+        <RiskPanel steps={steps} onPick={jumpTo} />
+        <GitPanel branch={summary.git_branch} commits={commits} onPick={jumpTo} />
+      </div>
+
+      <div className="tabs enter" role="tablist" aria-label="Session views" style={stagger(2, 12, 60)}>
+        {TABS.map(([k, label, n]) => (
+          <button key={k} type="button" role="tab" id={`tab-${k}`} title={`${label} (${TABS.findIndex((t) => t[0] === k) + 1})`} aria-selected={tab === k} aria-controls={`panel-${k}`} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
+            {label}
+            <span className="tab-n">{n.toLocaleString()}</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === "changes" && (
+        <div className="sec tab-panel" role="tabpanel" id="panel-changes" aria-labelledby="tab-changes">
+          <ChangesView steps={steps} root={summary.workspace.root} onPick={jumpTo} />
+        </div>
+      )}
+
+      {tab === "files" && (
+      <div className="tab-panel" role="tabpanel" id="panel-files" aria-labelledby="tab-files">
       {/* FILES TOUCHED */}
-      <div className="sec enter" style={stagger(2, 12, 60)}>
+      <div className="sec enter" style={stagger(0, 12, 60)}>
         <div className="sec-h">
           <h2>Files touched</h2>
           <span className="count">
@@ -268,7 +454,7 @@ export function Report() {
       </div>
 
       {/* COMMANDS RUN */}
-      <div className="sec enter" style={stagger(3, 12, 60)}>
+      <div className="sec enter" style={stagger(1, 12, 60)}>
         <div className="sec-h">
           <h2>Commands run</h2>
           <span className="count">
@@ -303,8 +489,12 @@ export function Report() {
         )}
       </div>
 
+      </div>
+      )}
+
       {/* TIMELINE */}
-      <div className="sec enter" style={stagger(4, 12, 60)}>
+      {tab === "timeline" && (
+      <div className="sec tab-panel" role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline">
         <div className="sec-h">
           <h2>Timeline</h2>
           <span className="count">
@@ -338,6 +528,9 @@ export function Report() {
           );
         })()}
       </div>
+      )}
+
+      {help && <ShortcutHelp onClose={() => setHelp(false)} />}
 
       <div className="foot">
         postrun &middot; <span className="mono">session {summary.id}</span> &middot; local review, nothing left your machine

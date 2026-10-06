@@ -20,6 +20,25 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "Review, not just replay",
+    summary: "The review app becomes a place to sign off on agent work: a dashboard, projects, your verdict on each session, what changed file by file, and what looks risky.",
+    items: [
+      { kind: "new", text: "A dashboard: sessions, steps, failures and what you have not reviewed yet, steps per day, what is running now, and the most edited files." },
+      { kind: "new", text: "Mark a session Looks good or Needs follow-up, with a note. Filter the list by review, and review several sessions at once." },
+      { kind: "new", text: "Copy as PR summary: Markdown for a pull request description, with the changes, commands, commits and anything worth checking." },
+      { kind: "new", text: "A Changes tab with every edit file by file, as diffs, and a plain summary of what happened at the top of each session." },
+      { kind: "new", text: "Risk flags for rm -rf, force pushes, scripts piped to a shell, secrets printed in output, secrets files, and edits outside the project." },
+      { kind: "new", text: "Search finds text inside sessions too: commands, output, edits and messages, with the matching line shown." },
+      { kind: "new", text: "Projects: each folder your agents worked in, with its sessions, failure rate and most changed files." },
+      { kind: "new", text: "The git branch and the commits an agent made, on every session." },
+      { kind: "new", text: "Keyboard review: j and k through steps, f to the next failure, a and n to review, c to copy, ? for the rest." },
+      { kind: "new", text: "Settings: pause recording, start at login, a light theme, storage and backups, delete everything, and the doctor checks, all from the app." },
+      { kind: "new", text: "Optional, off by default: a desktop notification when a session keeps failing, and a daily check for a newer Postrun." },
+      { kind: "new", text: "Export several sessions at once as a zip of redacted reports." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "A review app that moves",
     summary: "The session list and session view are redesigned around the strip: the shape of what an agent did, at a glance.",
     items: [

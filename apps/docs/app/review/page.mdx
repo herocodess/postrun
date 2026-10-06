@@ -1,11 +1,11 @@
 export const metadata = {
   title: "Reviewing sessions",
-  description: "Use the local review app: the session list, the session view, and live updates.",
+  description: "Use the local review app: the dashboard, sessions, projects, the session view, settings and live updates.",
 };
 
 # Reviewing sessions
 
-The review app is a local web page served by the Postrun server. It reads the store, lists every recorded session, and shows one session at a time as a report: the files it touched, the commands it ran, and a timeline of every step. It updates live while agents are working.
+The review app is a local web page served by Postrun. It reads the store on your computer and shows what your agents did: a dashboard, every session, every project, and one session at a time with its changes, risks and your review. It updates live while agents are working.
 
 ## Open it
 
@@ -15,11 +15,27 @@ postrun open
 
 The review app runs at `http://127.0.0.1:1234/` whenever Postrun is running, so you can also bookmark that address. `postrun status` shows the address if you changed the port with `postrun setup --port`.
 
-Sessions arrive from the recorders and from the [ingest API](/reference/ingest-api/), and appear without a reload.
+The sidebar has four pages: **Dashboard**, **Sessions**, **Projects** and **Settings**. On a phone it becomes a bar across the top. The card at the bottom of the sidebar always says whether Postrun is recording:
+
+| Card | Meaning |
+| --- | --- |
+| Recording | Postrun is running. A ring pulses each time something is written. |
+| Paused | Recording is paused from Settings. Nothing is recorded until you resume. |
+| Not running | The page cannot reach Postrun. Run `postrun start`. What is on screen stays, and the app catches up when Postrun is back. |
+
+## Dashboard
+
+What your agents did today, in the last 7 days or in the last 30 days (your choice is remembered):
+
+- **Sessions, Steps, Failed steps** and **Not reviewed**, each with a small trend and a comparison with the period before. Click one to see those sessions.
+- **Steps per day**, stacked by kind. Hover a day for its numbers.
+- **Running now**: sessions an agent wrote to in the last few minutes.
+- **Needs a look**: sessions you have not reviewed yet, the ones with the most failures and flags first.
+- **Most edited files** across all projects.
 
 ## The session list
 
-The home page lists sessions newest first, grouped by the day they started. Each session shows its title (the first line of the first prompt), the project folder, the agent, how many steps failed, the step count, the reported cost and the start time.
+**Sessions** lists sessions newest first, grouped by the day they started. Each session shows its title (the first line of the first prompt), the project folder, the agent, how many steps failed, how many risk flags it has, your review, the step count, the reported cost and the start time.
 
 ### The strip
 
@@ -27,11 +43,13 @@ Every session has a strip: its steps in order, one bar per step, coloured by kin
 
 ### Finding a session
 
-- **Search** matches the first prompt, the project path and the start of the session id. Press `/` to jump to it.
-- **Agent** tabs show one agent's sessions; the address becomes `/?agent=<kind>`.
+- **Search** matches the first prompt, the project path and the start of the session id. With three or more characters it also searches inside every step: commands, output, edits and messages. A session found that way shows the matching line under its title; click it to open that step. Press `/` to jump to the search box.
+- **Agent** tabs show one agent's sessions; the address becomes `/sessions?agent=<kind>`.
 - **When:** any time, today, the last 7 or 30 days, or your own dates.
 - **Size:** any, 10 or more steps, or 100 or more.
+- **Review:** any, not reviewed, looks good, or needs follow-up.
 - **With failures** shows only sessions where a step failed.
+- **Flagged** shows only sessions with a [risk flag](#risk-flags).
 - **Empty sessions** (sessions that started but recorded no steps, such as a `claude` you opened and closed) are hidden unless you turn them on. The toggle shows how many there are.
 
 The summary under the title counts every session that matches, with their total cost. **Clear filters** resets everything except the agent tab and the empty-sessions choice.
@@ -40,17 +58,28 @@ The summary under the title counts every session that matches, with their total 
 
 Switch between a compact list and a grid of cards with the **List** and **Grid** buttons. Your choice, and whether empty sessions are shown, are remembered in this browser.
 
+### Working on several sessions
+
+**Select** turns on checkboxes. With sessions picked you can:
+
+- **Mark as looks good**, to review them all at once;
+- **Export as zip**, one redacted HTML report per session in a single file.
+
 ### Long histories
 
-The list loads 50 sessions at a time and fetches the next 50 as you scroll near the end, or when you click **Show more**. Filters run in the store, not in the page, so a filtered list stays quick however many sessions you have. A session that starts while the list is open slides in at the top.
+The list loads 50 sessions at a time and fetches the next 50 as you scroll near the end, or when you click **Show more**. Filters and search run in the store, not in the page, so a filtered list stays quick however many sessions you have. A session that starts while the list is open slides in at the top.
+
+## Projects
+
+**Projects** shows each folder your agents worked in, most recently active first, with its sessions, steps, failure rate, sessions not reviewed and risk flags. A project opens its own page with its numbers, its most changed files, and its session list with all the filters above.
 
 ## The session view
 
-A session opens at `/session?id=<id>`.
+A session opens at `/session?id=<id>`. The breadcrumb above it links back to Sessions and to the session's project.
 
 ### Summary
 
-The top card shows the agent, the title and version, the session's tape, and:
+The top card shows the agent, the title and version, a plain summary of what happened, the session's tape, and:
 
 | Item | What it is |
 | --- | --- |
@@ -58,24 +87,46 @@ The top card shows the agent, the title and version, the session's tape, and:
 | steps, turns | Totals for the session |
 | failed | Steps whose outcome is `failed` |
 | reference-only | Steps whose content was not available inline |
-| workspace | The working directory |
+| workspace | The working directory; click it to open the project |
+| branch | The git branch the folder was on when the session started |
 | when | Start and end time, or `open` while the session has no end, plus the number of segments |
 | owner | The owner id and the machine it was captured on |
 | tokens | Input and output tokens |
 
+The plain summary is written from the session itself, with no model and nothing sent anywhere: how many files changed and commands ran, how long it took, which commands failed and whether the last one passed, and what was flagged.
+
 The **tape** under the numbers is the session's strip at full resolution: one bar per step (very long sessions group a few steps per bar). Hover a bar to see the step, and click it to open that step in the timeline.
 
-### Files touched
+### Copy as PR summary
 
-Every file the session created, edited or read, with a count of each and how many of those steps failed.
+**Copy as PR summary** copies Markdown for a pull request description: the title, the plain summary, the files changed, the commands run, the commits, anything worth checking, your review, and a one-line footer with the agent, branch, step count and cost. Paste it and edit as you like.
 
-### Commands run
+### Your review
 
-Every distinct command, with how many times it ran and the exit codes seen. Commands whose output is not inline are tagged `output not inline`.
+Mark a session **Looks good** or **Needs follow-up**, and add a note if you want (save it with the button or Cmd/Ctrl+Enter). **Clear** removes the review. Reviews are stored with the session on your computer, show in the session list and count on the dashboard. Deleting a session deletes its review.
 
-### Timeline
+### Risk flags
 
-The timeline groups steps by turn. Each turn shows its number, the prompt that started it, and its mode (for Cline, `plan` or `act`; otherwise `no mode`). Each step shows its `seq`, its type, a one-line summary, and a status:
+Postrun flags steps worth a second look:
+
+| Flag | When |
+| --- | --- |
+| Risky commands | `rm -rf`, `git push --force`, `git reset --hard`, `git clean -f`, a downloaded script piped to a shell, `sudo`, `chmod 777`, dropping a database or table, `npm publish`, printing `.env` or the environment |
+| Secrets in output | A command printed what looks like a key, token or password |
+| Edits outside the project | A file was changed outside the session's working folder (temporary folders are fine) |
+| Secrets files | A `.env`, key or credentials file was read or changed |
+
+Each flag names what matched and links to its step. Flags are worked out on your computer when a session is recorded, and the step itself lists them when you open it.
+
+### Git
+
+When the session started in a git repository, the panel shows the branch and every commit the agent made (read from the output of `git commit`). Click a commit to open the step that made it.
+
+### Timeline, Changes, Files and commands
+
+Three tabs below the review panels.
+
+**Timeline** groups steps by turn. Each turn shows its number, the prompt that started it, and its mode (for Cline, `plan` or `act`; otherwise `no mode`). Each step shows its `seq`, its type, a one-line summary, and a status:
 
 - `ok`
 - `failed`, followed by the error type when the agent reported one
@@ -93,6 +144,10 @@ Click a step, or focus it and press Enter, to open everything it recorded:
 
 Each step also shows when it happened, the permission decision when one was recorded, and any error or flag. Output longer than 100,000 characters is cut, with a button to show all of it. **Expand all** and **Collapse all** sit next to the timeline heading. To link to one step, add `#step-<seq>` to the address: that step opens and scrolls into view. An open step stays open while the session updates live.
 
+**Changes** shows every edit, file by file, with lines added and removed. Each file opens to its edits in order, each as a diff with three lines of context, and a link to its step. An edit that did not apply is dimmed. A very long edit is shortened here; open its step for all of it.
+
+**Files and commands** lists every file the session created, edited or read (with how many of those steps failed), and every distinct command with how many times it ran and the exit codes seen. Commands whose output is not inline are tagged `output not inline`.
+
 Long sessions stay quick to open and to watch:
 
 - The timeline shows the 30 most recent turns. **Show earlier turns** above them adds 50 at a time. A link to a step shows every turn.
@@ -101,15 +156,45 @@ Long sessions stay quick to open and to watch:
 
 A Claude Code session recorded while Postrun was stopped shows `not recorded` for cost: see [Troubleshooting](/troubleshooting/).
 
+### Keyboard
+
+Press `?` on a session for this list.
+
+| Key | Does |
+| --- | --- |
+| `j` / `k` | Next / previous step |
+| `f` | Next failed step |
+| `e` | Open or close the current step |
+| `g` | Back to the top |
+| `1` / `2` / `3` | Timeline, Changes, Files and commands |
+| `a` | Mark as looks good |
+| `n` | Mark as needs follow-up |
+| `c` | Copy as PR summary |
+
+Keys do nothing while you are typing in a box.
+
+## Settings
+
+Everything in Settings applies to this computer only.
+
+| Section | What you can do |
+| --- | --- |
+| Recording | Pause and resume recording; start Postrun when you log in (macOS and Linux with systemd) |
+| Agents | See whether Claude Code and Cline are found and set up; run setup again |
+| Notifications and updates | A desktop notification when a running session fails three steps in a row (once per streak); a daily check for a newer Postrun |
+| Appearance | System, dark or light theme, remembered in this browser |
+| Storage | Where sessions are stored and how much space they use; how long raw logs are kept (a day, a week, 30 days or until deleted); **Save backup**; **Delete all data** |
+| About | Your version, and **Run checks**, the same checks as `postrun doctor` |
+
+Both notifications and the update check are off until you turn them on. The update check is the only time Postrun contacts the internet: once a day it asks the npm registry for the latest version number, and a banner appears at the top when a newer one is out.
+
+**Save backup** downloads one file with every session (a copy of the store). It is not redacted: keep it private. **Delete all data** removes every session and raw log after you type `delete everything`. New sessions are still recorded.
+
+Settings is read-only when the review app runs from the development server (`pnpm dev:core`), because there is no background process to change.
+
 ## Live updates
 
-The app keeps one connection per browser tab to the [live events stream](/reference/events-api/). When a session is written, the list and the open session refetch in place. The pill in the top bar shows the connection state:
-
-| Pill | Meaning |
-| --- | --- |
-| `live` | Connected. Changes appear as they are written. |
-| `connecting` | Opening or reopening the connection. |
-| `server offline` | The server cannot be reached. What is on screen stays, and the app catches up when the server is back. |
+The app keeps one connection per browser tab to the [live events stream](/reference/events-api/). When a session is written, the dashboard, the list and the open session refetch in place, and new steps get a short highlight.
 
 A Claude Code session updates at the end of each assistant turn. A Cline session updates shortly after Cline saves its messages file.
 
@@ -132,18 +217,32 @@ Deleting does not touch the agent's own copy. Claude Code keeps its transcripts 
 
 The same works from a terminal with [`postrun delete`](/reference/cli/#postrun-delete). The button is not shown in the demo.
 
-## Read routes
+## Routes
 
 The review app uses these routes, which you can also call from scripts on the same machine. They need no token.
 
 | Route | Returns |
 | --- | --- |
-| `GET /api/sessions` | `{ sessions, agents, total, total_cost, empty_count, next_cursor? }`, newest first. Filters: `agent`, `q` (search), `from` and `to` (dates or times; `to` is exclusive), `min_steps`, `failed=1`, `empty=0`. Paging: `limit` (1 to 500) and `cursor` (the previous page's `next_cursor`). Without `limit`, every match is returned. A bad value returns `400`. |
+| `GET /api/sessions` | `{ sessions, agents, total, total_cost, empty_count, next_cursor?, matches? }`, newest first. Filters: `agent`, `q` (search; with 3 or more characters also inside steps, unless `in_steps=0`), `from` and `to` (dates or times; `to` is exclusive), `min_steps`, `failed=1`, `empty=0`, `workspace` (a project folder), `verdict` (`none`, `approved` or `needs_attention`), `flagged=1`. `matches` maps a session id to the first matching step (`seq` and a snippet). Paging: `limit` (1 to 500) and `cursor` (the previous page's `next_cursor`). Without `limit`, every match is returned. A bad value returns `400`. |
 | `GET /api/sessions/<id>` | The full session (summary, segments, actors, turns, steps) plus `report` (files touched, commands run). `404` if not found. |
 | `GET /api/sessions/<id>/export` | The redacted HTML report, as a download. |
 | `GET /api/sessions/<id>/export/review` | What the export would mask, as JSON. |
+| `GET /api/dashboard?days=1` | Totals, per-day steps by kind, running sessions, sessions that need a look and most edited files. `days` is 1, 7, 30 or 90. |
+| `GET /api/projects` | `{ projects }`: each working folder with its session, step, failure, review and flag counts. |
+| `GET /api/projects/files?root=<folder>` | The folder's most edited and read files. |
+| `GET /api/export?ids=<id>,<id>` | Several redacted HTML reports in one zip. |
+| `GET /api/status` | Whether Postrun is recording, which agents are set up, storage use, settings and the update check. |
+| `GET /api/doctor` | The `postrun doctor` checks as JSON. |
+| `GET /api/backup` | A copy of the store, as a download. |
 | `GET /api/events` | The [live events stream](/reference/events-api/). |
-| `DELETE /api/sessions/<id>` | Deletes the session (see above). Only accepted from the review app itself: requests from another site get `403`. `404` if not found. |
+| `DELETE /api/sessions/<id>` | Deletes the session (see above). |
+| `PUT /api/sessions/<id>/verdict` | `{ state, note? }` with `state` `approved`, `needs_attention` or `null` to clear. |
+| `PUT /api/settings` | Changes settings: `autostart`, `raw_log_hours`, `notify_failures`, `update_check`. |
+| `POST /api/recording` | `{ paused }` pauses or resumes recording. |
+| `POST /api/setup` | Runs setup again. |
+| `POST /api/data/delete` | `{ confirm: "delete everything" }` deletes every session. |
+
+Routes that change something are only accepted from the review app itself: requests from another site get `403`, and a body must be JSON. `status`, `doctor`, `backup`, `settings`, `recording`, `setup` and `data/delete` need the background process, so they return `501` from the development server.
 
 Every response carries `x-content-type-options: nosniff`, `referrer-policy: no-referrer` and `cache-control: no-store`, and no CORS headers.
 

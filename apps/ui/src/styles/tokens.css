@@ -1,5 +1,5 @@
 /* Design tokens: single source of truth for all themed values */
-/* Dark mode is the default and only active theme */
+/* Dark is the default. Light applies when chosen in Settings, or when the system is light and nothing was chosen. */
 
 :root {
   /* Warm-dark base, faint blue-slate undertone, layered elevation */
@@ -62,33 +62,104 @@
   /* Typography */
   --mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+
+  /* Washes and surfaces that differ by theme */
+  --wash: rgba(255, 255, 255, 0.02);
+  --wash-2: rgba(255, 255, 255, 0.05);
+  --hairline: rgba(255, 255, 255, 0.04);
+  --hero-bg: linear-gradient(160deg, rgba(32, 36, 47, 0.9), rgba(18, 21, 28, 0.92));
+  --scrim: rgba(5, 6, 9, 0.55);
+  color-scheme: dark;
 }
 
-/* Light mode placeholder (inactive, ready for future theme swap) */
-/* :root[data-theme="light"] {
-  --bg: #FFFFFF;
-  --surface-1: #F9FAFB;
-  --surface-2: #F3F4F6;
-  --surface-3: #E5E7EB;
-  --glass: rgba(240, 240, 245, 0.72);
-  --edge: rgba(0, 0, 0, 0.06);
-  --border: rgba(0, 0, 0, 0.08);
-  --border-strong: rgba(0, 0, 0, 0.14);
-  --text-primary: #1F2937;
-  --text-secondary: #6B7280;
-  --text-muted: #9CA3AF;
-  --accent: #C2410C;
-  --accent-2: #FF6A1A;
-  --accent-dim: rgba(194, 65, 12, 0.14);
-  --accent-glow: rgba(194, 65, 12, 0.35);
-  --danger: #DC2626;
-  --danger-bg: rgba(220, 38, 38, 0.12);
-  --warn: #B45309;
-  --warn-bg: rgba(180, 83, 9, 0.12);
-  --success: #16A34A;
-  --success-bg: rgba(22, 163, 74, 0.12);
-  --cc-bg: rgba(194, 65, 12, 0.16);
-  --cc-fg: #C2410C;
-  --cline-bg: rgba(20, 184, 166, 0.14);
-  --cline-fg: #0D9488;
-} */
+/* Light theme, chosen in Settings */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F6F5F2;
+  --surface-1: #FFFFFF;
+  --surface-2: #F1EFEA;
+  --surface-3: #E6E3DC;
+  --glass: rgba(255, 255, 255, 0.78);
+  --edge: rgba(255, 255, 255, 0.9);
+  --border: rgba(24, 20, 14, 0.09);
+  --border-strong: rgba(24, 20, 14, 0.16);
+  --text-primary: #16181D;
+  --text-secondary: #474D5B;
+  --text-muted: #626877;
+  --accent: #F2600F;
+  --accent-2: #B93E08;
+  --accent-dim: rgba(242, 96, 15, 0.12);
+  --accent-glow: rgba(242, 96, 15, 0.22);
+  --btn-primary: #16181D;
+  --btn-primary-ink: #F6F5F2;
+  --danger: #C8283A;
+  --danger-bg: rgba(200, 40, 58, 0.09);
+  --warn: #8A6100;
+  --warn-bg: rgba(196, 140, 0, 0.13);
+  --success: #12804D;
+  --success-bg: rgba(18, 128, 77, 0.1);
+  --cc-bg: rgba(242, 96, 15, 0.12);
+  --cc-fg: #A93A07;
+  --cline-bg: rgba(13, 148, 136, 0.12);
+  --cline-fg: #0B6F66;
+  --shadow-lift: 0 12px 32px -14px rgba(40, 30, 20, 0.28);
+  --shadow-soft: 0 2px 8px -2px rgba(40, 30, 20, 0.14);
+  --wash: rgba(24, 20, 14, 0.025);
+  --wash-2: rgba(24, 20, 14, 0.045);
+  --hairline: rgba(24, 20, 14, 0.06);
+  --hero-bg: linear-gradient(160deg, #FFFFFF, #FBFAF7);
+  --scrim: rgba(40, 34, 26, 0.28);
+  --k-command: #0d9488;
+  --k-edit: #e8590c;
+  --k-read: #4f5b78;
+  --k-message: #959cab;
+  --k-other: #d3d6dc;
+  --k-failed: #d92d3a;
+}
+
+/* Light theme from the system, unless dark was chosen */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #F6F5F2;
+    --surface-1: #FFFFFF;
+    --surface-2: #F1EFEA;
+    --surface-3: #E6E3DC;
+    --glass: rgba(255, 255, 255, 0.78);
+    --edge: rgba(255, 255, 255, 0.9);
+    --border: rgba(24, 20, 14, 0.09);
+    --border-strong: rgba(24, 20, 14, 0.16);
+    --text-primary: #16181D;
+    --text-secondary: #474D5B;
+    --text-muted: #626877;
+    --accent: #F2600F;
+    --accent-2: #B93E08;
+    --accent-dim: rgba(242, 96, 15, 0.12);
+    --accent-glow: rgba(242, 96, 15, 0.22);
+    --btn-primary: #16181D;
+    --btn-primary-ink: #F6F5F2;
+    --danger: #C8283A;
+    --danger-bg: rgba(200, 40, 58, 0.09);
+    --warn: #8A6100;
+    --warn-bg: rgba(196, 140, 0, 0.13);
+    --success: #12804D;
+    --success-bg: rgba(18, 128, 77, 0.1);
+    --cc-bg: rgba(242, 96, 15, 0.12);
+    --cc-fg: #A93A07;
+    --cline-bg: rgba(13, 148, 136, 0.12);
+    --cline-fg: #0B6F66;
+    --shadow-lift: 0 12px 32px -14px rgba(40, 30, 20, 0.28);
+    --shadow-soft: 0 2px 8px -2px rgba(40, 30, 20, 0.14);
+    --wash: rgba(24, 20, 14, 0.025);
+    --wash-2: rgba(24, 20, 14, 0.045);
+    --hairline: rgba(24, 20, 14, 0.06);
+    --hero-bg: linear-gradient(160deg, #FFFFFF, #FBFAF7);
+    --scrim: rgba(40, 34, 26, 0.28);
+    --k-command: #0d9488;
+    --k-edit: #e8590c;
+    --k-read: #4f5b78;
+    --k-message: #959cab;
+    --k-other: #d3d6dc;
+    --k-failed: #d92d3a;
+}
+}
