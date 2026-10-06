@@ -413,7 +413,13 @@ describe.skipIf(!clineFiles)("cline watcher on a copy of the real session", () =
     const store = new PostrunStore({ path: ":memory:" });
     const events: string[] = [];
     const logs: string[] = [];
-    const w = createClineWatcher({ sessionsDir: root, store, debounceMs: 100, pollMs: 100, log: (l) => logs.push(l), onIngest: (r, t) => events.push(`${t}:${r.created}`) });
+    // budget 1: no pacing between re-reads here. The pacer has its own tests, and pacing after a
+    // large real session's first read would otherwise make the waits below depend on machine speed.
+    const w = createClineWatcher({ sessionsDir: root, store, debounceMs: 100, pollMs: 100, budget: 1, log: (l) => logs.push(l), onIngest: (r, t) => events.push(`${t}:${r.created}`) });
+    // Wait for a condition rather than a fixed time, so a slower machine only waits longer.
+    const until = async (ok: () => boolean, ms = 5000) => {
+      for (const end = Date.now() + ms; !ok() && Date.now() < end; ) await sleep(50);
+    };
     w.start();
     expect(events).toEqual(["startup:true"]);
     const c1 = store.counts();
@@ -424,7 +430,7 @@ describe.skipIf(!clineFiles)("cline watcher on a copy of the real session", () =
     doc.messages.push({ id: "msg_live_1", role: "user", content: [{ type: "text", text: '<user_input mode="act">one more thing</user_input>' }], ts: Date.now() });
     await sleep(20);
     writeFileSync(join(root, id, `${id}.messages.json`), JSON.stringify(doc));
-    await sleep(600);
+    await until(() => store.counts().steps === c1.steps + 1);
     expect(events.filter((e) => e.endsWith(":false")).length).toBeGreaterThan(0);
     const c2 = store.counts();
     expect(c2.sessions).toBe(1);
@@ -434,7 +440,7 @@ describe.skipIf(!clineFiles)("cline watcher on a copy of the real session", () =
     // Half-written file: no crash, logged, counts unchanged.
     await sleep(20);
     writeFileSync(join(root, id, `${id}.messages.json`), JSON.stringify(doc).slice(0, 5000));
-    await sleep(600);
+    await until(() => logs.some((l) => /not parseable yet/.test(l)));
     expect(logs.some((l) => /not parseable yet/.test(l))).toBe(true);
     expect(store.counts()).toEqual(c2);
 
@@ -443,7 +449,7 @@ describe.skipIf(!clineFiles)("cline watcher on a copy of the real session", () =
     mkdirSync(join(root, id2));
     await sleep(20);
     writeFileSync(join(root, id2, `${id2}.messages.json`), JSON.stringify({ version: 1, sessionId: id2, origin: { version: "4.1.17" }, messages: doc.messages.slice(0, 3) }));
-    await sleep(600);
+    await until(() => store.counts().sessions === 2);
     expect(store.counts().sessions).toBe(2);
     w.stop();
     store.close();
