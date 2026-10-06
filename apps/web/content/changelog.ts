@@ -20,6 +20,17 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "A review app that moves",
+    summary: "The session list and session view are redesigned around the strip: the shape of what an agent did, at a glance.",
+    items: [
+      { kind: "new", text: "Every session has a strip: its steps in order, coloured by kind, with failures standing out in red. On a session page, the tape shows every step; click a bar to jump to it." },
+      { kind: "new", text: "Search, date ranges, size and failure filters, and a list or grid view. Empty sessions are tucked away until you ask for them." },
+      { kind: "improved", text: "Long histories load 50 sessions at a time as you scroll, and the filtering runs in the store, so the list stays quick with thousands of sessions." },
+      { kind: "improved", text: "Sessions group by day, new sessions slide in live, numbers tick when they change, steps unfold smoothly, and loading shows the page's shape instead of a spinner." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "Postrun 0.1: one command to install",
     summary: "Postrun is now an installable command for early access: npm install -g postrun, then postrun setup.",
     items: [

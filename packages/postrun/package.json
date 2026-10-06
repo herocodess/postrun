@@ -1,6 +1,6 @@
 {
   "name": "postrun",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The flight recorder for coding agents: record Claude Code and Cline sessions on your machine and review everything they did.",
   "type": "module",
   "bin": {

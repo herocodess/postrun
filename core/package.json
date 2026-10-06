@@ -67,7 +67,8 @@
     "demo:data": "tsx src/demo/build.ts",
     "bench:heavy": "node --expose-gc --import tsx src/bench/heavy-day.ts",
     "delete": "tsx src/store/cli.ts delete",
-    "postrun": "tsx src/cli/postrun.ts"
+    "postrun": "tsx src/cli/postrun.ts",
+    "demo:seed": "tsx src/demo/seed-many.ts"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

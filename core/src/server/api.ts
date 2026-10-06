@@ -1,7 +1,8 @@
 /**
  * Wire types for the localhost API. Pure types: safe for the UI to import.
  *
- *   GET /api/sessions[?agent=<kind>]   -> SessionListResponse
+ *   GET /api/sessions[?agent=&q=&from=&to=&min_steps=&failed=1&empty=0&limit=&cursor=]
+ *                                      -> SessionListResponse | ApiError (400 bad filter)
  *   GET /api/sessions/:id              -> SessionDetailResponse | ApiError (404)
  *   GET /api/sessions/:id?since=<as_of> -> SessionDeltaResponse (only steps written after as_of)
  *   GET /api/sessions/:id/steps/:step  -> StepResponse (one step in full)
@@ -24,6 +25,14 @@ export interface SessionListResponse {
   sessions: SessionSummary[];
   /** Agent kinds present in the store, for the filter control. */
   agents: string[];
+  /** Sessions matching the filters, across every page. */
+  total: number;
+  /** Reported cost of every matching session. */
+  total_cost: number;
+  /** Matching sessions with no steps, whether or not they are included. */
+  empty_count: number;
+  /** Present when there is another page: pass it as ?cursor= with the same filters. */
+  next_cursor?: string;
 }
 
 /**

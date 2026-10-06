@@ -285,3 +285,41 @@ describe("store writes only what changed (schema v2)", () => {
     again.close();
   });
 });
+
+describe("session strip", () => {
+  it("records each step's type in order, upper case when it failed", async () => {
+    const { PostrunStore: Store } = await import("./store.js");
+    const store = new Store({ path: ":memory:" });
+    const at = "2026-10-06T10:00:00.000Z";
+    const base = { session_id: "strip-1", segment_index: 0, turn_id: "turn:1", actor_id: "root", at, decision: "auto", content_status: "inline", channels: ["hook"], flags: [] } as const;
+    store.ingest({
+      id: "strip-1",
+      agent: { kind: "claude-code", version: "1" },
+      workspace: { root: "/w" },
+      started_at: at,
+      segments: [{ index: 0, start_reason: "startup", started_at: at, source_files: [] }],
+      actors: [{ id: "root", type: "root" }],
+      turns: [{ id: "turn:1", session_id: "strip-1", segment_index: 0, actor_id: "root", index: 1, started_at: at, step_ids: [] }],
+      steps: [
+        { ...base, id: "a", seq: 1, type: "message", outcome: "ok", decision: "n/a", payload: { role: "user", text: "go" } },
+        { ...base, id: "b", seq: 2, type: "command", outcome: "failed", payload: { command: "x" } },
+        { ...base, id: "c", seq: 3, type: "edit", outcome: "ok", payload: { path: "/w/a", is_full_write: false } },
+        { ...base, id: "d", seq: 4, type: "read", outcome: "ok", payload: { path: "/w/b" } },
+      ] as never,
+      metrics: { cost_usd: 0, api_requests: 0, tokens: { input: 0, output: 0, cache_read: 0, cache_creation: 0 } },
+      source: "test",
+    });
+    expect(store.getSession("strip-1")!.summary.strip).toBe("mCer");
+    store.close();
+  });
+
+  it("slices a long strip, keeping any failure visible", async () => {
+    const { sliceStrip } = await import("./store.js");
+    expect(sliceStrip("cccc", 64)).toBe("cccc");
+    const long = "e".repeat(1000) + "C" + "r".repeat(999);
+    const s = sliceStrip(long, 10);
+    expect(s).toHaveLength(10);
+    expect(s.slice(0, 5)).toBe("eeeee");
+    expect(s[5]).toBe("R"); // the slice holding the failed command is mostly reads, marked failed
+  });
+});
