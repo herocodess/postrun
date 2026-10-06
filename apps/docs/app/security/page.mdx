@@ -78,7 +78,7 @@ The OTLP receiver stores an export only when it:
 
 A request from a web page is refused with `403`. An export without the key is acknowledged and dropped, so a Claude Code session started before setup added the key shows no errors; it simply has no cost data until restarted. Each session's telemetry file stops growing at 256 MB.
 
-Nothing is rate limited, because neither listener is reachable from the network.
+Nothing on your computer is rate limited, because neither listener is reachable from the network. `app.postrun.app` is, see [Share links](/share/#limits).
 
 ### Request hardening
 
