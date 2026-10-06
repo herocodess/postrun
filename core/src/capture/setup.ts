@@ -136,6 +136,20 @@ const TELEMETRY_KEYS = Object.keys(captureEnv("", DEFAULT_OTLP_PORT, "k")).filte
 /** The headers value is Postrun's when it is exactly its key header and nothing else. */
 const ownHeaders = (v: unknown): boolean => typeof v === "string" && new RegExp(`^${OTLP_KEY_HEADER}=[A-Za-z0-9_-]+$`).test(v);
 
+/** OTEL_EXPORTER_OTLP_HEADERS is a comma-separated list: Postrun's entry is added or taken out, the user's stay. */
+function withoutOurHeader(v: unknown): string {
+  if (typeof v !== "string") return "";
+  return v
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => x && !x.toLowerCase().startsWith(`${OTLP_KEY_HEADER}=`))
+    .join(",");
+}
+function withOurHeader(v: unknown, ours: string): string {
+  const rest = withoutOurHeader(v);
+  return rest ? `${rest},${ours}` : ours;
+}
+
 /**
  * Remove the telemetry keys Postrun set, in place. A key is Postrun's only while
  * the endpoint is Postrun's receiver and the value is the one Postrun writes;
@@ -147,9 +161,20 @@ function removeOwnTelemetry(env: Json, judgeBy: Json, before?: Json): string[] {
   const removed: string[] = [];
   for (const k of TELEMETRY_KEYS) {
     if (!(k in env)) continue;
-    if (k === OTLP_HEADERS_KEY ? !ownHeaders(env[k]) : env[k] !== ours[k]) continue;
+    if (k === OTLP_HEADERS_KEY) {
+      // Take out Postrun's entry only; the user's own headers stay as they were.
+      const rest = withoutOurHeader(env[k]);
+      if (rest === env[k]) continue;
+      if (rest) env[k] = rest;
+      else delete env[k];
+      removed.push(k);
+      continue;
+    }
+    if (env[k] !== ours[k]) continue;
     if (before && k !== "OTEL_EXPORTER_OTLP_ENDPOINT" && before[k] === env[k]) continue;
-    delete env[k];
+    // A value setup replaced is put back as the user had it, rather than removed.
+    if (before && k in before && k !== "OTEL_EXPORTER_OTLP_ENDPOINT") env[k] = before[k];
+    else delete env[k];
     removed.push(k);
   }
   return removed;
@@ -226,7 +251,8 @@ export function mergeCaptureSettings(
     // Hooks only: take back any telemetry keys Postrun set earlier, never the user's own.
     for (const k of removeOwnTelemetry(env, currentEnv ?? {})) report.env_removed.push(k);
   }
-  for (const [k, v] of Object.entries(wanted)) {
+  for (const [k, raw] of Object.entries(wanted)) {
+    const v = k === OTLP_HEADERS_KEY ? withOurHeader(env[k], raw) : raw;
     if (!(k in env)) {
       env[k] = v;
       report.env_added.push(k);

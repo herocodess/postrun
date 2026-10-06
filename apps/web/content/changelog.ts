@@ -20,6 +20,21 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "A security pass",
+    summary: "A full audit of Postrun, and fixes for everything it found, before accounts and sharing arrive.",
+    items: [
+      { kind: "security", text: "Exported reports mask many more secrets: lower-case bearer tokens, cut-off and PGP private keys, quoted passwords, cookies, curl -u and --password flags, npm, GitLab, Hugging Face, SendGrid and Google OAuth tokens, Slack and Discord webhooks, long random-looking values and email addresses." },
+      { kind: "security", text: "The review app opens only in a browser you connected with postrun open, so other accounts on a shared computer cannot read your sessions. Other sites can no longer frame it." },
+      { kind: "security", text: "Only Claude Code can send telemetry to Postrun: a web page can no longer slip fake data into your sessions." },
+      { kind: "fixed", text: "Events from tools that run in parallel are no longer lost when their output is large." },
+      { kind: "fixed", text: "Pause now really pauses: nothing is recorded until you resume." },
+      { kind: "fixed", text: "Delete everything removes every raw log, and a recording in progress can no longer bring a deleted session back." },
+      { kind: "improved", text: "Risk flags read commands the way a shell does: fewer false alarms from quoted text, and tricks like bash <(curl …) or git push +main are caught." },
+      { kind: "fixed", text: "postrun stop never touches a program that is not Postrun, setup keeps a symlinked Claude Code settings file a symlink, and uninstall refuses to delete a folder that is not Postrun's." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "Review, not just replay",
     summary: "The review app becomes a place to sign off on agent work: a dashboard, projects, your verdict on each session, what changed file by file, and what looks risky.",
     items: [

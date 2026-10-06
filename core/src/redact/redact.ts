@@ -78,7 +78,9 @@ const FORMATS: Array<[SecretKind, RegExp]> = [
 ];
 
 /** scheme://user:password@host, and scheme://:password@host (Redis). */
-const URL_PASSWORD = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@/]*:)([^\s@/]+)(@)/gi;
+// Every part is bounded: an unbounded scheme scan restarts at each word boundary of a long run
+// such as "a-a-a-…" and took seconds on large command output.
+const URL_PASSWORD = /\b([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]{0,256}:)([^\s@/]{1,512})(@)/gi;
 /** Authorization schemes in any case: "authorization: bearer …" is common in logs and curl -v output. */
 const AUTH_HEADER = /\b(Bearer|Basic|Token)(\s+)([A-Za-z0-9._~+/=-]{16,})/gi;
 /** The whole value of a Cookie or Set-Cookie header. */
@@ -95,7 +97,7 @@ const SECRET_FLAG = /(--(?:password|passwd|pass|token|secret|api-key|apikey|auth
  */
 const ASSIGNMENT = /(["']?)\b([A-Za-z_][A-Za-z0-9_.-]{1,80})\1(\s*(?::|=|:=)\s*)(["']?)((?!\[REDACTED)[^\s"'`]{6,})\4/g;
 /** The same with a quoted value that may contain spaces: DB_PASSWORD="correct horse battery". */
-const QUOTED_ASSIGNMENT = /(["']?)\b([A-Za-z_][A-Za-z0-9_.-]{1,80})\1(\s*(?::|=|:=)\s*)(["'])((?!\[REDACTED)[^"'\r\n]*\s[^"'\r\n]*)\4/g;
+const QUOTED_ASSIGNMENT = /(["']?)\b([A-Za-z_][A-Za-z0-9_.-]{1,80})\1(\s*(?::|=|:=)\s*)(["'])((?!\[REDACTED)[^"'\r\n]{6,200})\4/g;
 
 /** Credential words as whole segments of a snake/kebab/dotted name: API_KEY, db.password, x-auth-token. */
 const SEGMENT_WORDS = /(?:^|[_.-])(?:secret|secrets|token|password|passwd|pwd|passphrase|apikey|api[_.-]?key|private[_.-]?key|access[_.-]?key|secret[_.-]?key|credential|credentials|auth|client[_.-]?secret|session[_.-]?key|signing[_.-]?key|webhook[_.-]?secret)(?:$|[_.-])/i;
@@ -104,6 +106,24 @@ const CAMEL_WORDS = /(?:[a-z0-9](?:ApiKey|Token|Secret|Password|Passwd|PrivateKe
 
 /** Values that are clearly not secrets even under a credential name. */
 const NOT_A_SECRET = /^(?:true|false|null|nil|none|undefined|required|optional|string|number|boolean|\*+|x{3,}|changeme|redacted|example|placeholder|your[_-].*|<.*>|\$\{.*\}|\$[A-Z_]+|process\.env\..*|os\.environ.*|env\(.*)$/i;
+/** Code, not a value: a call or member chain (z.string(), String(x), config.get("k")), or a type. */
+const CODE_VALUE = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:<[^>]*>)?(?:\(.*\))?(?:\.[A-Za-z_$][\w$]*(?:\(.*\))?)*(?:\[\])?$/;
+/** Names that hold a folder, not a secret, whatever the words in them: PWD, OLDPWD. */
+const PATH_NAMES = /^(?:pwd|oldpwd)$/i;
+
+/** Whether a value under a credential name is really a secret, after trailing punctuation from code is dropped. */
+function secretValue(name: string, raw: string): boolean {
+  let val = raw.trim().replace(/[,;]+$/, "");
+  // A closing parenthesis from the surrounding code (f(token=x)), but never one the value opened itself.
+  const count = (c: string) => val.split(c).length - 1;
+  while (val.endsWith(")") && count(")") > count("(")) val = val.slice(0, -1).replace(/[,;]+$/, "");
+  if (val.length < 6 || NOT_A_SECRET.test(val) || PATH_NAMES.test(name)) return false;
+  // A call or type with no digits is code (z.string(), string[]); a real secret almost always has digits or symbols.
+  if (CODE_VALUE.test(val) && (/[().<>[\]]/.test(val) || /^[A-Za-z]+$/.test(val)) && !/\d/.test(val.replace(/\(.*\)/, ""))) return false;
+  // An absolute path is a location, not a secret.
+  if (/^(?:~|\.{0,2})\/[^\s]*\//.test(val)) return false;
+  return true;
+}
 
 /** Credential words run together at the end of a name: PGPASSWORD, MYSQL_PWD is covered above, DBTOKEN. */
 const SUFFIX_WORDS = /(?:password|passwd|passphrase|secret|apikey)$/i;
@@ -117,9 +137,21 @@ export function isCredentialName(name: string): boolean {
  * rule above named them (bare AWS secret keys, custom API tokens). Hex (git hashes, digests) has
  * no upper case and is left alone, as are integrity hashes (sha512-…) and base64 data URIs.
  */
-const RANDOM_LOOKING = /(?<![A-Za-z0-9+/=_-])(?<!sha(?:1|256|384|512)-)(?<!base64,)(?!sha(?:1|256|384|512)-)(?=[A-Za-z0-9+/_=-]*[A-Z])(?=[A-Za-z0-9+/_=-]*[a-z])(?=[A-Za-z0-9+/_=-]*[0-9])[A-Za-z0-9+/_-]{32,}={0,2}(?![A-Za-z0-9+/=_-])/g;
+const RANDOM_LOOKING_RE = /(?<![A-Za-z0-9+/=_-])(?<!sha(?:1|256|384|512)-)(?<!base64,)(?!sha(?:1|256|384|512)-)(?=[A-Za-z0-9+/_=-]*[A-Z])(?=[A-Za-z0-9+/_=-]*[a-z])(?=[A-Za-z0-9+/_=-]*[0-9])[A-Za-z0-9+/_-]{32,}={0,2}(?![A-Za-z0-9+/=_-])/g;
+
+/**
+ * A token with / in it is a path (masked by the home-path rule, not this one) when it starts with /
+ * or any segment is a plain word: /Users/x/Projects/…, chunks/framework-…. An AWS secret key has
+ * slashes too, but its segments are never plain words.
+ */
+function looksLikePath(s: string): boolean {
+  if (!s.includes("/")) return false;
+  if (s.startsWith("/")) return true;
+  return s.split("/").some((seg) => /^[a-z]{3,}$|^[A-Z][a-z]{2,}$/.test(seg));
+}
 
 function looksRandom(s: string): boolean {
+  if (looksLikePath(s)) return false;
   if (/^[A-Za-z]+[A-Za-z0-9]*$/.test(s) && /[a-z][A-Z]/.test(s) && !/[0-9].*[0-9].*[0-9]/.test(s)) return false; // CamelCaseIdentifiers
   const freq = new Map<string, number>();
   for (const c of s) freq.set(c, (freq.get(c) ?? 0) + 1);
@@ -128,7 +160,34 @@ function looksRandom(s: string): boolean {
   return h >= 4;
 }
 
-const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
+/**
+ * Email addresses, found from each @ outward with bounded scans: a pattern that starts at every
+ * word boundary takes quadratic time on long runs of word characters with no @ (minified code,
+ * dashes), which blocked the recorder for seconds on large command output.
+ */
+const EMAIL_LOCAL = /[A-Za-z0-9._%+-]/;
+const EMAIL_DOMAIN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.([A-Za-z]{2,24})(?![A-Za-z0-9-])/;
+/** Retina assets (icon@2x.png) and other file names are not addresses. */
+const FILE_EXTENSIONS = /^(?:png|jpe?g|gif|svg|webp|avif|ico|js|mjs|cjs|ts|tsx|jsx|css|scss|json|md|mdx|html?|txt|pdf|mp[34]|mov|zip|gz|lock|ya?ml|toml|xml|csv|map|wasm|woff2?|ttf)$/i;
+
+function replaceEmails(text: string, fn: (email: string) => string): string {
+  if (!text.includes("@")) return text;
+  let out = "";
+  let last = 0;
+  for (let at = text.indexOf("@"); at !== -1; at = text.indexOf("@", at + 1)) {
+    if (at < last) continue;
+    let start = at;
+    while (start > last && at - start < 64 && EMAIL_LOCAL.test(text[start - 1]!)) start--;
+    if (start === at || (start > 0 && /[A-Za-z0-9_]/.test(text[start - 1]!))) continue;
+    const m = EMAIL_DOMAIN.exec(text.slice(at + 1, at + 1 + 254));
+    if (!m || FILE_EXTENSIONS.test(m[1]!)) continue;
+    const end = at + 1 + m[0].length;
+    out += text.slice(last, start) + fn(text.slice(start, end));
+    last = end;
+    at = end - 1;
+  }
+  return out + text.slice(last);
+}
 /** Addresses that identify nobody: the masks above, documentation domains, git's noreply. */
 const EMAIL_KEEP = /@(?:example\.(?:com|org|net)|users\.noreply\.github\.com|noreply\.[a-z.]+)$|^(?:git|noreply|no-reply)@/i;
 
@@ -143,6 +202,8 @@ const HOME_PATHS: RegExp[] = [
 export interface Redactor {
   /** Mask one string. location names where it came from, for the findings list. */
   string(value: string, location: string): string;
+  /** Mask a whole value already known to be a secret, recording the finding. */
+  secret(value: string, kind: SecretKind, location: string): string;
   report(): RedactionReport;
 }
 
@@ -182,18 +243,18 @@ export function createRedactor(): Redactor {
       return `${flag}${q}${mask("credential")}${q}`;
     });
     const assignment = (m: string, q1: string, name: string, sep: string, q2: string, val: string) => {
-      if (!isCredentialName(name) || NOT_A_SECRET.test(val.trim())) return m;
+      if (!isCredentialName(name) || !secretValue(name, val)) return m;
       hits.push("credential");
       return `${q1}${name}${q1}${sep}${q2}${mask("credential")}${q2}`;
     };
     out = out.replace(QUOTED_ASSIGNMENT, assignment);
     out = out.replace(ASSIGNMENT, assignment);
-    out = out.replace(RANDOM_LOOKING, (m: string) => {
+    out = out.replace(RANDOM_LOOKING_RE, (m: string) => {
       if (!looksRandom(m)) return m;
       hits.push("high-entropy");
       return mask("high-entropy");
     });
-    out = out.replace(EMAIL, (m: string) => {
+    out = replaceEmails(out, (m: string) => {
       if (EMAIL_KEEP.test(m)) return m;
       hits.push("email");
       return mask("email");
@@ -219,7 +280,13 @@ export function createRedactor(): Redactor {
     return out;
   };
 
-  return { string, report: () => ({ findings, counts, home_paths: homePaths }) };
+  const secret = (_value: string, kind: SecretKind, location: string): string => {
+    counts[kind] = (counts[kind] ?? 0) + 1;
+    findings.push({ kind, location, context: mask(kind) });
+    return mask(kind);
+  };
+
+  return { string, secret, report: () => ({ findings, counts, home_paths: homePaths }) };
 }
 
 function contextAround(s: string, idx: number, len: number, pad = 48): string {
@@ -243,6 +310,12 @@ export function redactDeep<T>(value: T, r: Redactor, location: string): T {
       const out: Record<string, unknown> = {};
       for (const [k, x] of Object.entries(v)) {
         const key = r.string(k, `${where} · key`);
+        // {"API_KEY": "abc123def"}: the name is in the key and the value on its own, so the
+        // NAME=value rule never sees them together. Decide here, with the same rules.
+        if (typeof x === "string" && isCredentialName(k) && secretValue(k, x) && !x.startsWith("[REDACTED")) {
+          out[key] = r.secret(x, "credential", `${where} · ${key}`);
+          continue;
+        }
         out[key] = walk(x, `${where} · ${key}`);
       }
       return out;

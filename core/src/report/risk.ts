@@ -124,6 +124,12 @@ function parseShell(line: string, nested: string[] = []): Pipeline[] {
       i = j < 0 ? line.length : j + 1;
       continue;
     }
+    if ((c === "(" || c === ")") && !inWord) {
+      // A subshell or group: (rm -rf /), $(…) is handled above.
+      endPipeline();
+      i++;
+      continue;
+    }
     if (c === "#" && !inWord) {
       const j = line.indexOf("\n", i);
       i = j < 0 ? line.length : j;
@@ -166,25 +172,51 @@ function allPipelines(line: string): { pipelines: Pipeline[]; nested: string[] }
   return { pipelines: out, nested: nestedAll };
 }
 
-/** Words that only set up how the real command runs; the command is the word after them. */
-const PREFIX = new Set(["sudo", "doas", "time", "nohup", "nice", "command", "exec", "builtin", "xargs", "env"]);
+/**
+ * Words that only set up how the real command runs; the command is the word after them. For each,
+ * the options that take a value (so the value is not mistaken for the command), and how many plain
+ * words come before the command (timeout 10 rm …).
+ */
+const PREFIX: Record<string, { valued: RegExp; leading?: number }> = {
+  sudo: { valued: /^-[ugpCDhrt]$/ },
+  doas: { valued: /^-[uC]$/ },
+  time: { valued: /^-[fo]$/ },
+  nohup: { valued: /^$/ },
+  nice: { valued: /^-n$/ },
+  ionice: { valued: /^-[cnp]$/ },
+  command: { valued: /^$/ },
+  exec: { valued: /^-a$/ },
+  builtin: { valued: /^$/ },
+  env: { valued: /^-[uSC]$/ },
+  xargs: { valued: /^-[IinPLdsEa]$/ },
+  timeout: { valued: /^-[sk]$/, leading: 1 },
+  watch: { valued: /^-[nd]$/ },
+  stdbuf: { valued: /^-[ioe]$/ },
+  busybox: { valued: /^$/ },
+  caffeinate: { valued: /^-[wt]$/ },
+  unbuffer: { valued: /^$/ },
+};
+/** Shell words that start or join compound commands: if …; then rm …; fi. Skipped to reach the command. */
+const KEYWORDS = new Set(["if", "then", "else", "elif", "fi", "do", "done", "while", "until", "!", "{", "}", "case", "esac", "in"]);
 const ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
-/** The command name (basename) and its arguments, after env assignments and prefixes such as sudo. */
+/** The command name (basename) and its arguments, after env assignments, keywords and prefixes such as sudo. */
 function commandOf(simple: Simple): { name: string; args: string[]; elevated: boolean } | undefined {
   let i = 0;
   let elevated = false;
   for (; i < simple.length; i++) {
     const w = simple[i]!;
     if (w.quoted) break;
-    if (ASSIGN.test(w.text)) continue;
-    if (PREFIX.has(w.text)) {
+    if (ASSIGN.test(w.text) || KEYWORDS.has(w.text)) continue;
+    const prefix = PREFIX[w.text];
+    if (prefix) {
       if (w.text === "sudo" || w.text === "doas") elevated = true;
-      // Options of the prefix itself (sudo -u bob, env -i, nice -n 5) are skipped too.
-      while (i + 1 < simple.length && simple[i + 1]!.text.startsWith("-")) {
+      // The prefix's own options (sudo -u bob, xargs -I {}, timeout -s KILL), then its plain words (timeout 10).
+      while (i + 1 < simple.length && simple[i + 1]!.text.startsWith("-") && simple[i + 1]!.text !== "-") {
         i++;
-        if (/^-(u|g|n|C)$/.test(simple[i]!.text)) i++;
+        if (prefix.valued.test(simple[i]!.text)) i++;
       }
+      i += prefix.leading ?? 0;
       continue;
     }
     break;
@@ -233,7 +265,39 @@ interface Hit {
   severity: Flag["severity"];
 }
 
-function commandFlags(line: string): Hit[] {
+/** Arguments that are themselves a command line: bash -c '…', eval …, su -c '…', ssh host '…', find -exec … ;. */
+function innerCommands(name: string, args: string[]): string[] {
+  const out: string[] = [];
+  if ((SHELLS.has(name) || name === "su") && args.includes("-c")) {
+    const s = args[args.indexOf("-c") + 1];
+    if (s) out.push(s);
+  } else if (SHELLS.has(name)) {
+    // bash -lc '…', sh -ec '…': the script is the first word after a flag group ending in c.
+    const at = args.findIndex((a) => /^-[a-z]*c$/.test(a));
+    if (at >= 0 && args[at + 1]) out.push(args[at + 1]!);
+  }
+  if (name === "eval") out.push(args.join(" "));
+  if (name === "ssh") {
+    let i = 0;
+    for (; i < args.length; i++) {
+      const a = args[i]!;
+      if (/^-[bcDEeFIiJLlmOopQRSWw]$/.test(a)) i++;
+      else if (!a.startsWith("-")) break;
+    }
+    if (i + 1 < args.length) out.push(args.slice(i + 1).join(" "));
+  }
+  if (name === "find") {
+    for (let i = 0; i < args.length; i++) {
+      if (!/^-(?:exec|execdir|ok|okdir)$/.test(args[i]!)) continue;
+      const words: string[] = [];
+      for (i++; i < args.length && args[i] !== ";" && args[i] !== "+"; i++) words.push(args[i]!);
+      if (words.length) out.push(words.join(" "));
+    }
+  }
+  return out;
+}
+
+function commandFlags(line: string, depth = 0): Hit[] {
   const hits: Hit[] = [];
   const add = (reason: string, severity: Flag["severity"]) => {
     if (!hits.some((h) => h.reason === reason)) hits.push({ reason, severity });
@@ -247,6 +311,14 @@ function commandFlags(line: string): Hit[] {
       const { name, args } = c;
       const flags = flagsOf(args);
       const operands = args.filter((a) => !a.startsWith("-"));
+
+      // Commands carried as arguments are read as commands too, a few levels deep.
+      if (depth < 4) for (const inner of innerCommands(name, args)) for (const h of commandFlags(inner, depth + 1)) add(h.reason, h.severity);
+
+      if (name === "find" && args.includes("-delete")) {
+        const root = args.find((a) => !a.startsWith("-"));
+        add("deletes the files find matched (find -delete)", root === "/" || root === "~" || root === "$HOME" ? "danger" : "warn");
+      }
 
       if (name === "rm" && (flags.has("r") || flags.has("R") || flags.has("recursive")) && (flags.has("f") || flags.has("force"))) {
         if (operands.length > 0 && operands.every((o) => BUILD_OUTPUT.test(o))) add("deletes build output recursively (rm -rf)", "info");

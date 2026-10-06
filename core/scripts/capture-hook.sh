@@ -26,11 +26,16 @@ SPOOL="$DIR/spool"
 PAYLOAD="$(cat)" || exit 0
 [ -z "$PAYLOAD" ] && exit 0
 [ -e "$DIR/.paused" ] && exit 0
-mkdir -p "$SPOOL" 2>/dev/null || exit 0
-
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-TMP="$(mktemp "$SPOOL/.in.XXXXXXXX" 2>/dev/null)" || exit 0
-if printf '{"received_at":"%s","channel":"hook","payload":%s}\n' "$TS" "$PAYLOAD" > "$TMP" 2>/dev/null; then
+LINE_FMT='{"received_at":"%s","channel":"hook","payload":%s}\n'
+
+# Without a usable spool, fall back to the shared inbox: an event may splice with another one
+# written at the same moment, but it is not dropped outright.
+if ! mkdir -p "$SPOOL" 2>/dev/null || ! TMP="$(mktemp "$SPOOL/.in.XXXXXXXX" 2>/dev/null)"; then
+  mkdir -p "$DIR" 2>/dev/null && printf "$LINE_FMT" "$TS" "$PAYLOAD" >> "$DIR/hooks.ndjson" 2>/dev/null
+  exit 0
+fi
+if printf "$LINE_FMT" "$TS" "$PAYLOAD" > "$TMP" 2>/dev/null; then
   mv -f "$TMP" "$SPOOL/$(date -u +%Y%m%dT%H%M%S)-$$-${RANDOM}.ndjson" 2>/dev/null || rm -f "$TMP"
 else
   rm -f "$TMP"

@@ -22,6 +22,7 @@ The sidebar has four pages: **Dashboard**, **Sessions**, **Projects** and **Sett
 | Recording | Postrun is running. A ring pulses each time something is written. |
 | Paused | Recording is paused from Settings. Claude Code events are dropped until you resume; Cline keeps its own history, which Postrun reads on resume. Restarting Postrun resumes. |
 | Not running | The page cannot reach Postrun. Run `postrun start`. What is on screen stays, and the app catches up when Postrun is back. |
+| Not connected | This browser does not have the key yet. Run `postrun open`. See [Troubleshooting](/troubleshooting/#connect-this-browser). |
 
 ## Dashboard
 
@@ -111,12 +112,12 @@ Postrun flags steps worth a second look:
 
 | Flag | When |
 | --- | --- |
-| Risky commands | `rm -rf`, `git push --force`, `git reset --hard`, `git clean -f`, a downloaded script piped to a shell, `sudo`, `chmod 777`, dropping a database or table, `npm publish`, printing `.env` or the environment |
+| Risky commands | `rm -rf` (deleting build output such as `node_modules` or `dist` is noted as routine), force pushes (`--force`, `-f`, `--mirror`, `+branch`; `--force-with-lease` is a warning), `git reset --hard`, `git clean -f`, a downloaded script run straight away (`curl … \| sh`, `bash <(curl …)`, `sh -c "$(curl …)"`, piped to Python or Node too), `sudo` or `doas`, `chmod 777`, dropping a database or table from a SQL client, `prisma migrate reset`, `dropdb`, `npm publish` (not `--dry-run`), reading `.env`, SSH, cloud or Kubernetes credentials, printing the environment |
 | Secrets in output | A command printed what looks like a key, token or password |
 | Edits outside the project | A file was changed outside the session's working folder (temporary folders are fine) |
-| Secrets files | A `.env`, key or credentials file was read or changed |
+| Secrets files | A `.env`, `.envrc`, key, credentials or Terraform state file was read or changed |
 
-Each flag names what matched and links to its step. Flags are worked out on your computer when a session is recorded, and the step itself lists them when you open it.
+Commands are read the way a shell splits them, so text inside quotes is never mistaken for a command (`echo 'use sudo'` is not flagged), and commands inside `$(…)` are read too. Each flag names what matched and links to its step. Flags are worked out on your computer when a session is recorded, and the step itself lists them when you open it. When the rules improve, sessions already stored are checked again once.
 
 ### Git
 
@@ -219,7 +220,7 @@ The same works from a terminal with [`postrun delete`](/reference/cli/#postrun-d
 
 ## Routes
 
-The review app uses these routes, which you can also call from scripts on the same machine. They need no token.
+The review app uses these routes, which you can also call from scripts on the same machine. Every route except `/api/health` needs this computer's key, from `~/.postrun/ingest-token`, as `Authorization: Bearer <key>` (or `?key=<key>` for downloads and the live stream). Without it the answer is `401`. See [Security](/security/#the-key).
 
 | Route | Returns |
 | --- | --- |
@@ -256,3 +257,5 @@ pnpm dev:ui      # Next dev server on 127.0.0.1:3000, with /api proxied to 127.0
 ```
 
 Set `UI_PORT` to move the dev server, and `POSTRUN_CORE_URL` to proxy to a core server on another address.
+
+`pnpm dev:core` prints the app's link with its key. Open `http://127.0.0.1:3000/#key=<the same key>` once to connect the dev server's page too; a browser keeps a key per address and port.

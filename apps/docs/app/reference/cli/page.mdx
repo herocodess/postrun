@@ -56,7 +56,7 @@ Prints whether Postrun is recording, its pid, the review app address and how man
 
 ## postrun open
 
-Opens the review app in your default browser, or prints its address if it cannot.
+Opens the review app in your default browser and connects that browser: the link carries this computer's key after `#`, which the app keeps and removes from the address bar. If it cannot open a browser, it prints the link to open yourself. Run it once in each browser you use.
 
 ## postrun sessions
 
@@ -100,7 +100,7 @@ postrun restart
 
 `start` runs Postrun in the background and waits until the review app answers. If it is already running, it says so. If it cannot start, it prints the last lines of `~/.postrun/postrun.log`.
 
-`stop` stops it; nothing is recorded until you start it again. Claude Code keeps writing its hook log while Postrun is stopped, and the next start catches up on every session it missed.
+`stop` stops it. Claude Code's hook keeps saving events while Postrun is stopped, and the next start catches up on every session it missed, without cost data. To stop recording altogether, pause it in Settings instead. `stop` only signals the process in `~/.postrun/postrun.pid` after checking that it really is Postrun; a stale file is removed and nothing else is touched.
 
 The background process runs the telemetry receiver, both recorders and the review app together, and logs to `~/.postrun/postrun.log` (rotated at 5 MB).
 

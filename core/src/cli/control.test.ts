@@ -116,4 +116,20 @@ describe("the git branch probe", () => {
     expect(gitBranch(root)).toBeUndefined();
     expect(gitBranch(mkdtempSync(join(tmpdir(), "postrun-nogit-")))).toBeUndefined();
   });
+
+  it("never reads a HEAD that is a device, a pipe or huge", async () => {
+    const { gitBranch } = await import("./control.js");
+    const { symlinkSync, rmSync } = await import("node:fs");
+    const { execFileSync } = await import("node:child_process");
+    const root = mkdtempSync(join(tmpdir(), "postrun-git-evil-"));
+    mkdirSync(join(root, ".git"));
+    symlinkSync("/dev/zero", join(root, ".git", "HEAD"));
+    expect(gitBranch(root)).toBeUndefined();
+    rmSync(join(root, ".git", "HEAD"));
+    execFileSync("mkfifo", [join(root, ".git", "HEAD")]);
+    expect(gitBranch(root)).toBeUndefined(); // would block forever if opened
+    rmSync(join(root, ".git", "HEAD"));
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n" + "x".repeat(10_000));
+    expect(gitBranch(root)).toBeUndefined();
+  });
 });

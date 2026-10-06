@@ -68,39 +68,52 @@ When downloaded from the server, the response is sent as an attachment with `con
 
 ## What redaction masks
 
-Redaction runs three passes, in this order, over every string in the step payloads, step errors and flag reasons, the workspace path, and turn modes. Each masked value is replaced with `[REDACTED:<kind>]`.
+Redaction runs over every string that reaches the report: step payloads (keys as well as values), errors, flags, channels and decisions, the agent version, the workspace path and turn modes. Each masked value is replaced with `[REDACTED:<kind>]`. The passes run in this order.
 
 ### 1. Known secret formats
 
 | Kind | What it matches |
 | --- | --- |
-| `private-key` | A full `-----BEGIN ... PRIVATE KEY-----` to `-----END ... PRIVATE KEY-----` block |
+| `private-key` | A `-----BEGIN ... PRIVATE KEY-----` block (including PGP `PRIVATE KEY BLOCK`), to its END line, or to the end of the text when the output was cut off before it |
 | `aws-access-key` | AWS access key ids starting `AKIA` or `ASIA` |
 | `github-token` | GitHub tokens starting `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` or `github_pat_` |
 | `anthropic-key` | Keys starting `sk-ant-` |
 | `openai-key` | Keys starting `sk-`, `sk-proj-` or `sk-svcacct-` |
-| `stripe-key` | Keys starting `sk_live_`, `sk_test_`, `rk_live_` or `rk_test_` |
-| `slack-token` | Tokens starting `xoxa-`, `xoxb-`, `xoxp-`, `xoxo-`, `xoxs-` or `xoxr-` |
+| `stripe-key` | Keys starting `sk_live_`, `sk_test_`, `rk_live_` or `rk_test_`, and webhook secrets starting `whsec_` |
+| `slack-token` | Tokens starting `xoxa-`, `xoxb-`, `xoxp-`, `xoxo-`, `xoxs-`, `xoxr-`, `xoxe-` or `xapp-` |
+| `webhook-url` | Slack (`hooks.slack.com`) and Discord webhook URLs |
 | `google-api-key` | Keys starting `AIza` |
+| `google-oauth-secret` | OAuth client secrets starting `GOCSPX-` |
+| `gitlab-token` | Tokens starting `glpat-` |
+| `npm-token` | Tokens starting `npm_` |
+| `huggingface-token` | Tokens starting `hf_` |
+| `sendgrid-key` | Keys starting `SG.` |
 | `jwt` | JSON Web Tokens (three base64url parts, the first two starting `eyJ`) |
 
 ### 2. Credentials in context
 
 | Kind | What it matches |
 | --- | --- |
-| `url-password` | The password in a URL such as `https://user:password@host`. The user name and host stay. |
-| `auth-header` | The value after `Bearer`, `Basic` or `Token` when it is 16 or more characters. |
-| `credential` | The value in `NAME=value`, `NAME: value`, `NAME := value` or `"name": "value"` when the name is a credential name and the value is 6 or more characters. |
+| `url-password` | The password in a URL such as `https://user:password@host` or `redis://:password@host`. The user name and host stay. |
+| `auth-header` | The value after `Bearer`, `Basic` or `Token`, in any case, when it is 16 or more characters. |
+| `cookie` | The value of a `Cookie` or `Set-Cookie` header. |
+| `credential` | The value in `NAME=value`, `NAME: value`, `NAME := value` or `"name": "value"` when the name is a credential name and the value is 6 or more characters, including quoted values with spaces. Also the password in `curl -u user:password`, and the value after `--password`, `--token`, `--secret`, `--api-key` and similar flags. |
 
 A name counts as a credential name when it contains one of these words as a whole part of a snake_case, kebab-case or dotted name: `secret`, `secrets`, `token`, `password`, `passwd`, `pwd`, `passphrase`, `apikey`, `api_key`, `private_key`, `access_key`, `secret_key`, `credential`, `credentials`, `auth`, `client_secret`, `session_key`, `signing_key`, `webhook_secret`. The case does not matter, and the two-word names also match with `.`, `-` or no separator (`api-key`, `apikey`). So `API_KEY`, `db.password` and `x-auth-token` match.
 
-It also matches camelCase names ending in `ApiKey`, `Token`, `Secret`, `Password`, `Passwd`, `PrivateKey`, `AccessKey`, `Credential` or `Credentials` (such as `accessToken` or `clientSecret`), and the bare names `apiKey`, `token`, `secret`, `password`, `passwd`, `credential` and `credentials`.
+Names with the word run on at the end also count: `PGPASSWORD`, `DBSECRET`. It also matches camelCase names ending in `ApiKey`, `Token`, `Secret`, `Password`, `Passwd`, `PrivateKey`, `AccessKey`, `Credential` or `Credentials` (such as `accessToken` or `clientSecret`), and the bare names `apiKey`, `token`, `secret`, `password`, `passwd`, `credential` and `credentials`.
 
 Values that are clearly not secrets are left alone, even under a credential name: `true`, `false`, `null`, `nil`, `none`, `undefined`, `required`, `optional`, `string`, `number`, `boolean`, `changeme`, `redacted`, `example`, `placeholder`, values starting `your_` or `your-`, a run of `*`, three or more `x`, `<...>`, `${...}`, `$NAME`, and references such as `process.env.X`, `os.environ` or `env(...)`.
 
-### 3. Home folders
+### 3. Random-looking values
 
-Paths under `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` have that prefix replaced with `~`. These are counted, not listed, because there are many and they are low risk.
+A string of 32 or more characters that mixes upper case, lower case and digits and looks random (`high-entropy`) is masked even when no rule names it, which catches bare AWS secret keys and custom tokens. Git hashes and digests (hex, no upper case), integrity hashes (`sha512-…`), UUIDs and long code identifiers are left alone.
+
+### 4. Personal details
+
+Email addresses (`email`) are masked, except documentation addresses (`example.com`) and git's `noreply` addresses.
+
+Paths under `/Users/<name>`, `/home/<name>`, `/root` and `C:\Users\<name>` (also as written inside JSON, with doubled backslashes) have that prefix replaced with `~`. These are counted, not listed, because there are many and they are low risk.
 
 ### What you see
 
@@ -110,6 +123,6 @@ Masks are never matched again, so redacting twice changes nothing.
 
 ## Limits of redaction
 
-Redaction catches the formats and patterns above. It will miss a secret that matches none of them: a password in free text, a token with an unusual prefix, a value under a name that is not a credential word, customer data, or internal hostnames. That is why every export lists what it masked, and why you should skim the report before sending it.
+Redaction catches the formats and patterns above. It will miss a secret that matches none of them: a short password in free text, a token too short or too regular to look random, a value under a name that is not a credential word, customer data, or internal hostnames. That is why every export lists what it masked, and why you should skim the report before sending it.
 
 The [security model](/security/) covers what Postrun stores locally and what never leaves your machine.

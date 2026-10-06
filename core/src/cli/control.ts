@@ -87,6 +87,21 @@ export function newerVersion(a: string, b: string): boolean {
 }
 
 /**
+ * A regular file's text, only when it is small. A repository an agent worked on is not trusted:
+ * HEAD could be a link to /dev/zero (endless) or a FIFO (blocks forever), which would take the
+ * background process down. Those are not regular files, and nothing past 4 KB is read.
+ */
+function smallFile(path: string): string | undefined {
+  try {
+    const st = statSync(path);
+    if (!st.isFile() || st.size > 4096) return undefined;
+    return readFileSync(path, "utf8").slice(0, 4096);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The branch a working folder is on now, or undefined when it is not a git repository or HEAD is
  * detached. Read from .git/HEAD directly: running git inside a repository an agent worked on could
  * run that repository's own configuration (fsmonitor and the like), and on a Mac without developer
@@ -101,11 +116,15 @@ export function gitBranch(root: string): string | undefined {
       const st = statSync(dotGit);
       let gitDir = dotGit;
       if (st.isFile()) {
-        const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"));
+        const text = smallFile(dotGit);
+        const m = text === undefined ? null : /^gitdir:\s*(.+)$/m.exec(text);
         if (!m) return undefined;
         gitDir = resolve(dir, (m[1] as string).trim());
+      } else if (!st.isDirectory()) {
+        return undefined;
       }
-      const head = readFileSync(join(gitDir, "HEAD"), "utf8").trim();
+      const head = smallFile(join(gitDir, "HEAD"))?.trim();
+      if (head === undefined) return undefined;
       const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
       const branch = ref?.[1]?.trim();
       // Only a plain branch name reaches the store and the page.

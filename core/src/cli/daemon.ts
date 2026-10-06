@@ -161,7 +161,7 @@ export async function run(p: Paths): Promise<number> {
   if (config.telemetry) {
     try {
       const env = readSettingsEnv(p.claudeSettings);
-      if (typeof env["OTEL_EXPORTER_OTLP_ENDPOINT"] === "string" && env["OTEL_EXPORTER_OTLP_ENDPOINT"] === `http://${LOCALHOST}:${config.otlpPort}` && env["OTEL_EXPORTER_OTLP_HEADERS"] !== `${OTLP_KEY_HEADER}=${otlpKey}`) {
+      if (typeof env["OTEL_EXPORTER_OTLP_ENDPOINT"] === "string" && env["OTEL_EXPORTER_OTLP_ENDPOINT"] === `http://${LOCALHOST}:${config.otlpPort}` && !String(env["OTEL_EXPORTER_OTLP_HEADERS"] ?? "").split(",").map((h) => h.trim()).includes(`${OTLP_KEY_HEADER}=${otlpKey}`)) {
         const r = configureClaudeCode({ captureDir: p.captures, otlpPort: config.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: true, otlpKey });
         if (r.changed) log("added the telemetry key to Claude Code's settings; Claude Code sessions started before now send no cost data until restarted");
       }

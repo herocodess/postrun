@@ -144,9 +144,31 @@ describe("setup helper", () => {
     // Switching to hooks only removes Postrun's headers value, never a user's own.
     const ours = mergeCaptureSettings(settings, "/c", 4318, "/s.sh", false).settings["env"] as Record<string, string>;
     expect(ours["OTEL_EXPORTER_OTLP_HEADERS"]).toBeUndefined();
-    const mixed = { ...(settings["env"] as Record<string, string>), OTEL_EXPORTER_OTLP_HEADERS: "x-postrun-key=k_123,authorization=Bearer theirs" };
+    const mixed = { ...(settings["env"] as Record<string, string>), OTEL_EXPORTER_OTLP_HEADERS: "authorization=Bearer theirs,x-postrun-key=k_123" };
     const kept = mergeCaptureSettings({ env: mixed }, "/c", 4318, "/s.sh", false).settings["env"] as Record<string, string>;
-    expect(kept["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-postrun-key=k_123,authorization=Bearer theirs");
+    expect(kept["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("authorization=Bearer theirs");
+    // Setup adds its key next to a user's own headers instead of replacing them.
+    const added = mergeCaptureSettings({ env: { OTEL_EXPORTER_OTLP_HEADERS: "x-tenant=acme" } }, "/c", 4318, "/s.sh", true, "k_9").settings["env"] as Record<string, string>;
+    expect(added["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-tenant=acme,x-postrun-key=k_9");
+  });
+
+  it("uninstall puts back a telemetry value setup replaced, and the user's own headers", async () => {
+    const { unconfigureClaudeCode } = await import("./index.js");
+    const root = mkdtempSync(join(tmpdir(), "postrun-restore-"));
+    const settingsPath = join(root, "settings.json");
+    const original = { env: { OTEL_EXPORTER_OTLP_PROTOCOL: "grpc", OTEL_EXPORTER_OTLP_HEADERS: "x-tenant=acme", MY_VAR: "1" } };
+    writeFileSync(settingsPath, JSON.stringify(original));
+    // Where setup installs it: ~/.postrun/bin.
+    const { mkdirSync: mk } = await import("node:fs");
+    mk(join(root, ".postrun", "bin"), { recursive: true });
+    const script = join(root, ".postrun", "bin", "capture-hook.sh");
+    writeFileSync(script, "#!/bin/sh\n", { mode: 0o700 });
+    configureClaudeCode({ captureDir: join(root, "c"), settingsPath, script, otlpKey: "k_1" });
+    const during = JSON.parse(readFileSync(settingsPath, "utf8")) as { env: Record<string, string> };
+    expect(during.env["OTEL_EXPORTER_OTLP_PROTOCOL"]).toBe("http/json");
+    expect(during.env["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-tenant=acme,x-postrun-key=k_1");
+    unconfigureClaudeCode({ settingsPath });
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual(original);
   });
 
   it("writes through a symlinked settings file, keeping the link", async () => {

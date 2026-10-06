@@ -195,3 +195,50 @@ describe("leaves ordinary text alone", () => {
     expect(report.findings).toEqual([]);
   });
 });
+
+// ---- found by the independent check of the audit fixes ----------------------------------------
+describe("stays fast on hostile or huge text", () => {
+  it.each([
+    ["dashes and letters, no @", "a-".repeat(500_000)],
+    ["random base64-ish", Array.from({ length: 1_000_000 }, (_, i) => "AbC9+/xYz0"[(i * 7) % 10]).join("")],
+    ["many equals", "a=".repeat(500_000)],
+    ["many @", "x@".repeat(300_000)],
+    ["unclosed quotes after names", 'password="'.repeat(80_000)],
+  ])("%s (1 MB) in under 2 seconds", (_name, text) => {
+    const t0 = performance.now();
+    red(text);
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+});
+
+describe("leaves code, paths and file names alone", () => {
+  it.each([
+    ["a TypeScript type", "interface Opts { token: string; apiKey: string, secret?: string }"],
+    ["a schema call", "const schema = z.object({ token: z.string().min(1), password: z.string() })"],
+    ["a retina asset", "public/icon@2x.png and logo@3x.webp"],
+    ["a long project path", "lib/features/recipes/presentation/RecipeDetailScreenWidgetBuilder2.dart"],
+    ["an S3 path", "s3://my-bucket/Uploads/2026/Invoices/Q3Report2026Final"],
+    ["a hashed chunk path", "static/chunks/framework-a1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6.js"],
+  ])("%s", (_name, text) => {
+    const { out, report } = red(text);
+    expect(out).toBe(text);
+    expect(report.findings).toEqual([]);
+  });
+
+  it("treats the working folder as a path, not a password", () => {
+    const { out, report } = red("pwd=/opt/runner/work and PWD=/srv/app");
+    expect(out).toBe("pwd=/opt/runner/work and PWD=/srv/app");
+    expect(report.findings).toEqual([]);
+  });
+
+  it("still masks an AWS secret key with slashes in it", () => {
+    expect(red("aws secret is " + "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzq8Kx3PbQZ").out).toBe("aws secret is [REDACTED:high-entropy]");
+  });
+
+  it("masks a value whose credential name is the JSON key", () => {
+    const r = createRedactor();
+    const out = redactDeep({ env: { API_KEY: "abcdefgh1", NODE_ENV: "production", token: "string" } }, r, "step 1 · other");
+    expect(out).toEqual({ env: { API_KEY: "[REDACTED:credential]", NODE_ENV: "production", token: "string" } });
+    expect(r.report().counts).toEqual({ credential: 1 });
+  });
+});

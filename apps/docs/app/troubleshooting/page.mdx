@@ -114,6 +114,20 @@ settings hooks.Stop is not an array; refusing to merge
 
 ## The review app
 
+### Connect this browser
+
+The review app shows **Connect this browser** when the browser does not have this computer's key, so the local API refuses it. Run:
+
+```bash
+postrun open
+```
+
+It opens the app with the key, and that browser stays connected. Each browser (and each port, after `postrun setup --port`) connects once. If you replaced `~/.postrun/ingest-token`, connect again.
+
+### No cost data for a session started before an update
+
+Setup gives Claude Code a telemetry key, and Postrun adds it to older setups when it starts. A Claude Code session that was already open keeps its old settings, so its telemetry is dropped and it shows `not recorded` for cost. Every prompt, command and edit is still recorded. Restart that Claude Code session.
+
 ### server offline
 
 The card at the bottom of the sidebar says `Not running`, or the list shows `Could not load sessions`. Postrun is not running: `postrun start`. The page catches up on its own when it is back.

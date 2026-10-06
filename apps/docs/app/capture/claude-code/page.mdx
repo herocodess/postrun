@@ -28,6 +28,7 @@ The setup adds these keys under `env`:
 | `OTEL_LOGS_EXPORTER` | `otlp` |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/json` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://127.0.0.1:4318`, or the free port setup picked if 4318 was taken |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `x-postrun-key=<key>`: the telemetry key, so only Claude Code can write telemetry to Postrun. Postrun adds it to older setups when it starts. |
 | `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_ASSISTANT_RESPONSES`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT` | `1` |
 | `OTEL_LOGS_EXPORT_INTERVAL` | `2000` |
 | `POSTRUN_CAPTURE_DIR` | The capture folder, `~/.postrun/captures` by default |
@@ -61,7 +62,7 @@ To use a settings file other than `~/.claude/settings.json`, set `POSTRUN_CLAUDE
 Postrun's background process (`postrun start`, started by setup and at login) does the recording. It:
 
 - Runs the OTLP receiver on `127.0.0.1:4318`, which writes each session's telemetry to `sessions/<id>/otlp-logs.ndjson` in the capture folder.
-- Reads `hooks.ndjson`, which the hook script appends to, and moves each event into `sessions/<id>/hooks.ndjson`. It reads only what is new each second and remembers its place, so the cost does not grow with history.
+- Collects hook events from `spool/`, where the hook script writes each event to its own file (under a temporary name, then renamed, so two large events written at the same moment never mix), and moves each one into `sessions/<id>/hooks.ndjson`, oldest first. It also drains `hooks.ndjson`, where hook scripts from before version 0.2 append. It reads only what is new each second, so the cost does not grow with history.
 - Watches Cline sessions too. See [Cline](/capture/cline/).
 
 When a session reaches `Stop` (the end of an assistant turn) or `SessionEnd`, the watcher waits at least 4 seconds so the last telemetry export can arrive, then builds the session from its own folder and writes what changed to the store. A session therefore appears in the review app while it is still open, with no end time, and is updated as it runs. A very long session is refreshed less often, so it never costs more than about 1% of a CPU core.
@@ -70,7 +71,9 @@ On start, the watcher catches up on every session not yet complete in the store,
 
 ## Sessions recorded while Postrun was stopped
 
-Claude Code's hooks write to `~/.postrun/captures/hooks.ndjson` whether Postrun is running or not. When Postrun starts, it catches up on every session it missed. They are built from the hooks alone, so they have no cost or token counts, and the review app says so.
+Claude Code's hooks save events to `~/.postrun/captures/spool` whether Postrun is running or not. When Postrun starts, it catches up on every session it missed. They are built from the hooks alone, so they have no cost or token counts, and the review app says so.
+
+Pausing recording in Settings is different: while paused, the hook drops events and the receiver drops telemetry, so nothing from that time is recorded. Starting or restarting Postrun resumes.
 
 ## How a session is built
 

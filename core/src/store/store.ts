@@ -543,7 +543,12 @@ export class PostrunStore {
       this.db.transaction(() => {
         const touched = new Set<string>();
         for (const r of rows) {
-          const next = withRiskFlags({ type: r.type, payload: JSON.parse(r.payload), flags: JSON.parse(r.flags) as Flag[] } as unknown as Step, r.root).flags;
+          let next: Flag[];
+          try {
+            next = withRiskFlags({ type: r.type, payload: JSON.parse(r.payload), flags: JSON.parse(r.flags) as Flag[] } as unknown as Step, r.root).flags;
+          } catch {
+            continue; // one unreadable row keeps its flags; it must never stop the store from opening
+          }
           const json = JSON.stringify(next);
           if (json !== r.flags) {
             flag.run(json, r.rid);

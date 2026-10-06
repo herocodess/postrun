@@ -91,6 +91,29 @@ function appLink(p: Paths, url: string): string {
   return `${url}#key=${loadOrCreateToken(p.token)}`;
 }
 
+/**
+ * Open the review app with its key without putting the key on a command line, where other
+ * accounts could read it with ps: the browser opens a private file (in ~/.postrun, owner only)
+ * that forwards to the keyed address.
+ */
+function openApp(p: Paths, url: string): boolean {
+  const link = appLink(p, url);
+  const file = join(p.home, "open.html");
+  try {
+    ensurePrivateDir(p.home);
+    const attr = link.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+    writeFileSync(
+      file,
+      `<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="0;url=${attr}"><title>Postrun</title><script>location.replace(${JSON.stringify(link)})</script><a href="${attr}">Open Postrun</a>\n`,
+      { mode: 0o600 },
+    );
+    chmodSync(file, 0o600);
+  } catch {
+    return false;
+  }
+  return openBrowser(file);
+}
+
 function openBrowser(url: string): boolean {
   const cmd = process.platform === "darwin" ? "open" : process.platform === "linux" ? "xdg-open" : undefined;
   if (!cmd) return false;
@@ -204,7 +227,7 @@ async function cmdSetup(argv: string[]): Promise<number> {
   out(`Postrun is recording. Review your sessions at ${url}`);
   if (hasClaude) out(`Restart any Claude Code session that is already open, so it is recorded too.`);
   out(`Check on it any time with postrun status, or postrun doctor if something looks wrong.`);
-  if (!a.flags.has("no-open") && interactive()) openBrowser(appLink(p, url));
+  if (!a.flags.has("no-open") && interactive()) openApp(p, url);
   return 0;
 }
 
@@ -256,7 +279,7 @@ async function cmdOpen(): Promise<number> {
     return 1;
   }
   // The link carries this computer's key, so this browser is connected from now on.
-  if (!openBrowser(appLink(p, s.url))) out(`Open this link in your browser (it connects the browser to Postrun):\n${appLink(p, s.url)}`);
+  if (!openApp(p, s.url)) out(`Open this link in your browser (it connects the browser to Postrun):\n${appLink(p, s.url)}`);
   else out(s.url);
   return 0;
 }

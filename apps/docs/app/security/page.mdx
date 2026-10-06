@@ -56,20 +56,42 @@ Both bind to `127.0.0.1` only. The host cannot be configured, so other machines 
 
 Binding to loopback keeps remote machines out, but not a browser on your own machine. A web page could point its own domain at `127.0.0.1` and then read the API as if it were same-origin. The browser still sends that domain in the `Host` header, so both listeners refuse any request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]`, with status `421`. No CORS headers are ever sent, so other sites cannot read responses either.
 
-### The one write route
+### The key
 
-The API server has one route that writes: `POST /api/ingest`. It requires the bearer token in `~/.postrun/ingest-token`. A web page can send a blind cross-site POST to `127.0.0.1`, but a browser cannot attach an `Authorization` header to it without a CORS preflight, which the server never approves. The owner-only token file also keeps other users on the same machine out. Every batch is validated against the v1.2 schema before anything is written. See the [ingest API](/reference/ingest-api/).
+Every API route except `GET /api/health` needs this computer's key: the random token in `~/.postrun/ingest-token`, which only your user account can read. It is sent as `Authorization: Bearer <key>`, or as `?key=` for downloads and the live stream, which cannot set headers, and is compared in constant time. That keeps other accounts on a shared computer out of your sessions, settings and backups.
 
-Read routes have no token, and nothing is rate limited, because the server is never reachable from the network.
+A browser gets the key from `postrun open` (and from setup), which opens the app at `http://127.0.0.1:1234/#key=…`. The part after `#` is never sent to any server or written to a log. The app keeps the key in that browser, removes it from the address bar, and sends it with every request. A browser without it sees **Connect this browser**, which asks you to run `postrun open`. To change the key, delete the file and restart Postrun; each browser then connects again.
+
+`POST /api/ingest` uses the same key. A web page can send a blind cross-site request to `127.0.0.1`, but a browser cannot attach an `Authorization` header to it without a CORS preflight, which the server never approves. Every batch is validated against the v1.2 schema before anything is written. See the [ingest API](/reference/ingest-api/).
+
+### Cross-site requests and framing
+
+Routes that change something also need a same-origin request (`Sec-Fetch-Site` and `Origin` are checked) with a JSON body, so another site cannot send one even blind. Every response carries `x-frame-options: DENY` and a content security policy with `frame-ancestors 'none'`, so another site cannot show the review app inside its own page to trick a click.
+
+### The telemetry receiver
+
+The OTLP receiver stores an export only when it:
+
+- carries Postrun's telemetry key in an `x-postrun-key` header (setup puts it in Claude Code's settings as `OTEL_EXPORTER_OTLP_HEADERS`; the key lives in `~/.postrun/otlp-key`);
+- has the content type `application/json` exactly;
+- carries no browser `Origin` and no cross-site `Sec-Fetch-Site`.
+
+A request from a web page is refused with `403`. An export without the key is acknowledged and dropped, so a Claude Code session started before setup added the key shows no errors; it simply has no cost data until restarted. Each session's telemetry file stops growing at 256 MB.
+
+Nothing is rate limited, because neither listener is reachable from the network.
 
 ### Request hardening
 
 - The OTLP receiver caps each export at 32 MB, before and after gzip, and accepts only its three signal paths.
 - The ingest route caps bodies at 8 MB, before and after gzip.
 - The server never echoes internal error text: internal errors are logged to stderr and returned as a generic `500`.
-- Every response carries `x-content-type-options: nosniff`, `referrer-policy: no-referrer` and `cache-control: no-store`.
+- Every response carries `x-content-type-options: nosniff`, `referrer-policy: no-referrer`, `cache-control: no-store`, `x-frame-options: DENY` and a content security policy.
+- JSON bodies sent by the review app are capped at 64 KB; a larger one is refused without being read to the end.
+- A backup is made in a private temporary folder and removed however the download ends.
 - Static file paths are resolved and checked against the review app's folder, and any path containing `..` is refused.
-- Session ids read from Claude Code's hook log and Cline's folder names must be plain tokens (letters, digits, `_`, `.`, `-`) before they are used in paths or logs.
+- Session ids read from Claude Code's hook files and Cline's folder names must be plain tokens (letters, digits, `_`, `.`, `-`) before they are used in paths or logs.
+- The git branch is read from the repository's `.git/HEAD` file; Postrun never runs `git` inside a project an agent worked on, so a repository's own git configuration cannot run anything.
+- `postrun stop` signals the process in its pid file only after checking it really is Postrun.
 
 ## What never leaves your machine
 

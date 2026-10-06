@@ -148,7 +148,8 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
       .then(() => handle(req, res, { store, uiRoot, ingestToken, requireKey: opts.requireKey === true, live, captureDir, health: opts.health ?? {}, ...(opts.control ? { control: opts.control } : {}) }))
       .catch((err: unknown) => {
         // Never echo internal error text (paths, SQL) to the client.
-        process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
+        // The path only: a query can carry the key (?key=), which never belongs in a log.
+        process.stderr.write(`postrun server: ${req.method ?? ""} ${(req.url ?? "").split("?")[0]}: ${(err as Error).message}\n`);
         if (!res.headersSent) json(res, 500, { error: "internal error" });
         else res.destroy();
       });
