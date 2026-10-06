@@ -7,10 +7,14 @@ type Mode = "login" | "signup";
 type State = { kind: "idle" } | { kind: "pending"; via: "github" | "email" } | { kind: "notice"; message: string };
 
 /**
- * The sign-in form. Accounts are not switched on yet, so both ways in end in
- * an honest notice instead of pretending to sign anyone in. The real flow
- * (GitHub OAuth and an email link) plugs in at `start()`.
+ * The sign-in form. Accounts are not switched on yet. On the live site both
+ * ways in end in an honest notice instead of pretending to sign anyone in.
+ * When the site runs on your own machine (development), they open your local
+ * review app instead, so the whole flow can be clicked through with live
+ * data. The real flow (GitHub OAuth and an email link) plugs in at `start()`.
  */
+const LOCAL_APP = process.env["NEXT_PUBLIC_POSTRUN_LOCAL_APP"] ?? "http://127.0.0.1:1234/";
+const isLocal = () => ["127.0.0.1", "localhost", "[::1]"].includes(window.location.hostname);
 export function LoginForm() {
   const [mode, setMode] = useState<Mode>("login");
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -31,6 +35,11 @@ export function LoginForm() {
 
   function start(via: "github" | "email") {
     setState({ kind: "pending", via });
+    if (isLocal()) {
+      // Stand-in for signing in: go to the review app Postrun serves on this machine.
+      window.setTimeout(() => window.location.assign(LOCAL_APP), 500);
+      return;
+    }
     window.setTimeout(
       () =>
         setState({
