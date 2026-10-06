@@ -19,7 +19,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
 import { pool } from "./db";
-import { sendSignInEmail } from "./email";
+import { describeDevice, describeLocation, sendSignInEmail } from "./email";
 import { env } from "./env";
 import { clientIp, hit, LIMITS } from "./limit";
 
@@ -86,8 +86,11 @@ export function authOptions(): BetterAuthOptions {
         expiresIn: 60 * 10,
         storeToken: "hashed",
         rateLimit: { window: 60, max: 3 },
-        sendMagicLink: async ({ email, url }) => {
-          await sendSignInEmail(email, confirmUrl(url));
+        sendMagicLink: async ({ email, url }, ctx) => {
+          const h = ctx?.request?.headers;
+          const device = describeDevice(h?.get("user-agent"));
+          const location = h ? describeLocation(h) : undefined;
+          await sendSignInEmail(email, confirmUrl(url), { at: new Date(), ...(device ? { device } : {}), ...(location ? { location } : {}) });
         },
       }),
       // Lets server actions set the session cookie. Keep it last.

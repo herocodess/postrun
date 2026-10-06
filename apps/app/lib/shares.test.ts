@@ -2,7 +2,7 @@
 
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { signInHtml, signInText } from "./email";
+import { describeDevice, describeLocation, signInHtml, signInText } from "./email";
 import { relative } from "./format";
 import { hashToken, isShareId, looksLikeCliToken, newCliToken, randomId } from "./ids";
 import { safeNext } from "./paths";
@@ -111,10 +111,22 @@ describe("where sign-in sends you back to", () => {
 describe("the sign-in email", () => {
   it("escapes the link and says how long it lasts", () => {
     const url = 'https://app.postrun.app/api/auth/magic-link/verify?token=abc&callbackURL=%2F"><script>';
-    const html = signInHtml(url);
+    const html = signInHtml(url, "a<b>@example.com", { at: new Date("2026-10-06T17:25:00Z"), device: "Chrome on macOS", location: "Lagos, Nigeria" });
     expect(html).not.toContain("<script>");
+    expect(html).not.toContain("a<b>@");
     expect(html).toContain("token=abc&amp;callbackURL");
-    expect(signInText(url)).toContain("10 minutes");
+    expect(html).toContain("cid:postrun-logo");
+    expect(html).toContain("Lagos, Nigeria");
+    expect(signInText(url, "a@b.c")).toContain("10 minutes");
+  });
+
+  it("describes the device and place a request came from, roughly", () => {
+    expect(describeDevice("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36")).toBe("Chrome on macOS");
+    expect(describeDevice("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")).toBe("Safari on iOS");
+    expect(describeDevice("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36 Edg/141.0")).toBe("Edge on Windows");
+    expect(describeDevice(undefined)).toBeUndefined();
+    expect(describeLocation(new Headers({ "x-vercel-ip-city": "San%20Francisco", "x-vercel-ip-country": "US" }))).toBe("San Francisco, United States");
+    expect(describeLocation(new Headers())).toBeUndefined();
   });
 });
 
