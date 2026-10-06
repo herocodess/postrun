@@ -128,3 +128,54 @@ describe("the key and the security headers", () => {
     expect(ex.headers.get("content-security-policy")).toBe("sandbox");
   });
 });
+
+describe("backup and body limits", () => {
+  let app: PostrunServer;
+  let url: string;
+  const store = new PostrunStore({ path: ":memory:" });
+  beforeAll(async () => {
+    for (let i = 0; i < 30; i++) store.ingest(record(`b${i}`, "/w/big", [{ type: "command", payload: { command: "cat big", stdout: "x".repeat(200_000) } }]));
+    const ui = mkdtempSync(join(tmpdir(), "postrun-ui-bk-"));
+    writeFileSync(join(ui, "index.html"), "x");
+    const control = { status: async () => ({}), doctor: async () => [] } as unknown as import("./api.js").AppControl;
+    app = createPostrunServer({ port: 0, store, uiDir: ui, ingestToken: "t".repeat(32), control });
+    url = (await app.start()).url;
+  });
+  afterAll(async () => {
+    await app.stop();
+    store.close();
+  });
+
+  it("removes the backup copy when the download is cancelled part way", async () => {
+    const { readdirSync } = await import("node:fs");
+    const { request } = await import("node:http");
+    const before = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith("postrun-backup-")));
+    await new Promise<void>((resolve) => {
+      const req = request(new URL("/api/backup", url), (res) => {
+        res.once("data", () => {
+          req.destroy(); // the person cancels the download
+          resolve();
+        });
+      });
+      req.end();
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    const left = readdirSync(tmpdir()).filter((n) => n.startsWith("postrun-backup-") && !before.has(n));
+    expect(left).toEqual([]);
+  });
+
+  it("gives every report in a zip its own name, even when sessions share a day and id prefix", async () => {
+    store.ingest(record("samepref-one", "/w/z", [{ type: "command", payload: { command: "ls" } }]));
+    store.ingest(record("samepref-two", "/w/z", [{ type: "command", payload: { command: "ls" } }]));
+    const r = await fetch(new URL("/api/export?ids=samepref-one,samepref-two", url));
+    const zip = Buffer.from(await r.arrayBuffer()).toString("latin1");
+    const names = [...new Set(zip.match(/postrun-claude-code-[0-9-]+-samepref(?:-\d)?\.html/g))];
+    expect(names.length).toBe(2);
+  });
+
+  it("refuses an oversized JSON body without reading it all", async () => {
+    const big = JSON.stringify({ state: "approved", note: "n".repeat(200_000) });
+    const r = await fetch(new URL("/api/sessions/b1/verdict", url), { method: "PUT", headers: { "content-type": "application/json" }, body: big });
+    expect(r.status).toBe(413);
+  });
+});

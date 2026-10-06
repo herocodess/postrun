@@ -18,10 +18,13 @@ const isLocal = () => ["127.0.0.1", "localhost", "[::1]"].includes(window.locati
 export function LoginForm() {
   const [mode, setMode] = useState<Mode>("login");
   const [state, setState] = useState<State>({ kind: "idle" });
+  // Accounts are not open on the live site yet: say so before anyone types an email, not after.
+  const [live, setLive] = useState(false);
 
   // ?mode=signup opens the sign-up view. Read after mount: the page is a static export.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("mode") === "signup") setMode("signup");
+    setLive(!isLocal());
   }, []);
 
   const switchMode = (next: Mode) => {
@@ -63,6 +66,11 @@ export function LoginForm() {
       <Mark size={36} />
       <h1 id="auth-title">{signup ? "Create your Postrun account" : "Log in to Postrun"}</h1>
       <p className="auth-sub">{signup ? "Share sessions on purpose, and see what your team chose to share." : "Welcome back. Pick up where your agents left off."}</p>
+      {live && (
+        <p className="auth-notice" role="note">
+          Accounts open with share links, coming soon. You don&apos;t need one to record and review: install Postrun and run <code>postrun setup</code>.
+        </p>
+      )}
 
       <button type="button" className="btn btn-ghost auth-github" onClick={() => start("github")} disabled={busy} data-track={signup ? "Sign up: GitHub" : "Log in: GitHub"}>
         <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
@@ -81,7 +89,7 @@ export function LoginForm() {
         <button type="submit" className="btn btn-primary" disabled={busy} data-track={signup ? "Sign up: email" : "Log in: email"}>
           {busy && state.via === "email" ? "Sending…" : signup ? "Create account" : "Continue with email"}
         </button>
-        <p className="auth-hint">{signup ? "We'll email you a link to finish creating your account." : "We'll email you a link to log in. No password to remember."}</p>
+        {!live && <p className="auth-hint">{signup ? "We'll email you a link to finish creating your account." : "We'll email you a link to log in. No password to remember."}</p>}
       </form>
 
       {state.kind === "notice" && (

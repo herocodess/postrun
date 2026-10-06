@@ -25,8 +25,13 @@ export default function Privacy() {
         <h2 id="app">The Postrun app</h2>
         <p>
           The app records what your coding agents do on your computer: prompts, replies, commands and their output, and the files they read and edit. All of it stays in the{" "}
-          <code>~/.postrun</code> folder on your machine, readable only by your user account. The app listens on <code>127.0.0.1</code> only, has no telemetry or crash
-          reporting, and never contacts me or anyone else. Delete <code>~/.postrun</code> and everything it stored is gone.
+          <code>~/.postrun</code> folder on your machine, readable only by your user account. The app listens on <code>127.0.0.1</code> only, answers only a browser you
+          connected with <code>postrun open</code>, has no telemetry or crash reporting, and never sends your sessions to me or anyone else. Delete <code>~/.postrun</code> and
+          everything it stored is gone.
+        </p>
+        <p>
+          One optional exception: if you turn on <b>Check for new versions</b> in Settings (it is off until you do), the app asks the npm registry once a day for the latest
+          Postrun version number. That request carries nothing about you or your sessions; npm sees your IP address, as with any download. Turn it off again in Settings.
         </p>
 
         <h2 id="exports">Reports you export</h2>

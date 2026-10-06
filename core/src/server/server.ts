@@ -53,6 +53,7 @@ import { previewStep } from "./preview.js";
 import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
 import { LiveFeed, SSE_HEADERS, type LiveFeedOptions } from "./live.js";
 import { bearerMatches, loadOrCreateToken } from "./token.js";
+import { pipeline } from "node:stream";
 
 /**
  * The review app's content security policy. Next's static export needs inline scripts and styles;
@@ -638,6 +639,7 @@ const JSON_BODY_LIMIT = 64 * 1024;
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | "too_large" | "bad"> {
   const type = (req.headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase();
   if (type !== "application/json") return "bad";
+  if (Number(req.headers["content-length"] ?? 0) > JSON_BODY_LIMIT) return "too_large";
   const body = await readBody(req, JSON_BODY_LIMIT);
   if (body === "too_large") return "too_large";
   try {
@@ -667,7 +669,10 @@ async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: UR
   }
   const body = await readJson(req);
   if (body === "too_large") {
-    json(res, 413, { error: "body too large" } satisfies ApiError);
+    // Answer, then drop the connection: the rest of an oversized body is never read.
+    res.once("finish", () => req.destroy());
+    res.writeHead(413, { ...BASE_HEADERS, "content-type": "application/json; charset=utf-8", connection: "close" });
+    res.end(JSON.stringify({ error: "body too large" } satisfies ApiError));
     return true;
   }
   if (body === "bad") {
@@ -764,11 +769,16 @@ async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL
         return true;
       }
       const entries = [];
+      const names = new Set<string>();
       for (const id of ids) {
         const session = store.getSession(id);
         if (!session) continue;
         const r = exportSession(session);
-        entries.push({ name: r.filename, data: Buffer.from(r.html, "utf8") });
+        // Two sessions can share agent, day and id prefix: number the later ones so none is overwritten.
+        let name = r.filename;
+        for (let n = 2; names.has(name); n++) name = r.filename.replace(/\.html$/, `-${n}.html`);
+        names.add(name);
+        entries.push({ name, data: Buffer.from(r.html, "utf8") });
       }
       if (entries.length === 0) {
         json(res, 404, { error: "none of those sessions were found" } satisfies ApiError);
@@ -800,9 +810,17 @@ async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL
           json(res, 403, { error: "cross-site request refused" } satisfies ApiError);
           return true;
         }
+        // The copy is a full, unredacted store: it is removed however the download ends (finished,
+        // cancelled, or failed), and a failure while making it leaves nothing behind either.
         const dir = mkdtempSync(join(tmpdir(), "postrun-backup-"));
+        const cleanUp = () => rmSync(dir, { recursive: true, force: true });
         const file = join(dir, "postrun-backup.db");
-        store.backupTo(file);
+        try {
+          store.backupTo(file);
+        } catch (err) {
+          cleanUp();
+          throw err;
+        }
         res.writeHead(200, {
           ...BASE_HEADERS,
           "content-type": "application/vnd.sqlite3",
@@ -811,11 +829,9 @@ async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL
         });
         if (method === "HEAD") {
           res.end();
-          rmSync(dir, { recursive: true, force: true });
+          cleanUp();
         } else {
-          const stream = createReadStream(file);
-          stream.pipe(res);
-          stream.on("close", () => rmSync(dir, { recursive: true, force: true }));
+          pipeline(createReadStream(file), res, cleanUp);
         }
       }
       return true;

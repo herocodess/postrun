@@ -141,6 +141,8 @@ export function Report() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Holding a key repeats it: fine for moving through steps, never for reviewing or copying.
+      if (e.repeat && (e.key === "a" || e.key === "n" || e.key === "c" || e.key === "?")) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       const steps = () => [...document.querySelectorAll<HTMLDetailsElement>("details.step-d")];

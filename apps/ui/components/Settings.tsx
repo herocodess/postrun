@@ -6,7 +6,7 @@
  * background process (PUT /api/settings and friends) and apply at once.
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppSettings, AppStatus, DoctorCheck, DoctorResponse, SetupResponse } from "@postrun/core/server/api";
 import { api, apiFetch, DEMO } from "@/lib/api";
 import { ago, megabytes, useStatus } from "@/lib/status";
@@ -57,6 +57,13 @@ export function Settings() {
   const [theme, setTheme] = useState<Theme>("system");
   const [sidebar, setSidebar] = useSidebar();
   const [confirming, setConfirming] = useState(false);
+  const deleteButton = useRef<HTMLButtonElement>(null);
+  // Closing the confirmation (Cancel, Escape, or done) puts focus back on the button that opened it.
+  const closeConfirm = () => {
+    setConfirming(false);
+    setTyped("");
+    requestAnimationFrame(() => deleteButton.current?.focus());
+  };
   const [typed, setTyped] = useState("");
 
   useEffect(() => setTheme(readTheme()), []);
@@ -303,13 +310,23 @@ export function Settings() {
               note={`Removes ${status ? `all ${status.storage.sessions} sessions` : "every session"} and their raw logs from this computer, overwritten on disk. New sessions are still recorded. This cannot be undone.`}
             >
               {!confirming ? (
-                <button type="button" className="btn danger" disabled={!live || busy !== undefined} onClick={() => setConfirming(true)}>
+                <button ref={deleteButton} type="button" className="btn danger" disabled={!live || busy !== undefined} onClick={() => setConfirming(true)}>
                   Delete all data
                 </button>
               ) : null}
             </Row>
             {confirming ? (
-              <div className="confirm-delete" role="alertdialog" aria-labelledby="del-all-h">
+              <div
+                className="confirm-delete"
+                role="alertdialog"
+                aria-labelledby="del-all-h"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    closeConfirm();
+                  }
+                }}
+              >
                 <p id="del-all-h">
                   Type <b>delete everything</b> to confirm.
                 </p>
@@ -322,8 +339,7 @@ export function Settings() {
                     onClick={() =>
                       run("delete", async () => {
                         const r = await send<{ deleted: number }>(api.deleteAll(), "POST", { confirm: "delete everything" });
-                        setConfirming(false);
-                        setTyped("");
+                        closeConfirm();
                         refresh();
                         return `Deleted ${r.deleted} session${r.deleted === 1 ? "" : "s"}. Postrun keeps recording new ones.`;
                       })
@@ -331,7 +347,7 @@ export function Settings() {
                   >
                     Delete everything
                   </button>
-                  <button type="button" className="btn ghost" onClick={() => (setConfirming(false), setTyped(""))}>
+                  <button type="button" className="btn ghost" onClick={closeConfirm}>
                     Cancel
                   </button>
                 </div>

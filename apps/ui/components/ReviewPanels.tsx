@@ -5,7 +5,7 @@
  * the commits the agent made, the per-file changes, and the keyboard help.
  */
 
-import { useEffect, useState, type MutableRefObject } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Step } from "@postrun/core/schema";
 import type { SessionSummary } from "@postrun/core/store";
 import { api, apiFetch, DEMO } from "@/lib/api";
@@ -37,7 +37,12 @@ export function VerdictPanel({
     setNote((n) => (document.activeElement?.id === "verdict-note" ? n : (current?.note ?? "")));
   }, [current?.state, current?.note]);
 
+  // One save at a time (a held key or a double click sends one request), and a failed save puts
+  // back what was there, so the panel never shows a review that was not stored.
+  const busy = useRef(false);
   const save = async (next: VerdictState | null, nextNote = note) => {
+    if (busy.current) return;
+    const prev = state;
     setState(next);
     setPop((p) => p + 1);
     setMsg(undefined);
@@ -46,6 +51,7 @@ export function VerdictPanel({
       setMsg({ tone: "ok", text: "In the demo, reviews are not saved." });
       return;
     }
+    busy.current = true;
     setSaving(true);
     try {
       const r = await apiFetch(api.verdict(summary.id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: next, ...(nextNote.trim() ? { note: nextNote.trim() } : {}) }) });
@@ -53,14 +59,20 @@ export function VerdictPanel({
       onSaved(next ? { state: next, ...(nextNote.trim() ? { note: nextNote.trim() } : {}) } : undefined);
       setMsg({ tone: "ok", text: next ? "Saved." : "Review cleared." });
     } catch (e) {
-      setMsg({ tone: "danger", text: e instanceof Error ? e.message : String(e) });
+      setState(prev);
+      setMsg({ tone: "danger", text: `${e instanceof Error ? e.message : String(e)}. Nothing was changed.` });
     } finally {
+      busy.current = false;
       setSaving(false);
     }
   };
   useEffect(() => {
     if (!bind) return;
-    bind.current = { approve: () => void save("approved"), needs: () => void save("needs_attention") };
+    // From the keyboard, pressing the key for the review it already has does nothing.
+    bind.current = {
+      approve: () => void (state === "approved" ? undefined : save("approved")),
+      needs: () => void (state === "needs_attention" ? undefined : save("needs_attention")),
+    };
   });
   const dirty = (current?.note ?? "") !== note.trim() && state !== null;
 

@@ -22,7 +22,7 @@ import { ensurePrivateDir, ensurePrivateFile } from "../util/files.js";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import type { Actor, AgentInfo, Flag, SessionSegment, Step, Turn, Verdict, Workspace } from "../schema/index.js";
-import { RISK_KINDS, withRiskFlags } from "../report/risk.js";
+import { RISK_KINDS, RISK_RULES_VERSION, withRiskFlags } from "../report/risk.js";
 import type { IngestResult, SessionBatch, SessionMetrics, SessionRecord, SessionRefs, SessionSummary, StoreCounts, StoredSession } from "./types.js";
 
 export const LOCAL_OWNER_ID = "local";
@@ -180,9 +180,12 @@ CREATE TRIGGER IF NOT EXISTS steps_fts_update AFTER UPDATE OF payload, seq ON st
 END;
 CREATE TRIGGER IF NOT EXISTS steps_fts_delete AFTER DELETE ON steps BEGIN
   DELETE FROM steps_fts WHERE rowid = old.rowid;
-END;
--- Deleted text is overwritten in the index too, as secure_delete does for the tables.
-INSERT INTO steps_fts (steps_fts, rank) VALUES ('secure-delete', 1);`;
+END;`;
+/** Deleted text is overwritten in the index too, as secure_delete does for the tables. A write: run only when unset. */
+const FTS_SECURE_DELETE = "INSERT INTO steps_fts (steps_fts, rank) VALUES ('secure-delete', 1)";
+const DDL_META = "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)";
+/** Steps re-flagged per transaction when the risk rules change: bounded memory, short write locks. */
+const RISK_BATCH = 2000;
 
 /** Columns added in version 2, for upgrading a version 1 store in place. */
 const V2_COLUMNS: Array<[table: string, column: string, decl: string]> = [
@@ -502,14 +505,8 @@ export class PostrunStore {
         if (!hadFts) {
           this.db.exec(`INSERT INTO steps_fts (rowid, text, session_id, seq) SELECT rowid, ${FTS_TEXT.replace(/new\./g, "steps.")}, session_id, seq FROM steps`);
         }
-        const flag = this.db.prepare("UPDATE steps SET flags = ?, hash = NULL, meta_hash = NULL WHERE rowid = ?");
-        for (const row of this.db
-          .prepare("SELECT st.rowid AS rid, st.type, st.payload, st.flags, se.workspace_root AS root FROM steps st JOIN sessions se ON se.id = st.session_id")
-          .all() as Array<{ rid: number; type: string; payload: string; flags: string; root: string }>) {
-          const before = JSON.parse(row.flags) as Flag[];
-          const after = withRiskFlags({ type: row.type, payload: JSON.parse(row.payload), flags: before } as unknown as Step, row.root).flags;
-          if (JSON.stringify(after) !== row.flags) flag.run(JSON.stringify(after), row.rid);
-        }
+        // Counts, titles and strips projected for every session (older stores lack some of them).
+        // Risk flags follow after, in batches: see recomputeRiskFlags.
         const refresh = this.db.prepare(REFRESH_SUMMARY);
         for (const { id } of this.db.prepare("SELECT id FROM sessions").all() as Array<{ id: string }>) refresh.run(id);
         this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
@@ -517,6 +514,47 @@ export class PostrunStore {
     }
     this.db.exec(DDL_V2_INDEXES);
     this.db.exec(DDL_FTS);
+    this.db.exec(DDL_META);
+    const secure = this.db.prepare("SELECT v FROM steps_fts_config WHERE k = 'secure-delete'").get() as { v: unknown } | undefined;
+    if (!secure || Number(secure.v) !== 1) this.db.exec(FTS_SECURE_DELETE);
+    this.recomputeRiskFlags();
+  }
+
+  /**
+   * Bring stored risk flags up to the current rules, once per rules version. Only commands, edits
+   * and reads can carry them; they are read and rewritten a batch at a time, each batch in its own
+   * short transaction, so a large store neither fills memory nor holds the write lock for long.
+   * Safe to interrupt: the rules version is recorded only at the end, and recomputing is idempotent.
+   */
+  private recomputeRiskFlags(): void {
+    const row = this.db.prepare("SELECT value FROM meta WHERE key = 'risk_rules'").get() as { value: string } | undefined;
+    if (row && Number(row.value) >= RISK_RULES_VERSION) return;
+    const select = this.db.prepare(
+      `SELECT st.rowid AS rid, st.session_id AS sid, st.type, st.payload, st.flags, se.workspace_root AS root
+       FROM steps st JOIN sessions se ON se.id = st.session_id
+       WHERE st.rowid > ? AND st.type IN ('command', 'edit', 'read') ORDER BY st.rowid LIMIT ${RISK_BATCH}`,
+    );
+    const flag = this.db.prepare("UPDATE steps SET flags = ?, hash = NULL, meta_hash = NULL WHERE rowid = ?");
+    const refresh = this.db.prepare(REFRESH_SUMMARY);
+    let after = 0;
+    for (;;) {
+      const rows = select.all(after) as Array<{ rid: number; sid: string; type: string; payload: string; flags: string; root: string }>;
+      if (rows.length === 0) break;
+      this.db.transaction(() => {
+        const touched = new Set<string>();
+        for (const r of rows) {
+          const next = withRiskFlags({ type: r.type, payload: JSON.parse(r.payload), flags: JSON.parse(r.flags) as Flag[] } as unknown as Step, r.root).flags;
+          const json = JSON.stringify(next);
+          if (json !== r.flags) {
+            flag.run(json, r.rid);
+            touched.add(r.sid);
+          }
+        }
+        for (const id of touched) refresh.run(id);
+      })();
+      after = rows[rows.length - 1]!.rid;
+    }
+    this.db.prepare("INSERT INTO meta (key, value) VALUES ('risk_rules', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(RISK_RULES_VERSION));
   }
 
   close(): void {
@@ -838,7 +876,9 @@ export class PostrunStore {
       where.push("s.owner_id = @owner_id");
       params["owner_id"] = query.owner_id;
     }
-    const text = query.q?.trim() ?? "";
+    // Control characters (NUL, the snippet markers) mean nothing in a search and break FTS5 phrases.
+    // eslint-disable-next-line no-control-regex
+    const text = query.q?.replace(/[\u0000-\u001f\u007f]/g, " ").trim() ?? "";
     const deep = text.length >= 3 && query.inSteps !== false;
     if (text) {
       const inSteps = deep ? " OR s.id IN (SELECT session_id FROM steps_fts WHERE steps_fts MATCH @fts)" : "";

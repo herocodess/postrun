@@ -323,3 +323,21 @@ describe("session strip", () => {
     expect(s[5]).toBe("R"); // the slice holding the failed command is mostly reads, marked failed
   });
 });
+
+describe("the sqlite wrapper's transactions", () => {
+  it("recovers when COMMIT itself fails, instead of leaving the transaction open", () => {
+    const db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    db.exec("CREATE TABLE parent (id INTEGER PRIMARY KEY); CREATE TABLE child (id INTEGER PRIMARY KEY, p INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED)");
+    // A deferred constraint is checked at COMMIT, so the COMMIT is what fails.
+    const bad = db.transaction(() => db.prepare("INSERT INTO child (id, p) VALUES (1, 99)").run());
+    expect(() => bad()).toThrow(/FOREIGN KEY/);
+    // The next transaction, with one nested inside it, starts and commits normally (the nesting
+    // count was decremented twice before, so the inner one tried a second BEGIN).
+    const inner = db.transaction(() => db.prepare("INSERT INTO parent (id) VALUES (1)").run());
+    db.transaction(() => inner())();
+    expect(db.prepare("SELECT count(*) AS n FROM parent").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT count(*) AS n FROM child").get()).toEqual({ n: 0 });
+    db.close();
+  });
+});
