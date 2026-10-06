@@ -29,7 +29,7 @@ export interface ClineWatcherOptions {
   store: PostrunStore;
   /** Wait after the latest change before re-reading (ms). */
   debounceMs?: number;
-  /** Share of one core a busy session may use for re-reads (default 0.01). */
+  /** Share of one core a busy session may use for re-reads (default 0.005). */
   budget?: number;
   /** Fallback poll interval for mtime changes (ms); fs.watch is the fast path. */
   pollMs?: number;
@@ -82,7 +82,10 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
     }
   };
 
-  const pacer = createPacer({ run: (id, why) => void ingest(id, why), minDelayMs: debounceMs, ...(opts.budget !== undefined ? { budget: opts.budget } : {}) });
+  // Cline rewrites its whole messages file on every message, so a re-read cannot be incremental; its
+  // budget is half of Claude Code's. A small session still updates within seconds; a huge one late in
+  // a long day refreshes about every minute and a half while busy, and once more when it goes quiet.
+  const pacer = createPacer({ run: (id, why) => void ingest(id, why), minDelayMs: debounceMs, budget: opts.budget ?? 0.005 });
   const schedule = (sessionId: string, trigger: string) => pacer.trigger(sessionId, trigger);
 
   const listSessions = (): string[] => {

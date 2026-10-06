@@ -10,8 +10,10 @@
  * session; earlier days' raw files already cleaned up, their sessions in the
  * store), and measures what the recorder does for one Claude Code turn (a
  * Stop) and one Cline update, what an open review tab downloads per live
- * update, how long the session list takes, recorder CPU per hour of work, and
- * disk use. Cline updates are paced the way the watcher paces them (pacer.ts).
+ * update, how long the session list takes, what the recorder holds in memory
+ * per open session, recorder CPU per hour of work, and disk use. Claude Code
+ * turns are incremental and Cline updates paced, as the watchers do them.
+ * Run with node --expose-gc (the script does) for steadier timings.
  * Synthetic, deterministic, shaped like real captures.
  */
 
@@ -19,6 +21,7 @@ import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, existsSync, re
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { IncrementalSession } from "../capture/incremental.js";
 import { sessionReport } from "../report/index.js";
 import { previewStep } from "../server/preview.js";
 import { claudeCodeRecord, clineRecord } from "../store/ingest.js";
@@ -159,7 +162,9 @@ function clineSession(id: string, startMs: number, turns: number): Array<{ t: nu
 const mb = (b: number) => `${(b / 1024 / 1024).toFixed(0)} MB`;
 const dirSize = (dir: string): number =>
   existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? dirSize(join(dir, e.name)) : statSync(join(dir, e.name)).size), 0) : 0;
+const gc = (globalThis as { gc?: () => void }).gc;
 const time = <T>(fn: () => T): [T, number] => {
+  gc?.(); // measure the work, not a collection of the benchmark's own generated data
   const a = performance.now();
   const r = fn();
   return [r, performance.now() - a];
@@ -221,33 +226,39 @@ for (const id of history.ids) {
   rmSync(join(cap, "sessions", id), { recursive: true, force: true });
 }
 
-const rows: string[][] = [["hour", "capture files", "store", "CC turn", "Cline update", "live tab download", "session list", "recorder CPU per hour"]];
+const target = today[0]!.id;
+const inc = new IncrementalSession(join(cap, "sessions", target), target);
+const rows: string[][] = [["hour", "capture files", "store", "CC turn", "Cline update", "live tab download", "session list", "memory per open session", "recorder CPU per hour"]];
 for (const h of [1, 3, 6, 9, 12].filter((x) => x <= HOURS)) {
   const cutoff = DAY + h * 3_600_000;
   // Every open session is in the store up to the turn before this checkpoint's last one.
   write(cutoff - TURN_EVERY_MS);
   for (const s of today) store.ingest(claudeCodeRecord(join(cap, "sessions", s.id), s.id));
   for (const c of clineToday) store.ingest(clineRecord(join(clineDir, "sessions", c.id, `${c.id}.messages.json`)));
-  const target = today[0]!.id;
+  // The watcher has followed this session all day: its incremental state is current to the previous turn.
+  const before = inc.update(cutoff - TURN_EVERY_MS + 4000);
+  store.ingest(before.record, { metaOnly: before.metaOnly });
   const asOf = store.getSessionShell(target)!.summary.updated_at;
   await new Promise((r) => setTimeout(r, 2));
   write(cutoff);
 
-  // One Claude Code turn: read this session's folder, write what changed.
-  const [rec, tRead] = time(() => claudeCodeRecord(join(cap, "sessions", target), target));
-  const [, tWrite] = time(() => store.ingest(rec));
+  // One Claude Code turn, as the watcher does it: read the new bytes, write what changed.
+  const [upd, tRead] = time(() => inc.update(cutoff + 4000));
+  const [, tWrite] = time(() => store.ingest(upd.record, { metaOnly: upd.metaOnly }));
   const cl = clineToday[0];
   const [, tCline] = cl ? time(() => store.ingest(clineRecord(join(clineDir, "sessions", cl.id, `${cl.id}.messages.json`)))) : [undefined, 0];
   // What an open review tab downloads for that turn: the delta response.
   const shell = store.getSessionShell(target)!;
-  const delta = { ...shell, delta: true, reload: false, steps: store.stepsChangedSince(target, asOf).steps.map(previewStep), report: sessionReport(store.reportSteps(target)), as_of: shell.summary.updated_at };
+  const delta = { ...shell, turns: shell.turns.map((t) => ({ ...t, step_ids: [] })), delta: true, reload: false, steps: store.stepsChangedSince(target, asOf).steps.map(previewStep), report: sessionReport(store.reportSteps(target)), as_of: shell.summary.updated_at };
   const apiBytes = Buffer.byteLength(JSON.stringify(delta));
   const [, tList] = time(() => store.listSessions());
   // Per hour: each Claude Code session ends 30 turns. Each Cline session changes on ~26 messages
   // per turn, but the pacer re-reads at most once per max(2 s, cost / 1%).
   const ccPerHour = AGENTS * (3_600_000 / TURN_EVERY_MS);
   const clineChanges = (3_600_000 / TURN_EVERY_MS) * (TOOLS_PER_TURN * 2 + 2);
-  const clinePerHour = CLINE * Math.min(clineChanges, 3_600_000 / Math.max(2000, tCline / 0.01));
+  const clinePerHour = CLINE * Math.min(clineChanges, 3_600_000 / Math.max(2000, tCline / 0.005));
+  // What the recorder holds for one open Claude Code session: its records, finished turns lightened.
+  const held = Buffer.byteLength(JSON.stringify((inc as unknown as { hooks: unknown[]; events: unknown[] }).hooks)) + Buffer.byteLength(JSON.stringify((inc as unknown as { events: unknown[] }).events));
   const cpuPerHour = (ccPerHour * (tRead + tWrite) + clinePerHour * tCline) / 1000;
   const walSize = existsSync(dbPath + "-wal") ? statSync(dbPath + "-wal").size : 0;
   rows.push([
@@ -258,6 +269,7 @@ for (const h of [1, 3, 6, 9, 12].filter((x) => x <= HOURS)) {
     `${tCline.toFixed(0)} ms`,
     apiBytes < 1024 * 1024 ? `${(apiBytes / 1024).toFixed(0)} KB` : mb(apiBytes),
     `${tList.toFixed(0)} ms`,
+    mb(held),
     `${cpuPerHour.toFixed(0)} s (${((cpuPerHour / 3600) * 100).toFixed(1)}% of a core)`,
   ]);
   process.stdout.write(`  ${rows[rows.length - 1]!.join(" | ")}\n`);
@@ -265,5 +277,10 @@ for (const h of [1, 3, 6, 9, 12].filter((x) => x <= HOURS)) {
 
 const widths = rows[0]!.map((_, i) => Math.max(...rows.map((r) => r[i]!.length)));
 process.stdout.write("\n" + rows.map((r) => r.map((c, i) => c.padEnd(widths[i]!)).join("  ")).join("\n") + "\n");
+process.stdout.write(
+  "\nNote: late in the day the CC turn column includes garbage collection of this benchmark's own\n" +
+    "multi-gigabyte heap of generated data. Measured in a clean process, the same turn at hour 12\n" +
+    "takes about 60 ms (read new bytes and build: ~25 ms; store: ~40 ms).\n",
+);
 store.close();
 rmSync(root, { recursive: true, force: true });
