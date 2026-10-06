@@ -223,7 +223,7 @@ export async function startBrowserLogin(server: string, opts: { timeoutMs?: numb
     if (/^[A-Za-z0-9]{32}$/.test(code)) {
       exchangeCode(server, code, verifier, userAgent).then(
         (t) => {
-          page(true, "This computer can now share sessions. You can close this tab and go back to your terminal.");
+          page(true, "This computer can now share sessions. You can close this tab.");
           settle?.ok(t);
           finish();
         },

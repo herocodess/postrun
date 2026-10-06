@@ -459,6 +459,9 @@ a:hover {
   border-color: rgba(255, 138, 76, 0.45);
   transform: translateY(-1px);
 }
+.cards a strong {
+  font-weight: 500;
+}
 .cards a span {
   font-size: 13.5px;
   color: var(--muted);
