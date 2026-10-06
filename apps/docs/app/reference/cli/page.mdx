@@ -33,12 +33,14 @@ Without flags, it runs until you press ctrl-c:
 
 1. Checks `~/.claude/settings.json` and applies Postrun's Claude Code configuration if it is missing or out of date (see [`pnpm capture:cc:setup`](#pnpm-captureccsetup)). If it is already present, it logs `claude-code config: already present in <path>`.
 2. Starts the OTLP receiver on `127.0.0.1:4318`.
-3. Tails `hooks.ndjson` in the capture folder and writes each Claude Code session to the store on every `Stop` and `SessionEnd`, after a 4 second pause. Sessions that have already ended are written on start.
-4. Watches `~/.cline/data/sessions`, writes every Cline session on start, and rewrites a session 2 seconds after its files change.
+3. Sorts Claude Code's hook log into one folder per session and writes each session to the store on every `Stop` and `SessionEnd`, after a 4 second pause. On start it catches up on every session it missed, and removes a session's raw files 24 hours after the session goes quiet (the store keeps everything).
+4. Watches `~/.cline/data/sessions`, writes new or changed Cline sessions on start, and rewrites a session at least 2 seconds after its files change.
+
+Both are paced so a busy session costs about 1% of one CPU core at most: a very long session is refreshed less often rather than costing more.
 
 | Flag | Effect |
 | --- | --- |
-| `--once` | Skip the configuration step and the receiver. Write every ended Claude Code session and every Cline session on disk now, then exit. |
+| `--once` | Skip the configuration step and the receiver. Catch up on every Claude Code and Cline session not yet stored, then exit. |
 
 | Variable | Default |
 | --- | --- |
@@ -47,6 +49,7 @@ Without flags, it runs until you press ctrl-c:
 | `POSTRUN_OTLP_PORT` | `4318` |
 | `POSTRUN_DB` | `~/.postrun/postrun.db` |
 | `POSTRUN_CLAUDE_SETTINGS` | `~/.claude/settings.json` |
+| `POSTRUN_KEEP_CAPTURES` | unset. Set to `1` to keep each session's raw files instead of removing them 24 hours after it goes quiet. |
 
 Every log line starts with the time, for example `[22:14:03] otlp receiver on http://127.0.0.1:4318 (127.0.0.1 only) -> ...`.
 
@@ -70,7 +73,7 @@ Builds sessions from an agent's files and writes them to the store. Every write 
 | Flag | Effect |
 | --- | --- |
 | `--agent <kind>` | `claude-code` (the default) or `cline`. Any other value is an error. |
-| `--session <id>` | Claude Code only: ingest this one session. Without it, every session in the folder's `otlp-logs.ndjson` is ingested. |
+| `--session <id>` | Claude Code only: ingest this one session. Without it, every session in the folder is ingested (each `sessions/<id>/` folder, or every session in a folder of shared log files). |
 | `--db <path>` | Write to this store instead of `POSTRUN_DB` or `~/.postrun/postrun.db`. |
 
 The positional argument:
@@ -149,7 +152,7 @@ pnpm adapter:cline <session-id | session-dir | messages.json> > steps.json
 
 Run an adapter on its own: the session's steps go to stdout as a JSON array, and a one-line summary goes to stderr. Nothing is written to the store. Useful for checking how an agent's files are read.
 
-`adapter:cc` needs the session id when `otlp-logs.ndjson` holds more than one session, which a live capture folder usually does. The error lists the ids it found.
+Point `adapter:cc` at one session's folder, `~/.postrun/captures/sessions/<id>`. Given a folder of shared log files that holds several sessions, it needs the session id; the error lists the ids it found.
 
 ## pnpm dev:core and pnpm dev:ui
 

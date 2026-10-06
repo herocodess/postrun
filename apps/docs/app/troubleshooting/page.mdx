@@ -72,7 +72,7 @@ To rebuild every session in the capture folder by hand:
 pnpm ingest --agent claude-code ~/.postrun/captures
 ```
 
-If the folder has no telemetry yet, this fails with `no sessions in <dir>/otlp-logs.ndjson`.
+Sessions whose raw files were already removed (24 hours after they went quiet) are skipped; they are in the store already. If the folder holds no sessions at all, this fails with `no sessions in <dir>`.
 
 ### Telemetry arrives in the wrong format
 

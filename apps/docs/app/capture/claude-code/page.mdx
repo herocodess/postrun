@@ -25,13 +25,14 @@ The setup adds these keys under `env`:
 | --- | --- |
 | `CLAUDE_CODE_ENABLE_TELEMETRY` | `1` |
 | `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA` | `1` |
-| `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER` | `otlp` |
+| `OTEL_LOGS_EXPORTER` | `otlp` |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/json` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://127.0.0.1:4318` (or the port in `POSTRUN_OTLP_PORT`) |
 | `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_ASSISTANT_RESPONSES`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT` | `1` |
-| `OTEL_METRIC_EXPORT_INTERVAL` | `10000` |
-| `OTEL_LOGS_EXPORT_INTERVAL`, `OTEL_TRACES_EXPORT_INTERVAL` | `2000` |
+| `OTEL_LOGS_EXPORT_INTERVAL` | `2000` |
 | `POSTRUN_CAPTURE_DIR` | The capture folder, `~/.postrun/captures` by default |
+
+Postrun reads only telemetry logs, so it does not ask Claude Code for metrics or traces. If an earlier setup added the metrics and traces exporters pointing at Postrun's receiver, the setup removes them; the same settings pointing anywhere else are yours and are left alone.
 
 It also adds one hook, with a 10 second timeout, for each of these events: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `Stop` and `SessionEnd`. The hook runs `core/scripts/capture-hook.sh` from your checkout.
 
@@ -60,11 +61,13 @@ pnpm capture
 `pnpm capture` keeps running until you press ctrl-c. It:
 
 - Checks the Claude Code configuration and applies it if it is missing or out of date. If it cannot (for example, the file is not valid JSON), it logs `claude-code config: NOT applied (...)` and still starts recording.
-- Starts the OTLP receiver on `127.0.0.1:4318`, which appends each export to `otlp-logs.ndjson`, `otlp-metrics.ndjson` and `otlp-traces.ndjson` in the capture folder.
-- Tails `hooks.ndjson`, which the hook script appends to.
+- Starts the OTLP receiver on `127.0.0.1:4318`, which writes each session's telemetry to `sessions/<id>/otlp-logs.ndjson` in the capture folder.
+- Reads `hooks.ndjson`, which the hook script appends to, and moves each event into `sessions/<id>/hooks.ndjson`. It reads only what is new each second and remembers its place, so the cost does not grow with history.
 - Watches Cline sessions too. See [Cline](/capture/cline/).
 
-When a session reaches `Stop` (the end of an assistant turn) or `SessionEnd`, the watcher waits 4 seconds so the last telemetry export can arrive, then builds the session and writes it to the store. A session therefore appears in the review app while it is still open, with no end time, and is updated after every turn. On start, the watcher also writes any session in `hooks.ndjson` that has already ended.
+When a session reaches `Stop` (the end of an assistant turn) or `SessionEnd`, the watcher waits at least 4 seconds so the last telemetry export can arrive, then builds the session from its own folder and writes what changed to the store. A session therefore appears in the review app while it is still open, with no end time, and is updated as it runs. A very long session is refreshed less often, so it never costs more than about 1% of a CPU core.
+
+On start, the watcher catches up on every session not yet complete in the store, so sessions that ran while it was stopped are recovered. A session's folder is removed 24 hours after the session goes quiet, once it is safely in the store; set `POSTRUN_KEEP_CAPTURES=1` to keep the folders.
 
 ## Ingest by hand
 
@@ -81,7 +84,7 @@ Re-ingesting is safe: every write is an upsert keyed by session and step id.
 
 ## How a session is built
 
-The Claude Code adapter reads `otlp-logs.ndjson` and `hooks.ndjson` and joins them by `tool_use_id` and prompt id.
+The Claude Code adapter reads a session's `otlp-logs.ndjson` and `hooks.ndjson` and joins them by `tool_use_id` and prompt id.
 
 - **The hook is the content source.** It carries the full tool input, the full command output and the full prompt text.
 - **Telemetry is for ordering and cost.** The OTLP log export supplies the event order, the correlation ids, cost and token counts. Its copy of tool input is truncated, so Postrun never uses it as content.

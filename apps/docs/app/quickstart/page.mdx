@@ -89,7 +89,7 @@ The command prints the full path it wrote and every value it masked. Check them 
 | Path | What it is |
 | --- | --- |
 | `~/.postrun/postrun.db` | The SQLite store (override with `POSTRUN_DB` or `--db`). |
-| `~/.postrun/captures/` | Raw Claude Code hook and telemetry logs (override with `POSTRUN_CAPTURE_DIR`). |
+| `~/.postrun/captures/` | Raw Claude Code hook and telemetry logs, one folder per session, removed 24 hours after a session goes quiet (override with `POSTRUN_CAPTURE_DIR`). |
 | `~/.postrun/ingest-token` | Bearer token for the ingest API, created on first `pnpm serve`. |
 | `~/.claude/settings.json.postrun-backup` | Your original Claude Code settings, saved before the first change. |
 

@@ -6,16 +6,21 @@
  * them, on top of earlier days of history that are still on disk.
  *
  * At checkpoints through the day it rebuilds the capture files as they would
- * be at that hour and measures the recorder's work for one Claude Code turn
- * (a Stop) and one Cline update, what an open review tab downloads per live
- * update, recorder CPU per hour of work, memory, and disk use. Synthetic,
- * deterministic, shaped like real captures.
+ * be at that hour, laid out the way the recorder keeps them (one folder per
+ * session; earlier days' raw files already cleaned up, their sessions in the
+ * store), and measures what the recorder does for one Claude Code turn (a
+ * Stop) and one Cline update, what an open review tab downloads per live
+ * update, how long the session list takes, recorder CPU per hour of work, and
+ * disk use. Cline updates are paced the way the watcher paces them (pacer.ts).
+ * Synthetic, deterministic, shaped like real captures.
  */
 
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { sessionReport } from "../report/index.js";
+import { previewStep } from "../server/preview.js";
 import { claudeCodeRecord, clineRecord } from "../store/ingest.js";
 import { PostrunStore } from "../store/store.js";
 
@@ -185,12 +190,16 @@ mkdirSync(cap, { recursive: true });
 const dbPath = join(root, "postrun.db");
 const store = new PostrunStore({ path: dbPath });
 
+/** Write one session's folder as the recorder keeps it. */
+const writeSession = (id: string, hooks: Timed[], otlp: Timed[]) => {
+  const dir = join(cap, "sessions", id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "hooks.ndjson"), hooks.map((x) => x.line).join("\n") + "\n");
+  writeFileSync(join(dir, "otlp-logs.ndjson"), otlp.map((x) => x.line).join("\n") + "\n");
+};
 const write = (cutoff: number) => {
   const upTo = (xs: Timed[]) => xs.filter((x) => x.t <= cutoff);
-  const hooks = [...history.hooks, ...today.flatMap((s) => upTo(s.hooks))].sort((a, b) => a.t - b.t);
-  const otlp = [...history.otlp, ...today.flatMap((s) => upTo(s.otlp))].sort((a, b) => a.t - b.t);
-  writeFileSync(join(cap, "hooks.ndjson"), hooks.map((x) => x.line).join("\n") + "\n");
-  writeFileSync(join(cap, "otlp-logs.ndjson"), otlp.map((x) => x.line).join("\n") + "\n");
+  for (const s of today) writeSession(s.id, upTo(s.hooks), upTo(s.otlp));
   for (const c of clineToday) {
     const dir = join(clineDir, "sessions", c.id);
     mkdirSync(dir, { recursive: true });
@@ -204,38 +213,52 @@ process.stdout.write(
     `on top of ${HISTORY_DAYS} earlier days (${history.ids.length} sessions) still on disk.\n\n`,
 );
 
-// History is in the store already, as it would be after earlier days.
-write(DAY - 1);
-for (const id of history.ids) store.ingest(claudeCodeRecord(cap, id));
+// History is in the store already, as it would be after earlier days. Its raw folders were
+// cleaned up 24 hours after each session ended, so they are not on disk today.
+for (const id of history.ids) {
+  writeSession(id, history.hooks.filter((h) => h.line.includes(id)), history.otlp.filter((o) => o.line.includes(id)));
+  store.ingest(claudeCodeRecord(join(cap, "sessions", id), id));
+  rmSync(join(cap, "sessions", id), { recursive: true, force: true });
+}
 
-const rows: string[][] = [["hour", "capture files", "store", "CC turn", "Cline update", "live tab download", "recorder CPU per hour", "memory"]];
+const rows: string[][] = [["hour", "capture files", "store", "CC turn", "Cline update", "live tab download", "session list", "recorder CPU per hour"]];
 for (const h of [1, 3, 6, 9, 12].filter((x) => x <= HOURS)) {
   const cutoff = DAY + h * 3_600_000;
-  write(cutoff);
-  // Every open session is in the store up to its previous update.
-  for (const s of today) store.ingest(claudeCodeRecord(cap, s.id));
+  // Every open session is in the store up to the turn before this checkpoint's last one.
+  write(cutoff - TURN_EVERY_MS);
+  for (const s of today) store.ingest(claudeCodeRecord(join(cap, "sessions", s.id), s.id));
   for (const c of clineToday) store.ingest(clineRecord(join(clineDir, "sessions", c.id, `${c.id}.messages.json`)));
-
   const target = today[0]!.id;
-  const [rec, tRead] = time(() => claudeCodeRecord(cap, target));
+  const asOf = store.getSessionShell(target)!.summary.updated_at;
+  await new Promise((r) => setTimeout(r, 2));
+  write(cutoff);
+
+  // One Claude Code turn: read this session's folder, write what changed.
+  const [rec, tRead] = time(() => claudeCodeRecord(join(cap, "sessions", target), target));
   const [, tWrite] = time(() => store.ingest(rec));
   const cl = clineToday[0];
   const [, tCline] = cl ? time(() => store.ingest(clineRecord(join(clineDir, "sessions", cl.id, `${cl.id}.messages.json`)))) : [undefined, 0];
-  const apiBytes = Buffer.byteLength(JSON.stringify(store.getSession(target)));
-  // Per hour: every Claude Code session ends 30 turns; every Cline session rewrites its file on ~25 messages per turn.
+  // What an open review tab downloads for that turn: the delta response.
+  const shell = store.getSessionShell(target)!;
+  const delta = { ...shell, delta: true, reload: false, steps: store.stepsChangedSince(target, asOf).steps.map(previewStep), report: sessionReport(store.reportSteps(target)), as_of: shell.summary.updated_at };
+  const apiBytes = Buffer.byteLength(JSON.stringify(delta));
+  const [, tList] = time(() => store.listSessions());
+  // Per hour: each Claude Code session ends 30 turns. Each Cline session changes on ~26 messages
+  // per turn, but the pacer re-reads at most once per max(2 s, cost / 1%).
   const ccPerHour = AGENTS * (3_600_000 / TURN_EVERY_MS);
-  const clinePerHour = CLINE * (3_600_000 / TURN_EVERY_MS) * (TOOLS_PER_TURN * 2 + 2);
+  const clineChanges = (3_600_000 / TURN_EVERY_MS) * (TOOLS_PER_TURN * 2 + 2);
+  const clinePerHour = CLINE * Math.min(clineChanges, 3_600_000 / Math.max(2000, tCline / 0.01));
   const cpuPerHour = (ccPerHour * (tRead + tWrite) + clinePerHour * tCline) / 1000;
   const walSize = existsSync(dbPath + "-wal") ? statSync(dbPath + "-wal").size : 0;
   rows.push([
     `${h}`,
-    mb(dirSize(cap) + dirSize(clineDir)),
+    mb(dirSize(cap)), // Postrun's raw files; Cline's own files are Cline's
     mb(statSync(dbPath).size + walSize),
     `${(tRead + tWrite).toFixed(0)} ms`,
     `${tCline.toFixed(0)} ms`,
-    mb(apiBytes),
-    `${cpuPerHour.toFixed(0)} s (${((cpuPerHour / 3600) * 100).toFixed(0)}% of a core)`,
-    mb(process.memoryUsage().rss),
+    apiBytes < 1024 * 1024 ? `${(apiBytes / 1024).toFixed(0)} KB` : mb(apiBytes),
+    `${tList.toFixed(0)} ms`,
+    `${cpuPerHour.toFixed(0)} s (${((cpuPerHour / 3600) * 100).toFixed(1)}% of a core)`,
   ]);
   process.stdout.write(`  ${rows[rows.length - 1]!.join(" | ")}\n`);
 }
