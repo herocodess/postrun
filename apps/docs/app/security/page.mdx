@@ -1,0 +1,89 @@
+export const metadata = {
+  title: "Security model",
+  description: "What Postrun records, where it is stored, who can reach it, and what never leaves your machine.",
+};
+
+# Security model
+
+Postrun records full prompts, assistant responses, tool input and tool output from your machine. Everything it records stays local and is meant for one user. This page sets out what is recorded, where it lives, who can reach it, and what happens when you choose to share a session.
+
+## What is recorded
+
+- Your prompts and the agent's replies.
+- Every command the agent runs, with its output and exit code.
+- Every file the agent reads or edits, with the before and after text.
+- Other tool calls, with their raw input and result.
+- The cost and token counts the agent reports.
+
+Capture files can hold anything a session printed, including the output of commands such as `env`. Treat `~/.postrun` as sensitive.
+
+Postrun does not ask Claude Code to dump raw API request bodies to disk. If an earlier Postrun setup turned that on, `pnpm capture:cc:setup` turns it off again.
+
+## Where it lives
+
+| Path | Contents |
+| --- | --- |
+| `~/.postrun/postrun.db` | The SQLite store and its WAL files |
+| `~/.postrun/captures/` | Claude Code hook and telemetry logs |
+| `~/.postrun/ingest-token` | The ingest API's bearer token |
+
+Everything Postrun writes under `~/.postrun` is created owner-only: directories 0700, files 0600. Older files with wider permissions are tightened when they are opened. The hook script sets `umask 077` for the same reason.
+
+There is no account and no copy anywhere else. Delete `~/.postrun` and the recorded data is gone.
+
+## What Postrun reads and writes outside ~/.postrun
+
+- **Reads, never writes:** Cline's session store under `~/.cline`, and the Claude Code hook events passed to its hook script.
+- **Writes one file:** `~/.claude/settings.json`, to add telemetry settings and hooks. It is backed up once to `settings.json.postrun-backup` before the first change and merged in place. See [Claude Code](/capture/claude-code/).
+- **Exports:** the HTML report you ask for, where you ask for it.
+
+## Who can reach it
+
+Postrun opens two listeners:
+
+| Listener | Address | Purpose |
+| --- | --- | --- |
+| API server and review app | `127.0.0.1:1234` | Started by `pnpm serve` |
+| OTLP receiver | `127.0.0.1:4318` | Started by `pnpm capture`, for Claude Code telemetry |
+
+Both bind to `127.0.0.1` only. The host cannot be configured, so other machines cannot connect.
+
+### DNS rebinding
+
+Binding to loopback keeps remote machines out, but not a browser on your own machine. A web page could point its own domain at `127.0.0.1` and then read the API as if it were same-origin. The browser still sends that domain in the `Host` header, so both listeners refuse any request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]`, with status `421`. No CORS headers are ever sent, so other sites cannot read responses either.
+
+### The one write route
+
+The API server has one route that writes: `POST /api/ingest`. It requires the bearer token in `~/.postrun/ingest-token`. A web page can send a blind cross-site POST to `127.0.0.1`, but a browser cannot attach an `Authorization` header to it without a CORS preflight, which the server never approves. The owner-only token file also keeps other users on the same machine out. Every batch is validated against the v1.2 schema before anything is written. See the [ingest API](/reference/ingest-api/).
+
+Read routes have no token, and nothing is rate limited, because the server is never reachable from the network.
+
+### Request hardening
+
+- The OTLP receiver caps each export at 32 MB, before and after gzip, and accepts only its three signal paths.
+- The ingest route caps bodies at 8 MB, before and after gzip.
+- The server never echoes internal error text: internal errors are logged to stderr and returned as a generic `500`.
+- Every response carries `x-content-type-options: nosniff`, `referrer-policy: no-referrer` and `cache-control: no-store`.
+- Static file paths are resolved and checked against the review app's folder, and any path containing `..` is refused.
+- Session ids read from Claude Code's hook log and Cline's folder names must be plain tokens (letters, digits, `_`, `.`, `-`) before they are used in paths or logs.
+
+## What never leaves your machine
+
+Postrun has no telemetry and never phones home. The recorder, the store and the review app all run locally. Nothing leaves your machine unless you export a session yourself, one session at a time.
+
+## Sharing on purpose
+
+`pnpm export` and the **Export report** button write one session to a single HTML file. Before it is written:
+
+- **Secrets are masked.** Known formats (private keys; AWS, GitHub, Anthropic, OpenAI, Stripe, Slack and Google keys; JWTs), passwords in URLs, `Authorization` header values, and values assigned to credential names such as `API_KEY`, `token` or `password` become `[REDACTED:<kind>]`.
+- **Home paths are shortened.** `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` become `~`.
+- **Local details are dropped.** Your machine name (`captured_on`), `owner_id`, the local capture paths (`source` and segment `source_files`), and your review verdict are left out.
+- **Every masked value is listed** with its location and surrounding text, for you to check before sending.
+
+The file has no scripts, makes no network requests, and carries a Content-Security-Policy that forbids scripts, frames, forms and fetches.
+
+The full rules are on [Exporting and redaction](/export/).
+
+<Callout type="warn" title="Redaction is a safety net, not a guarantee">
+  Redaction catches the formats and patterns it knows. It can miss a secret in free text, a token with an unfamiliar prefix, or a value under a name that is not a credential word. Skim every report before you send it.
+</Callout>

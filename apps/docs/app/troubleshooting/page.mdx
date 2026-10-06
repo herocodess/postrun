@@ -1,0 +1,203 @@
+export const metadata = {
+  title: "Troubleshooting",
+  description: "Fixes for the problems Postrun reports: ports in use, missing sessions, rejected requests and more.",
+};
+
+# Troubleshooting
+
+Each section below starts with the message Postrun prints or returns, then the cause and the fix. Messages that include a path or id show it as `<...>`.
+
+## Ports
+
+### Port 1234 is already in use
+
+```text
+postrun serve: Port 1234 is already in use on 127.0.0.1. Pick another port with --port <n> or PORT=<n> (default 1234).
+```
+
+Another process, often another `pnpm serve`, is using the port. Stop it, or pick another port:
+
+```bash
+pnpm serve --port 4321
+```
+
+If you change the server port, adapters that push to the [ingest API](/reference/ingest-api/) must use the new port too.
+
+### OTLP receiver port 4318 is already in use
+
+```text
+postrun capture: OTLP receiver port 4318 is already in use on 127.0.0.1. Set POSTRUN_OTLP_PORT to another port (and OTEL_EXPORTER_OTLP_ENDPOINT to match).
+```
+
+Another `pnpm capture`, or another OpenTelemetry collector, is listening on 4318. Stop it, or move Postrun's receiver:
+
+```bash
+POSTRUN_OTLP_PORT=4319 pnpm capture
+```
+
+With a new port, `pnpm capture` sees that Claude Code's `OTEL_EXPORTER_OTLP_ENDPOINT` no longer matches and updates `settings.json`. Restart Claude Code so it sends to the new port. Use the same `POSTRUN_OTLP_PORT` whenever you run `pnpm capture:cc:setup`.
+
+### invalid port
+
+```text
+postrun serve: invalid port "abc" (from --port); expected an integer between 1 and 65535
+postrun capture: invalid POSTRUN_OTLP_PORT "abc"
+```
+
+The port must be a whole number from 1 to 65535.
+
+## Sessions do not appear
+
+### A Claude Code session is missing
+
+Check these in order:
+
+1. **Is `pnpm capture` running?** Nothing is recorded while it is stopped. Hook events are still appended to `hooks.ndjson` by the hook script, but telemetry needs the receiver.
+2. **Was Claude Code restarted after setup?** The recorder logs this when it is not:
+
+   ```text
+   claude-code <id>: hooks only, no OTel data (this claude was started before Postrun's env was configured; restart it); skipped
+   ```
+
+   Claude Code reads `settings.json` only at launch. Quit the session and start `claude` again. A session with hooks but no telemetry cannot be built, because telemetry supplies the step order and cost.
+3. **Has the session finished a turn?** A Claude Code session is written at the end of each assistant turn (`Stop`) and at `SessionEnd`, after a 4 second pause. It does not appear while the first turn is still running.
+4. **Is the configuration in place?** Run `pnpm capture:cc:setup` and read its summary.
+
+To rebuild every session in the capture folder by hand:
+
+```bash
+pnpm ingest --agent claude-code ~/.postrun/captures
+```
+
+If the folder has no telemetry yet, this fails with `no sessions in <dir>/otlp-logs.ndjson`.
+
+### Telemetry arrives in the wrong format
+
+The recorder logs:
+
+```text
+otlp: /v1/logs: got application/x-protobuf, expected application/json. Set OTEL_EXPORTER_OTLP_PROTOCOL=http/json before launching claude.
+```
+
+The receiver accepts OTLP over HTTP with JSON bodies only, and answers anything else with `415`. `pnpm capture:cc:setup` sets `OTEL_EXPORTER_OTLP_PROTOCOL` to `http/json` in `settings.json`. If you see this, something else (often a shell variable) is overriding it. Unset the override and restart Claude Code.
+
+### A Cline session is missing
+
+- Postrun reads Cline 4.1.x sessions from `~/.cline/data/sessions`. The older VS Code task folders are not read.
+- If Cline stores sessions elsewhere, set `POSTRUN_CLINE_DIR` for `pnpm capture`.
+- A session caught mid-write is retried on its next change:
+
+  ```text
+  cline <id>: messages file not parseable yet (mid-write?); will retry on next change
+  ```
+
+- `pnpm ingest --agent cline <id>` looks only in `~/.cline/data/sessions`:
+
+  ```text
+  postrun store: Cline session <id> not found (looked for <path>)
+  ```
+
+  Pass the session folder or the `<id>.messages.json` file instead.
+
+### The review app shows no sessions
+
+The review app reads the store given to `pnpm serve`. If you recorded with a different `POSTRUN_DB` or `--db`, serve that same store. `pnpm sessions` prints `no sessions in <path>` with the path it read.
+
+## Claude Code setup
+
+### settings.json is not valid JSON
+
+```text
+postrun capture setup: <path> is not valid JSON (<reason>); fix it by hand, nothing was changed
+```
+
+`pnpm capture` logs the same problem as `claude-code config: NOT applied (...)` and keeps recording. Fix the file by hand, then run `pnpm capture:cc:setup`.
+
+Setup also refuses to merge, and writes nothing, when `env` or `hooks` is not an object, or a hook event's value is not an array:
+
+```text
+settings "env" is not an object; refusing to merge
+settings hooks.Stop is not an array; refusing to merge
+```
+
+### hook script missing
+
+```text
+postrun capture setup: hook script missing: <path>/core/scripts/capture-hook.sh
+```
+
+Setup makes the hook script executable after merging the settings, and the script is missing from your checkout. Restore `core/scripts/capture-hook.sh` and run `pnpm capture:cc:setup` again.
+
+The hooks in `settings.json` point at the script by its full path. If you move the checkout, run `pnpm capture:cc:setup` from the new location. An old hook is recognised as Postrun's, and updated in place, when its folder path contains `postrun`. Otherwise setup adds a new hook next to it, and you should remove the old entry from `settings.json` by hand.
+
+## The review app
+
+### UI not built
+
+Opening `http://127.0.0.1:1234/` returns `503`:
+
+```text
+UI not built: <repo>/apps/ui/out/index.html is missing. Run "pnpm --filter @postrun/ui build" (or "pnpm serve" from the repo root, which builds first).
+```
+
+`pnpm dev:core` serves the last built review app and does not build it. Use `pnpm serve`, which builds first, or build once with `pnpm --filter @postrun/ui build`.
+
+### server offline
+
+The top bar pill says `server offline`, or the list shows `Could not load sessions: ... Is the server running on 127.0.0.1:1234?`. Start `pnpm serve`. The page catches up on its own when the server is back.
+
+### misdirected request (421)
+
+```text
+misdirected request: this server only answers to 127.0.0.1 or localhost
+```
+
+The request's `Host` header was not `127.0.0.1`, `localhost` or `[::1]`. This guard stops DNS rebinding attacks. It also blocks custom hostnames, `/etc/hosts` aliases, and tunnels or proxies that pass their own hostname. Open `http://127.0.0.1:1234/` or `http://localhost:1234/` directly. The OTLP receiver applies the same rule, with an empty `421` response.
+
+### too many live connections
+
+`GET /api/events` returns `503` with `{"error":"too many live connections"}` when 32 streams are already open. Close some review app tabs or other stream clients.
+
+## Ingest API errors
+
+| Status | Message | Fix |
+| --- | --- | --- |
+| `401` | `missing or invalid bearer token (see ~/.postrun/ingest-token)` | Send `authorization: Bearer <token>` with the current contents of the token file. If the file was deleted or replaced, the server keeps the token it loaded at start: restart `pnpm serve`. |
+| `413` | `body larger than 8388608 bytes` | Split the session into several smaller batches. The 8 MB limit also applies after gzip decompression. |
+| `413` | `too many steps in one batch: ...` | At most 5000 items of each kind per batch. Split it. |
+| `415` | `content-type must be application/json, got ...` | Send `content-type: application/json`. |
+| `415` | `unsupported content-encoding ...; use gzip or none` | Send gzip, or no `content-encoding`. |
+| `409` | `step seq already taken in this session` | A different step id is already stored with that `seq`. Give each step a unique `seq`, and reuse the same id when re-sending a step. |
+| `400` | `invalid batch` | Read `details`: each entry has a `path` into your body and a message. Common causes: a timestamp without a timezone, `null` for an optional field, an unknown field, or a value outside a closed enum. |
+| `400` | `batch references unknown or mismatched records` | A turn or step names a segment, actor or turn that is neither in the batch nor already stored, or its `session_id` does not match `session.id`. Send parents before or with their children. |
+| `405` | `method not allowed` | Use `POST`. |
+
+### token shorter than 32 characters
+
+```text
+postrun serve: ingest token: <path> holds a token shorter than 32 characters; delete it to generate a new one
+```
+
+The token file was edited or truncated. Delete it and start `pnpm serve` again to create a new one. Update any adapter that reads the old token.
+
+## Export
+
+### file exists
+
+```text
+postrun export: <path> exists; pass --force to overwrite
+```
+
+Pass `--force`, or choose another name with `-o`.
+
+### no session
+
+```text
+postrun export: no session <id> in <db>. List them with: pnpm sessions
+```
+
+Check the id with `pnpm sessions`, and that you are reading the same store (`--db` or `POSTRUN_DB`).
+
+### Where did the file go?
+
+`pnpm export` runs inside the `core/` folder, so a default or relative output path lands in `core/` of your checkout. The first line of output, `wrote <path>`, shows the full path. Pass an absolute path with `-o` to choose the location.

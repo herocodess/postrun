@@ -1,0 +1,72 @@
+export const metadata = {
+  title: "Cline",
+  description: "Record Cline sessions by reading its local session store, with no configuration.",
+};
+
+# Cline
+
+Postrun records Cline by reading the sessions Cline already saves on your machine. There is nothing to configure in Cline: keep `pnpm capture` running and every Cline session is written to the store as it changes. Postrun only reads Cline's files and never writes them.
+
+## Record sessions
+
+```bash
+pnpm capture
+```
+
+The Cline watcher in `pnpm capture` watches `~/.cline/data/sessions`:
+
+- On start, it ingests every session present.
+- When a session's messages or metadata file changes, or a new session folder appears, it re-ingests that session after a 2 second pause. File system events are the fast path, with a 3 second poll as a fallback.
+- Cline rewrites its messages file during a session, so an open session is ingested many times. Every ingest is an upsert, and the session's end time stays unset until Cline's metadata records one.
+- If the messages file is caught half written, parsing fails and the watcher logs `messages file not parseable yet (mid-write?); will retry on next change`.
+
+To watch a different folder, set `POSTRUN_CLINE_DIR`.
+
+## Ingest by hand
+
+```bash
+pnpm ingest --agent cline <session-id>
+pnpm ingest --agent cline ~/.cline/data/sessions/<session-id>
+pnpm ingest --agent cline path/to/<session-id>.messages.json
+```
+
+A bare session id is looked up in `~/.cline/data/sessions`. `POSTRUN_CLINE_DIR` applies only to the watcher, so if your sessions live elsewhere, pass the folder or the messages file instead of the id.
+
+## What is read
+
+Postrun reads Cline 4.1.x sessions from the current-format store:
+
+| Path | What it holds |
+| --- | --- |
+| `~/.cline/data/sessions/<id>/<id>.messages.json` | The conversation. |
+| `~/.cline/data/sessions/<id>/<id>.json` | Metadata: working directory, model, checkpoints, totals. |
+| `~/.cline/data/globalState.json` | Auto-approval settings, used for each step's `decision`. |
+
+The older format under VS Code's `globalStorage/saoudrizwan.claude-dev/tasks/` is not read.
+
+## How a session is built
+
+| In Cline | Step |
+| --- | --- |
+| User text, with `act` or `plan` mode | `message` with role `user`. Starts a new turn, with `mode` set to Cline's own value. |
+| Assistant text | `message` with role `assistant` |
+| Assistant thinking | `message` with role `thinking` |
+| A `run_commands` item | `command`. A trailing `[Command exited with code N]` becomes `exit_code` and is removed from the output. |
+| A `run_commands` item that proceeded while still running | `command` with `content_status: "reference_only"` and `output_ref` pointing at Cline's temporary log. Any partial output is kept. |
+| A `read_files` item | `read` |
+| `editor` | `edit`. An edit with no old text is a file creation, so `is_full_write` is `true`. |
+| `search_codebase` and `fetch_web_content` items | `other`, with the input and result in `raw` |
+| Any other block | `other` with tool name `block:<type>` |
+
+Cline batches several items into one tool call. Each item becomes its own step, with an id of the form `<tool_use_id>#<i>`.
+
+A few fields are best effort, because Cline does not record them directly:
+
+- **`decision`.** Cline does not record a per-call approval. Postrun derives it from the auto-approval settings: `auto` for categories that were auto-approved, `accepted` for the rest, since the tool ran.
+- **`error`.** A step fails when Cline marks the result unsuccessful or as an error. The error type is always `cline_tool_error`, because Cline has no error taxonomy.
+- **Segments.** A resumed task becomes a new segment, inferred from the checkpoint run count in the metadata.
+- **Actors.** Every Cline session has one root actor.
+
+Edits from Cline never carry `structured_patch`: Cline returns a diff snippet as text, not a structured patch. Steps are ordered by their position in the conversation, because Cline's message timestamps are not always increasing.
+
+See the [event schema](/reference/schema/) for every field.

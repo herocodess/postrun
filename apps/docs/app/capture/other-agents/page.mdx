@@ -1,0 +1,117 @@
+export const metadata = {
+  title: "Other agents",
+  description: "Push sessions from any coding agent into Postrun through the local ingest API.",
+};
+
+# Other agents
+
+Postrun records Claude Code and Cline today. Cursor and Codex are next. For any other agent, you write a small adapter that converts the agent's activity into v1.2 records and pushes them to `POST /api/ingest` on the local server. Pushed sessions show up in the review app, update live, and export the same way as recorded ones.
+
+This page walks through a first push. The [ingest API reference](/reference/ingest-api/) has every rule and status code.
+
+## 1. Start the server and get the token
+
+```bash
+pnpm serve
+```
+
+On first start, the server creates a random bearer token at `~/.postrun/ingest-token`, readable only by your user. It prints where the token is:
+
+```text
+ingest: POST http://127.0.0.1:1234/api/ingest  (bearer token in /home/you/.postrun/ingest-token)
+```
+
+Set `POSTRUN_INGEST_TOKEN_FILE` to keep the token somewhere else. Delete the file to rotate it; a new one is created on the next start.
+
+## 2. Write a batch
+
+A batch is one JSON object: a session header plus any segments, actors, turns and steps. This one creates a session with one turn, a user prompt and a failed command:
+
+```json
+{
+  "schema_version": "1.2",
+  "session": {
+    "id": "demo-0001",
+    "agent": { "kind": "my-agent", "version": "0.1.0" },
+    "workspace": { "root": "/home/me/project" },
+    "started_at": "2026-10-05T22:00:00Z"
+  },
+  "segments": [
+    { "index": 0, "start_reason": "start", "started_at": "2026-10-05T22:00:00Z", "source_files": [] }
+  ],
+  "actors": [
+    { "id": "root", "type": "root" }
+  ],
+  "turns": [
+    { "id": "turn-1", "session_id": "demo-0001", "segment_index": 0, "actor_id": "root",
+      "index": 1, "started_at": "2026-10-05T22:00:00Z", "step_ids": [] }
+  ],
+  "steps": [
+    { "id": "step-0", "session_id": "demo-0001", "segment_index": 0, "turn_id": "turn-1", "actor_id": "root",
+      "seq": 0, "at": "2026-10-05T22:00:00Z", "type": "message",
+      "decision": "n/a", "outcome": "ok", "content_status": "inline", "channels": ["push"], "flags": [],
+      "payload": { "role": "user", "text": "Run the tests" } },
+    { "id": "step-1", "session_id": "demo-0001", "segment_index": 0, "turn_id": "turn-1", "actor_id": "root",
+      "seq": 1, "at": "2026-10-05T22:00:04.250Z", "type": "command",
+      "decision": "auto", "outcome": "failed", "content_status": "inline", "channels": ["push"], "flags": [],
+      "error": { "type": "exit_code", "message": "Exit code 1" },
+      "payload": { "command": "npm test", "stdout": "1 failing", "exit_code": 1, "cwd": "/home/me/project" } }
+  ]
+}
+```
+
+Save it as `batch.json`. A few rules that catch people out:
+
+- Timestamps must be ISO 8601 with a timezone, such as `2026-10-05T22:00:00Z` or `2026-10-05T23:00:00+01:00`.
+- Every step needs `flags` and `channels`, even when empty. `turns[].step_ids` is required too, but its value is ignored.
+- Unknown fields are rejected, and optional fields must be left out rather than set to `null`.
+- `type`, `content_status` and flag `severity` accept only their listed values. Other enums, such as `decision`, `outcome` and `agent.kind`, accept any non-empty string.
+
+## 3. Push it
+
+```bash
+TOKEN=$(cat ~/.postrun/ingest-token)
+curl -X POST http://127.0.0.1:1234/api/ingest \
+  -H "authorization: Bearer $TOKEN" \
+  -H "content-type: application/json" \
+  -d @batch.json
+```
+
+The first push creates the session and returns `201`:
+
+```json
+{"session_id":"demo-0001","created":true,"steps":2,"turns":1,"segments":1,"actors":1}
+```
+
+The counts are for this batch. Sending the same batch again returns `200` with `"created": false` and changes nothing.
+
+If the batch is invalid, the response is `400` with a path for every problem:
+
+```json
+{"error":"invalid batch","details":[{"path":"steps[1].payload.exit_code","message":"expected integer, got string \"1\""}]}
+```
+
+## 4. Keep pushing as the session runs
+
+Batches are incremental. Send the session header with every push, plus only the records that are new or changed since the last one:
+
+- Records are upserted by id (segments by `index`) and nothing is deleted.
+- A step can point at a turn, actor or segment sent in an earlier batch.
+- `seq` must be unique within the session. Re-sending a step with its own `seq` is fine; giving a different step id an existing `seq` returns `409`.
+- Send `ended_at` when the session finishes, and `metrics` whenever you know the session's cumulative cost and tokens. Leaving them out of a later batch keeps the stored values.
+
+Each push is checked in full before anything is written, so a rejected batch leaves the store unchanged. A batch is limited to 8 MB and 5000 items of each kind; split larger sessions into several pushes.
+
+## Mapping your agent's activity
+
+Map each thing the agent does to one step type:
+
+| Agent activity | Step `type` | Required payload fields |
+| --- | --- | --- |
+| A prompt or reply | `message` | `role` |
+| A shell command | `command` | none (all optional) |
+| A file write or edit | `edit` | `path`, `is_full_write` |
+| A file read | `read` | `path` |
+| Any other tool call | `other` | `tool_name`, `raw` (an object) |
+
+When you only have a pointer to content and not the content itself, set `content_status` to `reference_only`, leave the content fields out, and put the pointer in `output_ref` (commands) or `text_ref` (messages). The full field list is on the [event schema](/reference/schema/) page.

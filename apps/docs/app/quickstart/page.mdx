@@ -1,0 +1,115 @@
+export const metadata = {
+  title: "Quickstart",
+  description: "Record a Claude Code or Cline session on your machine and review it in the browser.",
+};
+
+# Quickstart
+
+This page takes you from a fresh checkout to a recorded session open in the review app. You run two long-lived commands: `pnpm capture`, which records your agents, and `pnpm serve`, which shows what was recorded at `http://127.0.0.1:1234/`.
+
+<Callout type="note" title="Early access">
+  A packaged install is coming with early access. Until then, Postrun runs from a checkout of the repository with pnpm, and every command on this page is run from the repository root.
+</Callout>
+
+## Requirements
+
+- Node.js 20 or later.
+- pnpm 9 or later.
+- Claude Code or Cline installed, if you want to record one of them. Any other agent can push sessions through the [ingest API](/capture/other-agents/).
+
+## 1. Install
+
+```bash
+git clone [REPO URL] postrun
+cd postrun
+pnpm install
+```
+
+`pnpm install` also builds `better-sqlite3`, the SQLite driver the store uses.
+
+## 2. Start recording
+
+```bash
+pnpm capture
+```
+
+This keeps running. On start it:
+
+1. Checks `~/.claude/settings.json` and, if Postrun's telemetry settings and hooks are missing, merges them in (the original file is backed up once to `~/.claude/settings.json.postrun-backup`). If they are already there, it prints `claude-code config: already present` and writes nothing.
+2. Starts a telemetry receiver on `127.0.0.1:4318` for Claude Code.
+3. Watches Claude Code's hook log and Cline's session folder (`~/.cline/data/sessions`), and writes each session into the store at `~/.postrun/postrun.db`.
+
+If you only want the Claude Code configuration step, without starting the recorder, run `pnpm capture:cc:setup`. Details are on the [Claude Code](/capture/claude-code/) page.
+
+<Callout type="warn" title="Restart Claude Code once">
+  Claude Code reads `settings.json` only at launch. A Claude Code session that was already running when the settings were written is not recorded. Quit it and start `claude` again.
+</Callout>
+
+## 3. Run your agent
+
+Use Claude Code or Cline as you normally would. Postrun writes a Claude Code session to the store at the end of each assistant turn, and a Cline session shortly after Cline saves its messages file. You can review a session while the agent is still working.
+
+The recorder logs each write:
+
+```text
+[22:14:03] claude-code ingested 3ac04cde-... (12 steps) on Stop
+```
+
+## 4. Open the review app
+
+In a second terminal:
+
+```bash
+pnpm serve
+```
+
+This builds the review app and serves it with the store at `http://127.0.0.1:1234/`. Open that address. The session list shows every recorded session, newest first. Click one to see the files it touched, the commands it ran and the full timeline. See [Reviewing sessions](/review/).
+
+To use another port:
+
+```bash
+pnpm serve --port 4321
+```
+
+## 5. Share one session
+
+When someone else needs to see what happened, export a single session as one redacted HTML file. Either click **Export report** on the session page, or from the terminal:
+
+```bash
+pnpm sessions                 # find the session id
+pnpm export <session-id>      # writes postrun-<agent>-<date>-<id>.html
+```
+
+The command prints the full path it wrote and every value it masked. Check them before you send the file. See [Exporting and redaction](/export/).
+
+## Where things live
+
+| Path | What it is |
+| --- | --- |
+| `~/.postrun/postrun.db` | The SQLite store (override with `POSTRUN_DB` or `--db`). |
+| `~/.postrun/captures/` | Raw Claude Code hook and telemetry logs (override with `POSTRUN_CAPTURE_DIR`). |
+| `~/.postrun/ingest-token` | Bearer token for the ingest API, created on first `pnpm serve`. |
+| `~/.claude/settings.json.postrun-backup` | Your original Claude Code settings, saved before the first change. |
+
+Everything under `~/.postrun` is readable only by your user account. Delete that folder and the recorded data is gone.
+
+## Next steps
+
+<div className="cards">
+  <a href="/capture/claude-code/">
+    Claude Code
+    <span>What the setup changes and how sessions are built.</span>
+  </a>
+  <a href="/capture/cline/">
+    Cline
+    <span>How Cline sessions are read from its task store.</span>
+  </a>
+  <a href="/reference/cli/">
+    CLI reference
+    <span>Every command and flag.</span>
+  </a>
+  <a href="/troubleshooting/">
+    Troubleshooting
+    <span>Port conflicts, missing sessions and other fixes.</span>
+  </a>
+</div>

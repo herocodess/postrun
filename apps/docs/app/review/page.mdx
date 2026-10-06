@@ -1,0 +1,123 @@
+export const metadata = {
+  title: "Reviewing sessions",
+  description: "Use the local review app: the session list, the session view, and live updates.",
+};
+
+# Reviewing sessions
+
+The review app is a local web page served by the Postrun server. It reads the store, lists every recorded session, and shows one session at a time as a report: the files it touched, the commands it ran, and a timeline of every step. It updates live while agents are working.
+
+## Open it
+
+```bash
+pnpm serve
+```
+
+`pnpm serve` builds the review app, then serves it with the store at `http://127.0.0.1:1234/`. On start it prints the store path, the sessions in it, and the address:
+
+```text
+postrun store /home/you/.postrun/postrun.db: 3 session(s)
+  ...
+serving UI from /path/to/postrun/apps/ui/out
+ingest: POST http://127.0.0.1:1234/api/ingest  (bearer token in /home/you/.postrun/ingest-token)
+listening on http://127.0.0.1:1234/  (127.0.0.1 only; ctrl-c to stop)
+```
+
+Options:
+
+```bash
+pnpm serve --port 4321              # or PORT=4321; the flag wins, then PORT, then 1234
+pnpm serve --db /some/other/postrun.db
+```
+
+The server only reads the store; it never runs adapters. Sessions arrive from `pnpm capture`, `pnpm ingest` or the [ingest API](/reference/ingest-api/), and appear without a restart. All of these can run at the same time: they share the SQLite file.
+
+## The session list
+
+The home page lists every stored session, newest first. Each row shows:
+
+- The agent badge and version.
+- The session title (the first line of the first prompt) and the start of the session id.
+- The workspace folder name.
+- When it started, as a date and a relative time.
+- The step count, broken down by type, with failed and reference-only counts.
+- The cost the agent reported.
+- The number of flags.
+
+Above the list, the agent chips filter by agent kind (the address becomes `/?agent=<kind>`), and the total shows the number of sessions and their combined cost. Click a row to open the session.
+
+## The session view
+
+A session opens at `/session?id=<id>`.
+
+### Summary
+
+The top card shows the agent, the title and version, and:
+
+| Item | What it is |
+| --- | --- |
+| cost | Reported API cost and number of API requests |
+| steps, turns | Totals for the session |
+| failed | Steps whose outcome is `failed` |
+| reference-only | Steps whose content was not available inline |
+| workspace | The working directory |
+| when | Start and end time, or `open` while the session has no end, plus the number of segments |
+| owner | The owner id and the machine it was captured on |
+| tokens | Input and output tokens |
+
+### Files touched
+
+Every file the session created, edited or read, with a count of each and how many of those steps failed.
+
+### Commands run
+
+Every distinct command, with how many times it ran and the exit codes seen. Commands whose output is not inline are tagged `output not inline`.
+
+### Timeline
+
+The timeline groups steps by turn. Each turn shows its number, the prompt that started it, and its mode (for Cline, `plan` or `act`; otherwise `no mode`). Each step shows its `seq`, its type, a one-line summary, and a status:
+
+- `ok`
+- `failed`, followed by the error type when the agent reported one
+- `reference-only`, when the content is a pointer rather than inline
+
+## Live updates
+
+The app keeps one connection per browser tab to the [live events stream](/reference/events-api/). When a session is written, the list and the open session refetch in place. The pill in the top bar shows the connection state:
+
+| Pill | Meaning |
+| --- | --- |
+| `live` | Connected. Changes appear as they are written. |
+| `connecting` | Opening or reopening the connection. |
+| `server offline` | The server cannot be reached. What is on screen stays, and the app catches up when the server is back. |
+
+A Claude Code session updates at the end of each assistant turn. A Cline session updates shortly after Cline saves its messages file.
+
+## Export
+
+The **Export report** button on a session opens the export panel. It lists every value redaction will mask before you download. See [Exporting and redaction](/export/).
+
+## Read routes
+
+The review app uses these routes, which you can also call from scripts on the same machine. They need no token.
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/sessions` | `{ sessions, agents }`, newest first. Add `?agent=<kind>` to filter. |
+| `GET /api/sessions/<id>` | The full session (summary, segments, actors, turns, steps) plus `report` (files touched, commands run). `404` if not found. |
+| `GET /api/sessions/<id>/export` | The redacted HTML report, as a download. |
+| `GET /api/sessions/<id>/export/review` | What the export would mask, as JSON. |
+| `GET /api/events` | The [live events stream](/reference/events-api/). |
+
+Every response carries `x-content-type-options: nosniff`, `referrer-policy: no-referrer` and `cache-control: no-store`, and no CORS headers.
+
+## Working on the review app
+
+To run the app with hot reload, start the core server and the Next dev server in two terminals:
+
+```bash
+pnpm dev:core    # API and the last built UI on 127.0.0.1:1234
+pnpm dev:ui      # Next dev server on 127.0.0.1:3000, with /api proxied to 127.0.0.1:1234
+```
+
+Set `UI_PORT` to move the dev server, and `POSTRUN_CORE_URL` to proxy to a core server on another address.

@@ -1,0 +1,189 @@
+export const metadata = {
+  title: "Ingest API",
+  description: "POST /api/ingest: push v1.2 session batches to the local Postrun server.",
+};
+
+# Ingest API
+
+`POST /api/ingest` is the one write route on the Postrun server. Adapters that run outside Postrun use it to push a session as it happens. Each request carries one batch: a session header plus any new or changed segments, actors, turns and steps. For a walkthrough, see [Other agents](/capture/other-agents/).
+
+## Endpoint
+
+```text
+POST http://127.0.0.1:1234/api/ingest
+```
+
+The server listens on `127.0.0.1` only. The port is 1234 unless `pnpm serve` was started with `--port` or `PORT`. Any method other than `POST` returns `405` with `allow: POST`.
+
+## Authentication
+
+Send the token from the token file as a bearer token:
+
+```text
+authorization: Bearer <token>
+```
+
+| Item | Value |
+| --- | --- |
+| Token file | `~/.postrun/ingest-token` |
+| Override | `POSTRUN_INGEST_TOKEN_FILE` (the path to the file) |
+| Created | On first `pnpm serve`, owner-only (0600), if the file does not exist |
+| Format | 43 characters (32 random bytes, base64url). A file holding fewer than 32 characters is refused. |
+| Rotate | Delete the file and restart the server |
+
+The token is checked before the body is read. A missing or wrong token returns `401` with `www-authenticate: Bearer realm="postrun"`.
+
+The token exists because the Host check that stops DNS rebinding does not stop a web page from sending a blind cross-site POST to `127.0.0.1`. A browser cannot attach an `Authorization` header to that request without a CORS preflight, which this server never approves. The owner-only file also keeps other users on the same machine out.
+
+## Request
+
+### Headers
+
+| Header | Required | Value |
+| --- | --- | --- |
+| `authorization` | yes | `Bearer <token>` |
+| `content-type` | yes | `application/json` (parameters such as `; charset=utf-8` are allowed) |
+| `content-encoding` | no | `gzip`, or omitted. Anything else returns `415`. |
+
+### Body
+
+```jsonc
+{
+  "schema_version": "1.2",           // required, exactly "1.2"
+  "session": {                       // required
+    "id": "...",                     // required, non-empty
+    "agent": { "kind": "...", "version": "...", "format_version": "..." },  // kind and version required
+    "workspace": { "root": "...", "repo": "..." },                         // root required
+    "started_at": "2026-10-05T22:00:00Z",                                  // required
+    "ended_at": "2026-10-05T22:30:00Z",                                    // optional
+    "source": "...",                 // optional, defaults to "push:<agent kind>" on first push
+    "metrics": {                     // optional; if present, every field is required
+      "cost_usd": 0.42,
+      "api_requests": 7,
+      "tokens": { "input": 1200, "output": 800, "cache_read": 0, "cache_creation": 0 }
+    }
+  },
+  "segments": [],                    // optional arrays
+  "actors": [],
+  "turns": [],
+  "steps": []
+}
+```
+
+Rules for the envelope and header:
+
+- Unknown keys are rejected at the top level, in `session`, `agent`, `workspace`, `metrics` and `tokens`.
+- String fields must be non-empty.
+- `started_at` and `ended_at` must be ISO 8601 date-times with a timezone (`Z` or `+hh:mm`), with optional fractional seconds.
+- `metrics.cost_usd` is a non-negative number. `api_requests` and every token count are non-negative integers.
+
+Segments, actors, turns and steps are validated against the v1.2 schema. See the [event schema](/reference/schema/) for their fields.
+
+## How a batch is applied
+
+### Checked first, written all or nothing
+
+Every batch passes three checks, in order, before anything is written:
+
+1. **Envelope.** `schema_version`, the session header, array types and the per-batch item limits.
+2. **Schema.** Every segment, actor, turn and step passes the v1.2 validator.
+3. **References.** Every turn and step has `session_id` equal to `session.id`. Every `segment_index`, `actor_id`, `turn_id` and actor `parent_id` a record points at is either in this batch or already stored for this session. Ids (and segment indexes, and step `seq` values) must not repeat within the batch.
+
+If any check fails, nothing is written.
+
+### Incremental and idempotent
+
+- Records are upserted by id, and segments by `index`. Nothing is ever deleted, so re-sending a batch is a no-op.
+- Send parents before or with their children: a step's turn, actor and segment must already exist or be in the same batch.
+- `Turn.step_ids` is required by the schema but its value is ignored. The store builds it from the steps.
+
+### Session header on an existing session
+
+- `agent.kind`, `agent.version`, `workspace.root` and `started_at` are written on every push.
+- `ended_at`, `source`, `metrics`, `agent.format_version` and `workspace.repo` change only when the batch includes them. A steps-only batch never resets cost to zero or reopens a finished session.
+- A push never changes the session's review verdict.
+
+### Sequence numbers
+
+`seq` orders steps within a session and must be unique per session. Re-sending a step with the same id and `seq` updates it. Sending a different step id with a `seq` that is already taken returns `409`, with the step that holds it:
+
+```json
+{"error":"step seq already taken in this session","details":[{"path":"steps[1].seq","message":"seq 1 already belongs to step \"step-1\""}]}
+```
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Body size | 8 MB (8,388,608 bytes), checked before and after gzip decompression |
+| Items per batch | 5000 of each kind (segments, actors, turns, steps) |
+| Problems listed per error | 100. The rest are counted in `omitted`. |
+
+Split bigger sessions into several pushes.
+
+## Response
+
+### Success
+
+`201` when the batch created the session, `200` when it updated an existing one:
+
+```json
+{"session_id":"demo-0001","created":true,"steps":2,"turns":1,"segments":1,"actors":1}
+```
+
+The counts are the records in this batch, not session totals.
+
+### Errors
+
+Errors are JSON with an `error` message. Validation errors add `details`, a list of `{ path, message }` where `path` points into the request body, and `omitted` when more than 100 problems were found:
+
+```json
+{"error":"invalid batch","details":[{"path":"steps[0].type","message":"expected one of \"command\", \"edit\", \"read\", \"message\", \"other\", got string \"tool\""}]}
+```
+
+| Status | When | `error` text |
+| --- | --- | --- |
+| `201` | Session created | |
+| `200` | Session updated | |
+| `400` | Body is not valid JSON | `body is not valid JSON` |
+| `400` | Body is not an object | `body must be a JSON object` |
+| `400` | Envelope or schema problems | `invalid batch` |
+| `400` | A reference does not resolve, or `session_id` does not match | `batch references unknown or mismatched records` |
+| `400` | Gzip body cannot be decoded | `invalid gzip body` |
+| `401` | Missing or wrong token | `missing or invalid bearer token (see ~/.postrun/ingest-token)` |
+| `405` | Method is not `POST` | plain text `method not allowed` |
+| `409` | A step `seq` belongs to another step | `step seq already taken in this session` |
+| `413` | Body over 8 MB, before or after gzip | `body larger than 8388608 bytes` or `decompressed body larger than 8388608 bytes` |
+| `413` | More than 5000 items of one kind | `too many steps in one batch: ...; split it into several pushes` |
+| `415` | Wrong content type | `content-type must be application/json, got ...` |
+| `415` | Unsupported encoding | `unsupported content-encoding ...; use gzip or none` |
+| `421` | `Host` header is not a loopback name | plain text `misdirected request: ...` |
+
+## Examples
+
+Plain JSON:
+
+```bash
+TOKEN=$(cat ~/.postrun/ingest-token)
+curl -X POST http://127.0.0.1:1234/api/ingest \
+  -H "authorization: Bearer $TOKEN" \
+  -H "content-type: application/json" \
+  -d @batch.json
+```
+
+Gzip:
+
+```bash
+gzip -c batch.json > batch.json.gz
+curl -X POST http://127.0.0.1:1234/api/ingest \
+  -H "authorization: Bearer $TOKEN" \
+  -H "content-type: application/json" \
+  -H "content-encoding: gzip" \
+  --data-binary @batch.json.gz
+```
+
+After a successful push, the server signals the [live events stream](/reference/events-api/) straight away, so an open review app shows the change without waiting for the next poll.
+
+## Types
+
+The wire types are exported from `core/src/server/api.ts` as `IngestRequest`, `IngestResponse` and `IngestErrorResponse`. The checks live in `core/src/server/ingest.ts`.

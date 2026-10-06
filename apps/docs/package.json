@@ -1,0 +1,30 @@
+{
+  "name": "@postrun/docs",
+  "version": "0.0.0",
+  "description": "docs.postrun.app (Next.js + MDX, static export)",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port ${DOCS_PORT:-3200}",
+    "build": "next build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdx-js/loader": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
+    "@next/mdx": "^16.3.8",
+    "@postrun/brand": "workspace:*",
+    "geist": "^1.4.2",
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/mdx": "^2.0.14",
+    "@types/node": "^20.10.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "typescript": "^5.3.3"
+  }
+}

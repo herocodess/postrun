@@ -1,0 +1,92 @@
+export const metadata = {
+  title: "Live events API",
+  description: "GET /api/events: a server-sent event stream that names each session as it is written.",
+};
+
+# Live events API
+
+`GET /api/events` is a server-sent events stream that tells you which session was just written, so a client can refetch it instead of polling. The review app uses it to update the session list and session page live. It works with any server-sent events client, including the browser's `EventSource`.
+
+## Endpoint
+
+```text
+GET http://127.0.0.1:1234/api/events
+GET http://127.0.0.1:1234/api/events?session=<id>
+```
+
+| Parameter | Effect |
+| --- | --- |
+| `session` | Only send changes for this session id. Without it, the stream covers every session. |
+
+No token is needed. Like every route, the stream refuses a `Host` header that is not a loopback name (`421`) and sends no CORS headers, so other websites cannot read it.
+
+The response has `content-type: text/event-stream; charset=utf-8`. A `HEAD` request returns the headers and closes.
+
+## Wire format
+
+```text
+retry: 2000
+
+event: ready
+data: {}
+
+event: change
+data: {"session_id":"3ac04cde-...","updated_at":"2026-10-05T22:14:03.512Z"}
+
+: ping
+```
+
+| Frame | When | Meaning |
+| --- | --- | --- |
+| `retry: 2000` | On connect | Ask the client to wait 2 seconds before reconnecting. |
+| `event: ready` | On every connect and reconnect | The stream is open. Refetch whatever you show. |
+| `event: change` | When a session is written | `data` is `{"session_id", "updated_at"}`. Refetch that session. |
+| `: ping` | Every 15 seconds | A comment line that keeps idle connections open. Ignore it. |
+
+## How to use it
+
+1. Open the stream.
+2. On every `ready`, refetch what you display: `GET /api/sessions` or `GET /api/sessions/<id>`.
+3. On every `change`, refetch the named session.
+
+### Events name the session, not the change
+
+A `change` event carries only the session id and its new `updated_at`. Fetch the session again to see what changed. A writer may rewrite earlier steps, not only add new ones: for example, a Claude Code hook record can arrive after its telemetry event and turn a reference-only step into one with inline content. A delta based on `seq` would miss that.
+
+Within one poll, the stream sends at most one event per session, so a burst of writes arrives as a single change.
+
+### No replay
+
+Changes made while you were disconnected are not sent again. `ready` arrives on every reconnect, and refetching on it covers anything you missed.
+
+## Where changes come from
+
+Sessions are written by three kinds of writer: `POST /api/ingest` in the server process, and the capture watchers and `pnpm ingest`, which are separate processes sharing the same SQLite file. To see all of them, the server checks the store's `updated_at` column every 500 ms, only while at least one client is connected. A successful `POST /api/ingest` triggers a check straight away.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Simultaneous streams | 32. Further connections get `503` with `{"error":"too many live connections"}`. |
+| Heartbeat | A `: ping` comment every 15 seconds |
+| Poll interval | 500 ms while any client is connected |
+| Shutdown | All streams end when the server stops |
+
+## Example
+
+```bash
+curl -N http://127.0.0.1:1234/api/events
+```
+
+In a browser page served by the Postrun server:
+
+```js
+const events = new EventSource("/api/events");
+events.addEventListener("ready", () => refetchAll());
+events.addEventListener("change", (e) => {
+  const { session_id } = JSON.parse(e.data);
+  refetchSession(session_id);
+});
+```
+
+`EventSource` reconnects on its own. The review app opens one stream per browser tab, and its top bar shows `live`, `connecting` or `server offline` from that connection. See [Reviewing sessions](/review/).

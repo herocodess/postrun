@@ -1,0 +1,118 @@
+export const metadata = {
+  title: "Exporting and redaction",
+  description: "Share one session as a single redacted HTML report, and check what was masked before you send it.",
+};
+
+# Exporting and redaction
+
+Export turns one recorded session into a single HTML file you can email, attach to a pull request or drop in a chat. Every export is redacted: known secret formats, credential values and home folder paths are masked, and every masked value is listed for you to check. Redaction cannot be switched off. It is a safety net, not a guarantee, so skim the report before you send it.
+
+## Export from the review app
+
+1. Open the session.
+2. Click **Export report**.
+3. Read the panel. It says how many values will be masked and lists each one with where it was and the text around it, already masked. It also says how many home paths will show as `~`, and that the machine name, capture paths and your review notes are left out.
+4. Click **Download** to save the file.
+
+## Export from the terminal
+
+```bash
+pnpm sessions               # find the session id
+pnpm export <session-id>
+```
+
+The command writes the file and lists what it masked:
+
+```text
+wrote /path/to/postrun/core/postrun-claude-code-2026-10-05-3ac04cde.html (84 KB, 112 steps)
+redaction: masked 2 value(s) and 14 home path(s). Check them before sharing:
+  anthropic-key   step 41 · command · stdout
+      …export ANTHROPIC_API_KEY=[REDACTED:anthropic-key]…
+  ...
+Redaction is automatic, not a guarantee. Skim the report before you send it.
+```
+
+| Option | Effect |
+| --- | --- |
+| `-o <file>`, `--out <file>` | Write to this path instead of the default name. |
+| `--force`, `-f` | Overwrite the file if it exists. Without it, an existing file is an error. |
+| `--db <path>` | Read from another store. |
+
+The default file name is `postrun-<agent>-<date>-<first 8 characters of the session id>.html`. The file is written readable only by you (0600).
+
+<Callout type="warn" title="Where the file lands">
+  `pnpm export` runs inside the `core` package, so a default or relative output path is resolved from the `core/` folder of your checkout, not from where you typed the command. The first line of output always shows the full path. Pass an absolute path with `-o` to choose the location, for example `pnpm export <session-id> -o ~/Desktop/report.html`.
+</Callout>
+
+## What the report contains
+
+The file holds the session's agent, workspace, start and end time (or the time of the last step, for a session that has not ended), the number of segments, the reported cost and tokens, every turn and step, and the files touched and commands run, recalculated from the redacted steps.
+
+These are left out:
+
+| Left out | Why |
+| --- | --- |
+| `owner_id` | Local account detail. |
+| `captured_on` | Your machine name. |
+| `source` | Local capture paths. |
+| The review verdict | A private review note. |
+| Segment `source_files` | Local capture file paths. |
+
+The session title in the report is taken from the redacted first prompt, never from the stored one.
+
+## The file is safe to open
+
+- **No JavaScript.** Steps expand with plain HTML, so the report works when scripts are blocked.
+- **No outside requests.** System fonts, inline styles, no external images.
+- **Locked down.** Every captured string is escaped, and the file's Content-Security-Policy forbids scripts, frames, forms and fetches, so agent output written as HTML cannot run in the reader's browser.
+- It follows the reader's light or dark setting and prints cleanly.
+
+When downloaded from the server, the response is sent as an attachment with `content-security-policy: sandbox`, so it is never rendered from the Postrun server's own address.
+
+## What redaction masks
+
+Redaction runs three passes, in this order, over every string in the step payloads, step errors and flag reasons, the workspace path, and turn modes. Each masked value is replaced with `[REDACTED:<kind>]`.
+
+### 1. Known secret formats
+
+| Kind | What it matches |
+| --- | --- |
+| `private-key` | A full `-----BEGIN ... PRIVATE KEY-----` to `-----END ... PRIVATE KEY-----` block |
+| `aws-access-key` | AWS access key ids starting `AKIA` or `ASIA` |
+| `github-token` | GitHub tokens starting `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` or `github_pat_` |
+| `anthropic-key` | Keys starting `sk-ant-` |
+| `openai-key` | Keys starting `sk-`, `sk-proj-` or `sk-svcacct-` |
+| `stripe-key` | Keys starting `sk_live_`, `sk_test_`, `rk_live_` or `rk_test_` |
+| `slack-token` | Tokens starting `xoxa-`, `xoxb-`, `xoxp-`, `xoxo-`, `xoxs-` or `xoxr-` |
+| `google-api-key` | Keys starting `AIza` |
+| `jwt` | JSON Web Tokens (three base64url parts, the first two starting `eyJ`) |
+
+### 2. Credentials in context
+
+| Kind | What it matches |
+| --- | --- |
+| `url-password` | The password in a URL such as `https://user:password@host`. The user name and host stay. |
+| `auth-header` | The value after `Bearer`, `Basic` or `Token` when it is 16 or more characters. |
+| `credential` | The value in `NAME=value`, `NAME: value`, `NAME := value` or `"name": "value"` when the name is a credential name and the value is 6 or more characters. |
+
+A name counts as a credential name when it contains one of these words as a whole part of a snake_case, kebab-case or dotted name: `secret`, `secrets`, `token`, `password`, `passwd`, `pwd`, `passphrase`, `apikey`, `api_key`, `private_key`, `access_key`, `secret_key`, `credential`, `credentials`, `auth`, `client_secret`, `session_key`, `signing_key`, `webhook_secret`. The case does not matter, and the two-word names also match with `.`, `-` or no separator (`api-key`, `apikey`). So `API_KEY`, `db.password` and `x-auth-token` match.
+
+It also matches camelCase names ending in `ApiKey`, `Token`, `Secret`, `Password`, `Passwd`, `PrivateKey`, `AccessKey`, `Credential` or `Credentials` (such as `accessToken` or `clientSecret`), and the bare names `apiKey`, `token`, `secret`, `password`, `passwd`, `credential` and `credentials`.
+
+Values that are clearly not secrets are left alone, even under a credential name: `true`, `false`, `null`, `nil`, `none`, `undefined`, `required`, `optional`, `string`, `number`, `boolean`, `changeme`, `redacted`, `example`, `placeholder`, values starting `your_` or `your-`, a run of `*`, three or more `x`, `<...>`, `${...}`, `$NAME`, and references such as `process.env.X`, `os.environ` or `env(...)`.
+
+### 3. Home folders
+
+Paths under `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` have that prefix replaced with `~`. These are counted, not listed, because there are many and they are low risk.
+
+### What you see
+
+Every masked value becomes a finding with its kind, its location (for example `step 41 · command · stdout`), and the masked text around it, so you can judge it without seeing the secret. In the report itself, a step that had values masked gets a `secret_in_output` flag with severity `warn` and a reason such as `2 values redacted on export`.
+
+Masks are never matched again, so redacting twice changes nothing.
+
+## Limits of redaction
+
+Redaction catches the formats and patterns above. It will miss a secret that matches none of them: a password in free text, a token with an unusual prefix, a value under a name that is not a credential word, customer data, or internal hostnames. That is why every export lists what it masked, and why you should skim the report before sending it.
+
+The [security model](/security/) covers what Postrun stores locally and what never leaves your machine.

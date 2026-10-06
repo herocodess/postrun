@@ -1,0 +1,219 @@
+export const metadata = {
+  title: "Event schema v1.2",
+  description: "The v1.2 record types: sessions, segments, actors, turns, steps, payloads and flags.",
+};
+
+# Event schema v1.2
+
+Every agent's activity is normalized into the same v1.2 records, so sessions from different agents read and export the same way. The step is the one atom: a single command, edit, read, message or other tool call. Turns group steps, segments group turns across a resume, and a session holds them all. This page lists every field, as checked by the runtime validator that `POST /api/ingest` uses.
+
+## Validation rules
+
+These apply to every record below:
+
+- **Required fields** must be present with the right type.
+- **Optional fields** may be left out, but not set to `null`. JSON `null` is an error.
+- **Unknown fields are rejected** on every modelled object, so typos and stale fields fail instead of being stored. The two deliberately open shapes, `OtherPayload.raw` and `EditPayload.structured_patch`, are not inspected.
+- **Timestamps** are ISO 8601 date-times with a timezone (`Z` or `+hh:mm`), with optional fractional seconds. `2026-10-05T22:00:00Z` passes; `2026-10-05 22:00` does not.
+- **Integers** must be whole numbers. Where noted, they must be 0 or more.
+- **Closed enums** accept only the listed values. **Open enums** list common values but accept any non-empty string, so an agent can record a value Postrun has not mapped yet.
+
+| Enum | Kind | Values |
+| --- | --- | --- |
+| Step `type` | closed | `command`, `edit`, `read`, `message`, `other` |
+| `content_status` | closed | `inline`, `reference_only` |
+| Flag `severity` | closed | `info`, `warn`, `danger` |
+| `decision` | open | `accepted`, `rejected`, `auto`, `n/a` |
+| `outcome` | open | `ok`, `failed` |
+| Flag `kind` | open | `dangerous_command`, `dead_end_edit`, `rejected`, `failed`, `secret_in_output` |
+| Actor `type` | open | `root`, `subagent` |
+| `agent.kind` | open | `claude-code`, `cline` |
+
+## Session
+
+A session is one run of one agent against one working directory. When you push through the ingest API, you send the session header:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | string | yes | Postrun's id for the session, mapped from the agent's own id. |
+| `agent.kind` | string | yes | Open enum. Shown as a badge and used as the filter. |
+| `agent.version` | string | yes | The agent's version. |
+| `agent.format_version` | string | no | The agent's storage format version, where it has one. |
+| `workspace.root` | string | yes | The working directory. |
+| `workspace.repo` | string | no | A repository identifier. |
+| `started_at` | timestamp | yes | |
+| `ended_at` | timestamp | no | Unset while the session is open. |
+| `source` | string | no | Where the session came from. Pushed sessions default to `push:<agent kind>`. |
+| `metrics.cost_usd` | number, 0 or more | with `metrics` | Cumulative API cost the agent reported. |
+| `metrics.api_requests` | integer, 0 or more | with `metrics` | |
+| `metrics.tokens.input`, `.output`, `.cache_read`, `.cache_creation` | integer, 0 or more | with `metrics` | |
+
+`metrics` is stored as reported, not calculated, because API request events are session-level telemetry and not steps. The store also keeps `owner_id` (always `local` for now) and `captured_on` (this machine's hostname) for each session, and an optional review verdict with a `state` (`reviewed`, `approved`, `needs_attention` or any string), a `note` and a `reviewer`.
+
+These are calculated when a session is read, never stored: step counts by type, failed and reference-only counts, flag count, turn count, and the title (the first user prompt).
+
+## Segment
+
+A segment is a contiguous run within a session. Most sessions have one. A session that is resumed after it ended gets another, so the timeline can show where it resumed.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `index` | integer, 0 or more | yes | Unique within the session. Segments are upserted by `index`. |
+| `start_reason` | string | yes | For example `start`, `resume` or `clear`. |
+| `started_at` | timestamp | yes | |
+| `ended_at` | timestamp | no | |
+| `source_files` | string array | yes | Capture files this segment came from. Can be empty. |
+
+## Actor
+
+An actor is the entity within a session that took a step: the main agent, or a subagent it started.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | string | yes | |
+| `parent_id` | string | no | Leave out for the root actor. Must name an actor in the session. |
+| `type` | string | yes | Open enum: `root`, `subagent`. |
+| `label` | string | no | |
+
+## Turn
+
+A turn starts with a user prompt and holds everything the agent did in response.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | string | yes | |
+| `session_id` | string | yes | Must equal the session id. |
+| `segment_index` | integer, 0 or more | yes | Must name a segment in the session. |
+| `actor_id` | string | yes | Must name an actor in the session. |
+| `index` | integer, 0 or more | yes | The turn's position. Postrun's adapters number turns from 1. |
+| `prompt_id` | string | no | The agent's prompt id, where it has one. |
+| `mode` | string | no | The agent's own mode string, such as Cline's `plan` or `act`. Not normalized. |
+| `started_at` | timestamp | yes | |
+| `step_ids` | string array | yes | Accepted but ignored on ingest. The store builds it from the steps, in `seq` order. |
+
+## Step
+
+Every step has these fields, plus a `type` and a matching `payload`.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | string | yes | |
+| `session_id` | string | yes | Must equal the session id. |
+| `segment_index` | integer, 0 or more | yes | |
+| `turn_id` | string | yes | Must name a turn in the session. |
+| `actor_id` | string | yes | Must name an actor in the session. |
+| `seq` | integer, 0 or more | yes | Order within the session. Unique per session. |
+| `at` | timestamp | yes | |
+| `type` | string | yes | Closed enum. Selects the payload shape. |
+| `decision` | string | yes | Open enum. The permission decision: `accepted`, `rejected`, `auto`, or `n/a` for steps that are not tool calls. |
+| `outcome` | string | yes | Open enum. The execution result: `ok` or `failed`. |
+| `content_status` | string | yes | Closed enum: `inline` or `reference_only`. |
+| `error` | object | no | Why the step failed, when the agent reported a reason. |
+| `channels` | string array | yes | Which capture channels evidenced this step, such as `hook` or `otel`. Can be empty. |
+| `flags` | Flag array | yes | Can be empty. |
+| `payload` | object | yes | Shape depends on `type`. |
+
+### decision and outcome
+
+These are two fields because one status could not say "accepted, then failed". `decision` records whether the call was allowed (by you, by configuration, or rejected). `outcome` records what happened when it ran. A step can be `accepted` and `failed` at once.
+
+### content_status
+
+`inline` means the payload holds the content. `reference_only` means the content was not available on any readable channel: the content fields are left out, and a pointer goes in `output_ref` (commands) or `text_ref` (messages). This keeps a missing value from looking like a real empty one. The review app marks these steps as reference-only.
+
+### error
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `type` | string | yes | Non-empty. The agent's error type, for example `Error:EISDIR` or `cline_tool_error`. |
+| `message` | string | yes | Can be empty. |
+
+### Flag
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `kind` | string | yes | Open enum. |
+| `severity` | string | yes | Closed enum: `info`, `warn`, `danger`. |
+| `reason` | string | yes | |
+
+## Payloads
+
+### command
+
+A shell command. Every field is optional.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `command` | string | Left out when the step is reference-only. |
+| `stdout` | string | |
+| `stderr` | string | |
+| `exit_code` | integer | Often present only on failure. |
+| `cwd` | string | |
+| `output_ref` | string | Pointer to the output when it is not inline. |
+
+### edit
+
+A file write or edit.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `path` | string | yes | Non-empty. |
+| `old_string` | string | no | |
+| `new_string` | string | no | |
+| `structured_patch` | any | no | The agent's own structured diff, stored as is. Not validated. |
+| `is_full_write` | boolean | yes | `true` when the whole file was written or created. |
+| `landed_in_final_state` | boolean | no | A projection: `false` marks an edit that did not survive. Adapters do not set it. |
+
+### read
+
+A file read.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `path` | string | yes | Non-empty. |
+| `range` | `[start_line, end_line]` | no | Exactly two integers. |
+
+### message
+
+A prompt or reply.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `role` | string | yes | Non-empty. Usually `user` or `assistant`. The Cline adapter also uses `thinking`. |
+| `text` | string | no | |
+| `text_ref` | string | no | Pointer to the text when it is not inline. |
+
+### other
+
+Any tool call without its own type.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `tool_name` | string | yes | Non-empty. |
+| `raw` | object | yes | The tool's input and result as an object. Contents are not validated. |
+
+## Example step
+
+```json
+{
+  "id": "step-1",
+  "session_id": "demo-0001",
+  "segment_index": 0,
+  "turn_id": "turn-1",
+  "actor_id": "root",
+  "seq": 1,
+  "at": "2026-10-05T22:00:04.250Z",
+  "type": "command",
+  "decision": "auto",
+  "outcome": "failed",
+  "content_status": "inline",
+  "error": { "type": "exit_code", "message": "Exit code 1" },
+  "channels": ["push"],
+  "flags": [],
+  "payload": { "command": "npm test", "stdout": "1 failing", "exit_code": 1, "cwd": "/home/me/project" }
+}
+```
+
+## Error paths
+
+Validation errors name the field with a path into the request body, such as `steps[3].payload.exit_code` or `turns[0].started_at`, and a message such as `required`, `unknown field`, `must be omitted, not null` or `expected ISO 8601 date-time with timezone`. See the [ingest API](/reference/ingest-api/) for the response shape.

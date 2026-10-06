@@ -1,0 +1,61 @@
+export const metadata = {
+  title: "Introduction",
+  description: "What Postrun is, what it records, and how the pieces fit together.",
+};
+
+# Introduction
+
+Postrun is the flight recorder for coding agents. It records every command, edit and file your agents touch, on your own machine, so you can review the whole session afterwards and share a redacted report when someone else needs to see it.
+
+<div className="cards">
+  <a href="/quickstart/">
+    Quickstart
+    <span>Record your first session and open it in the review app.</span>
+  </a>
+  <a href="/capture/claude-code/">
+    Capture Claude Code
+    <span>Telemetry and hooks, set up in one command.</span>
+  </a>
+  <a href="/export/">
+    Export and redaction
+    <span>Share one session as a safe, self-contained report.</span>
+  </a>
+  <a href="/security/">
+    Security model
+    <span>What is recorded, where it lives, what never leaves.</span>
+  </a>
+</div>
+
+## What Postrun records
+
+A **session** is one run of one agent against one working directory. Inside it, each **turn** starts with your prompt, and each turn is a sequence of **steps**: the smallest unit Postrun records. A step is one of:
+
+| Step type | What it holds |
+| --- | --- |
+| `message` | Your prompt or the agent's reply. |
+| `command` | A shell command, with its output, exit code and working directory. |
+| `edit` | A file write or edit, with the before and after text. |
+| `read` | A file the agent read, with the line range. |
+| `other` | Any other tool call, kept as the raw payload. |
+
+Every agent's own log format is normalized into these same steps, so a Claude Code session and a Cline session read the same way. The full shape is in the [event schema](/reference/schema/).
+
+## How the pieces fit
+
+```text
+agent ──► capture ──► store ──► review app
+           │           ~/.postrun/postrun.db     http://127.0.0.1:1234
+           │
+           └─ adapters normalize each agent's logs into v1.2 steps
+
+store ──► export ──► one redacted HTML report you can send
+```
+
+- **Capture** watches your agents while they work: a local telemetry receiver and hooks for Claude Code, the task store for Cline.
+- **The store** is a SQLite file in `~/.postrun`, readable only by your user account.
+- **The review app** runs on `127.0.0.1:1234` and updates live as sessions are written.
+- **Export** writes one session to a single HTML file, with secrets masked, for you to share on purpose.
+
+<Callout type="tip" title="Local by default">
+  Nothing leaves your machine unless you export a session. The recorder and the review app listen on `127.0.0.1` only, and Postrun has no telemetry. See the [security model](/security/).
+</Callout>
