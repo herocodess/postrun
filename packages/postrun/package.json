@@ -9,7 +9,8 @@
   "files": [
     "bin",
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22.13.0"
@@ -27,7 +28,16 @@
     "observability"
   ],
   "homepage": "https://postrun.app",
-  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/herocodess/postrun.git",
+    "directory": "packages/postrun"
+  },
+  "bugs": {
+    "url": "https://github.com/herocodess/postrun/issues"
+  },
+  "author": "Hero Momoh <hm@heromomoh.com>",
+  "license": "MIT",
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepack": "node scripts/build.mjs",
