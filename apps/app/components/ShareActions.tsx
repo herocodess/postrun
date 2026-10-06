@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Loader } from "@postrun/brand/logo";
 import { removeShare, turnOffShare } from "@/app/(account)/actions";
 
 /** Copy, open, turn off, delete. Turning off and deleting ask once, inline, rather than in a browser dialog. */
@@ -33,7 +34,7 @@ export function ShareActions({ id, url, live, title }: { id: string; url: string
           disabled={pending}
           onClick={() => start(async () => (off ? turnOffShare(id) : removeShare(id)).then(() => setConfirm(null)))}
         >
-          {pending ? "…" : off ? "Turn off" : "Remove"}
+          {pending ? <Loader size={15} inline label={off ? "Turning off" : "Removing"} fg="#fff" /> : off ? "Turn off" : "Remove"}
         </button>
       </div>
     );

@@ -5,6 +5,7 @@ import { GeistSans } from "geist/font/sans";
 import { Shell } from "@/components/Shell";
 import { LiveProvider } from "@/lib/live";
 import { StatusProvider } from "@/lib/status";
+import "@postrun/brand/loader.css";
 import "./globals.css";
 
 export const metadata: Metadata = {

@@ -4857,3 +4857,23 @@ pre.diff {
 .share-box a:hover {
   text-decoration: underline;
 }
+
+/* ---- the logo loader (packages/brand/loader.css) in the review app ---------- */
+.page-loader {
+  display: grid;
+  place-items: center;
+  min-height: 50vh;
+  animation: fade-in 0.4s var(--ease-out) both;
+}
+.panel-loader {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0 8px;
+}
+.pr-loader-inline svg {
+  margin-right: 6px;
+}
+.sb-loading {
+  display: flex;
+  align-items: center;
+}

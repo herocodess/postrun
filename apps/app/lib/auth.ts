@@ -15,11 +15,13 @@
  */
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
 import { pool } from "./db";
 import { sendSignInEmail } from "./email";
 import { env } from "./env";
+import { clientIp, hit, LIMITS } from "./limit";
 
 export function authOptions(): BetterAuthOptions {
   return {
@@ -58,6 +60,26 @@ export function authOptions(): BetterAuthOptions {
       storage: "database",
       window: 60,
       max: 60,
+      customRules: {
+        "/sign-in/social": { window: 60, max: 10 },
+        "/magic-link/verify": { window: 60, max: 10 },
+      },
+    },
+    hooks: {
+      // Better Auth limits sign-in emails per IP address. These add a limit per email address,
+      // so nobody can flood someone's inbox with genuine Postrun emails from many addresses.
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/sign-in/magic-link") return;
+        const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+        const ip = ctx.request ? clientIp(ctx.request.headers) : "unknown";
+        for (const [limit, subject] of [
+          [LIMITS.emailPerAddress, email],
+          [LIMITS.emailPerIp, ip],
+        ] as const) {
+          const r = await hit(limit, subject);
+          if (!r.ok) throw new APIError("TOO_MANY_REQUESTS", { message: "Too many sign-in emails. Wait a while, then try again." });
+        }
+      }),
     },
     plugins: [
       magicLink({

@@ -64,9 +64,9 @@ export function reportAgent(html: string): string | null {
 }
 
 /**
- * Read an upload: gzip (what Postrun sends) or plain HTML. Checks it is an
- * HTML document of sensible size. It is served sandboxed either way, so this is
- * about keeping junk out, not about safety.
+ * Read an upload: gzip (what Postrun sends) or plain HTML. Only Postrun's own
+ * reports are taken, so app.postrun.app can't be used to host someone's fake
+ * login page. (Reports are also served sandboxed, with no scripts or forms.)
  */
 export function readReport(body: Buffer, encoding: string | null): { gz: Buffer; html: string; size: number } {
   if (body.length === 0) throw new ShareError(400, "empty", "The upload was empty.");
@@ -79,8 +79,19 @@ export function readReport(body: Buffer, encoding: string | null): { gz: Buffer;
     throw new ShareError(400, "bad_gzip", "The upload could not be decompressed, or it is too large.");
   }
   const html = raw.toString("utf8");
-  if (!/^\s*<!doctype html>/i.test(html.slice(0, 200))) throw new ShareError(400, "not_html", "Only Postrun HTML reports can be shared.");
+  if (!isPostrunReport(html)) throw new ShareError(400, "not_html", "Only reports made by Postrun can be shared.");
   return { gz: gzipped ? body : gzipSync(raw), html, size: raw.length };
+}
+
+/** Made by Postrun's exporter: its doctype, generator tag and fixed security policy, in its head. */
+export function isPostrunReport(html: string): boolean {
+  const head = html.slice(0, 4000);
+  return (
+    /^\s*<!doctype html>/i.test(head) &&
+    head.includes('<meta name="generator" content="postrun">') &&
+    head.includes(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">`) &&
+    !/<(script|form|iframe|object|embed|input)\b/i.test(html)
+  );
 }
 
 // ---- shares --------------------------------------------------------------------

@@ -45,3 +45,12 @@ CREATE TABLE IF NOT EXISTS cli_code (
   expires_at timestamptz NOT NULL,
   used_at    timestamptz
 );
+
+-- Fixed-window rate limits for Postrun's own routes (Better Auth keeps its own
+-- in "rateLimit"). The key is a SHA-256 of what is limited (an IP address, an
+-- email, an account) so no address or email is stored here.
+CREATE TABLE IF NOT EXISTS rate_limit (
+  key          text PRIMARY KEY,
+  window_start timestamptz NOT NULL,
+  count        integer NOT NULL
+);

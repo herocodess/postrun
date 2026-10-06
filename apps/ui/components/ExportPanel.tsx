@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import type { AccountResponse, ApiError, ExportReviewResponse, SecretKind, ShareResponse } from "@postrun/core/server/api";
+import { Loader } from "@postrun/brand/logo";
 import { api, apiFetch, DEMO } from "@/lib/api";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ExportReviewResponse };
@@ -66,7 +67,11 @@ export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose
         </button>
       </div>
 
-      {state.kind === "loading" && <p className="muted">Checking what to redact…</p>}
+      {state.kind === "loading" && (
+        <div className="panel-loader">
+          <Loader size={24} label="Checking what to redact" />
+        </div>
+      )}
       {state.kind === "error" && <p className="error">Could not prepare the export: {state.message}</p>}
       {state.kind === "ready" && <Review data={state.data} href={downloadUrl} />}
       {state.kind === "ready" && <ShareLink sessionId={sessionId} />}
@@ -169,7 +174,7 @@ function ShareLink({ sessionId }: { sessionId: string }) {
         <h3>Share link</h3>
         <span className="sub">the same redacted report, as an unlisted link that expires</span>
       </div>
-      {s.kind === "loading" && <p className="muted">…</p>}
+      {s.kind === "loading" && <Loader size={18} inline label="Checking this computer's sign-in" />}
       {s.kind === "demo" && <p className="muted">In your own Postrun, this uploads the report above and gives you a link to send.</p>}
       {s.kind === "signed-out" && (
         <div className="share-signin">
@@ -193,7 +198,13 @@ function ShareLink({ sessionId }: { sessionId: string }) {
               ))}
             </div>
             <button type="button" className="btn primary" onClick={() => void make(s.account)} disabled={s.kind === "making"}>
-              {s.kind === "making" ? "Uploading…" : "Create link"}
+              {s.kind === "making" ? (
+                <>
+                  <Loader size={15} inline label="Uploading" /> Uploading…
+                </>
+              ) : (
+                "Create link"
+              )}
             </button>
           </div>
           <p className="muted small-note">

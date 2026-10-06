@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { makeToken, signOutComputer } from "@/app/(account)/actions";
+import { Loader } from "@postrun/brand/logo";
 import { authClient } from "@/lib/auth-client";
 
 export function RemoveComputer({ id, name }: { id: string; name: string }) {
@@ -20,7 +21,7 @@ export function RemoveComputer({ id, name }: { id: string; name: string }) {
         Cancel
       </button>
       <button type="button" className="btn btn-sm btn-danger" disabled={pending} onClick={() => start(() => signOutComputer(id))}>
-        {pending ? "…" : "Sign out"}
+        {pending ? <Loader size={15} inline label="Signing out" fg="#fff" /> : "Sign out"}
       </button>
     </div>
   );

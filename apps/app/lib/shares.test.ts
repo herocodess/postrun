@@ -10,6 +10,8 @@ import { MAX_UPLOAD_BYTES, parseExpiryDays, readReport, reportAgent, reportTitle
 
 const REPORT = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="generator" content="postrun">
 <meta name="postrun:agent" content="claude-code">
 <title>Fix the &quot;flaky&quot; CI job &amp; tests · postrun report</title></head><body>hi</body></html>`;
 
@@ -41,6 +43,10 @@ describe("reading an upload", () => {
     expect(code(() => readReport(Buffer.alloc(MAX_UPLOAD_BYTES + 1, 32), null))).toBe("too_large");
     expect(code(() => readReport(Buffer.from([0x1f, 0x8b, 1, 2, 3]), null))).toBe("bad_gzip");
     expect(code(() => readReport(gzipSync('{"not":"html"}'), null))).toBe("not_html");
+    // Any other HTML, such as a fake sign-in page, is refused: only Postrun's own reports are hosted.
+    expect(code(() => readReport(gzipSync('<!doctype html><title>Sign in</title><form action="https://evil.example"><input name="password"></form>'), null))).toBe("not_html");
+    expect(code(() => readReport(gzipSync(REPORT.replace("hi", '<form action="https://evil.example"><input name="password"></form>')), null))).toBe("not_html");
+    expect(code(() => readReport(gzipSync(REPORT.replace("hi", "<script>steal()</script>")), null))).toBe("not_html");
     // A small upload that unpacks to something huge (a zip bomb) is refused, not unpacked.
     expect(code(() => readReport(gzipSync(Buffer.alloc(80 * 1024 * 1024, 32)), null))).toBe("bad_gzip");
   });

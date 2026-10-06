@@ -12,6 +12,7 @@
 
 import { gunzipSync } from "node:zlib";
 import { isShareId } from "@/lib/ids";
+import { clientIp, hit, LIMITS } from "@/lib/limit";
 import { openReport } from "@/lib/shares";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ const REPORT_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await hit(LIMITS.viewPerIp, clientIp(req.headers))).ok) return new Response("Too many requests. Wait a minute, then reload.\n", { status: 429, headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "60" } });
   const gz = isShareId(id) ? await openReport(id) : undefined;
   const headers: Record<string, string> = {
     "content-security-policy": REPORT_CSP,

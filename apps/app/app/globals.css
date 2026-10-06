@@ -1153,3 +1153,25 @@ input:focus {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- the logo loader (packages/brand/loader.css) ----------------------------- */
+.page-loader {
+  min-height: 60vh;
+  display: grid;
+  place-items: center;
+  animation: fade 0.3s var(--ease) 0.15s both;
+}
+.acct-main .page-loader {
+  min-height: 40vh;
+}
+.pr-loader-inline svg {
+  margin-right: 2px;
+}
+.viewer-report {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.viewer-report:hover {
+  color: var(--text);
+}

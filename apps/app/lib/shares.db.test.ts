@@ -17,6 +17,7 @@ describe.skipIf(!URL_)("share links in Postgres", () => {
   let mod: typeof import("./shares");
   let db: typeof import("./db");
   const report = (title: string) => ({ gz: gzipSync(`<!doctype html><title>${title}</title>`), html: `<!doctype html><title>${title}</title>`, size: 40 });
+  // (createShare trusts readReport's checks; these tests are about storage and limits.)
 
   beforeAll(async () => {
     // Every connection in the pool works inside the test schema.
@@ -113,6 +114,21 @@ describe.skipIf(!URL_)("share links in Postgres", () => {
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(5);
     const [n] = await db.query<{ c: string }>(`SELECT count(*) AS c FROM share WHERE user_id = 'cat'`);
     expect(Number(n?.c)).toBe(30);
+  });
+
+  it("rate limits per subject, in fixed windows, without storing the subject", async () => {
+    const { hit } = await import("./limit");
+    const limit = { name: "test", max: 2, seconds: 60 };
+    expect((await hit(limit, "victim@example.com")).ok).toBe(true);
+    expect((await hit(limit, "Victim@Example.com ")).ok).toBe(true);
+    const third = await hit(limit, "victim@example.com");
+    expect(third.ok).toBe(false);
+    expect(third.retryAfter).toBeGreaterThan(0);
+    expect((await hit(limit, "someone@else.com")).ok).toBe(true);
+    const rows = await db.query<{ key: string }>(`SELECT key FROM rate_limit`);
+    expect(JSON.stringify(rows)).not.toContain("example.com");
+    await db.query(`UPDATE rate_limit SET window_start = now() - interval '2 minutes'`);
+    expect((await hit(limit, "victim@example.com")).ok).toBe(true);
   });
 
   it("deleting an account deletes its links and tokens", async () => {

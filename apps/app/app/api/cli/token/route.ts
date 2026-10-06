@@ -7,12 +7,14 @@
  */
 
 import { apiError, fromError, json, readBody } from "@/lib/api";
+import { clientIp, enforce, LIMITS } from "@/lib/limit";
 import { exchangeCliCode } from "@/lib/shares";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    await enforce(LIMITS.codePerIp, clientIp(req.headers));
     const raw = await readBody(req, 4096);
     if (!raw) return apiError(413, "too_large", "Request too large.");
     let body: { code?: unknown; verifier?: unknown };

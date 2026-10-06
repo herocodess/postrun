@@ -3,6 +3,7 @@
 /** What the account pages can change. Each action checks who is signed in and only touches their own rows. */
 
 import { revalidatePath } from "next/cache";
+import { enforce, LIMITS } from "@/lib/limit";
 import { createToken, deleteShare, revokeShare, revokeToken, ShareError } from "@/lib/shares";
 import { isShareId } from "@/lib/ids";
 import { requireViewer } from "@/lib/session";
@@ -29,6 +30,7 @@ export async function signOutComputer(id: string): Promise<void> {
 export async function makeToken(name: string): Promise<{ token?: string; error?: string }> {
   const v = await requireViewer("/settings");
   try {
+    await enforce(LIMITS.tokenPerUser, v.id, "You've made a lot of tokens in the last hour.");
     const { token } = await createToken(v.id, name);
     revalidatePath("/settings");
     return { token };

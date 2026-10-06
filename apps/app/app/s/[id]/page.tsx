@@ -55,6 +55,13 @@ export default async function SharedReport({ params }: { params: Promise<{ id: s
         <span className="viewer-exp mono" title={s.expires_at.toISOString()}>
           Link expires {relative(s.expires_at)}
         </span>
+        <a
+          className="viewer-report"
+          href={`mailto:hm@heromomoh.com?subject=${encodeURIComponent(`Report a Postrun link: ${s.id}`)}`}
+          title="Postrun reports never ask you to sign in or enter anything. If this one does, tell us."
+        >
+          Report
+        </a>
         <a className="btn btn-sm btn-ghost viewer-cta" href="https://postrun.app" target="_blank" rel="noreferrer">
           Get Postrun
         </a>

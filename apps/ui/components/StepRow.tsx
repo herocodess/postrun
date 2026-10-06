@@ -20,6 +20,7 @@ import type { Step } from "@postrun/core/schema";
 import type { StepPreview, StepResponse } from "@postrun/core/server/api";
 import { api, apiFetch } from "@/lib/api";
 import { summarize } from "@/lib/summarize";
+import { Loader } from "@postrun/brand/logo";
 
 const OUTPUT_LIMIT = 100_000;
 
@@ -85,7 +86,11 @@ export const StepRow = memo(function StepRow({ step, sessionId, fresh = false }:
       {open && (
         <>
           <StepBody step={full && "step" in full ? full.step : step} />
-          {cut && !full ? <p className="sb-loading">Loading the full output…</p> : null}
+          {cut && !full ? (
+            <p className="sb-loading">
+              <Loader size={14} inline label="Loading the full output" /> Loading the full output…
+            </p>
+          ) : null}
           {full && "error" in full ? <p className="sb-loading">Could not load the full step ({full.error}); showing the first 2 KB.</p> : null}
         </>
       )}

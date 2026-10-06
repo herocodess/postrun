@@ -14,6 +14,8 @@ import type { Step, Turn } from "../schema/index.js";
 import type { RedactionReport, SecretKind } from "../redact/redact.js";
 import type { ExportDocument } from "./model.js";
 
+// app.postrun.app only hosts uploads carrying this exact policy and the generator tag below
+// (apps/app/lib/shares.ts isPostrunReport). Change both together.
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
 
 export function renderExportHtml(doc: ExportDocument, redaction: RedactionReport): string {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Mark, Wordmark } from "@postrun/brand/logo";
+import { enforce, LIMITS } from "@/lib/limit";
 import { createCliCode, isChallenge, ShareError, tokenName } from "@/lib/shares";
 import { requireViewer } from "@/lib/session";
 
@@ -39,6 +40,7 @@ async function approve(form: FormData) {
   const v = await requireViewer("/shares");
   let code: string;
   try {
+    await enforce(LIMITS.connectPerUser, v.id);
     code = await createCliCode(v.id, a.name, a.challenge);
   } catch (e) {
     if (e instanceof ShareError) redirect(callback(a, { error: e.code }));

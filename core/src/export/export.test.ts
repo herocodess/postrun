@@ -65,6 +65,15 @@ describe("exportSession", () => {
     expect(html).toContain(`http-equiv="Content-Security-Policy" content="default-src 'none'`);
   });
 
+  it("carries the exact tags app.postrun.app checks before hosting a share link", () => {
+    // Keep in step with apps/app/lib/shares.ts isPostrunReport.
+    const head = html.slice(0, 4000);
+    expect(head).toMatch(/^\s*<!doctype html>/i);
+    expect(head).toContain('<meta name="generator" content="postrun">');
+    expect(head).toContain(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">`);
+    expect(html).not.toMatch(/<(script|form|iframe|object|embed|input)\b/i);
+  });
+
   it("takes the title from the redacted prompt", () => {
     expect(html).toContain("<h1>deploy with token [REDACTED:github-token] please</h1>");
   });
