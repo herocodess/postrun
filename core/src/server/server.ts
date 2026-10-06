@@ -463,14 +463,14 @@ async function handleIngest(req: IncomingMessage, res: ServerResponse, ctx: Ctx)
   }
   if (Number(req.headers["content-length"] ?? 0) > MAX_INGEST_BYTES) {
     fail(413, { error: `body larger than ${MAX_INGEST_BYTES} bytes` }, { connection: "close" });
-    req.destroy();
+    dropAfterReply(req);
     return;
   }
 
   let raw = await readBody(req, MAX_INGEST_BYTES);
   if (raw === "too_large") {
     fail(413, { error: `body larger than ${MAX_INGEST_BYTES} bytes` }, { connection: "close" });
-    req.destroy();
+    dropAfterReply(req);
     return;
   }
   if (encoding === "gzip") {
@@ -534,6 +534,28 @@ function sameOrigin(req: IncomingMessage): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * After refusing an oversized body: let the answer reach the client, then hang up. Cutting the
+ * connection straight away can kill the reply while the client is still sending (macOS reports
+ * EPIPE and the caller never sees the 413). The rest of the body is read and thrown away, but
+ * never more than 16 MB or for longer than 2 seconds.
+ */
+function dropAfterReply(req: IncomingMessage): void {
+  let drained = 0;
+  const hangUp = () => {
+    clearTimeout(timer);
+    if (!req.destroyed) req.destroy();
+  };
+  const timer = setTimeout(hangUp, 2000);
+  timer.unref();
+  req.on("data", (c: Buffer) => {
+    drained += c.length;
+    if (drained > 16 * 1024 * 1024) hangUp();
+  });
+  req.on("end", hangUp);
+  req.resume();
 }
 
 /** Read a request body up to max bytes. Resolves "too_large" as soon as the limit is crossed. */
