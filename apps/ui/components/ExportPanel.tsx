@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import type { ExportReviewResponse } from "@postrun/core/server/api";
+import { api } from "@/lib/api";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ExportReviewResponse };
 
@@ -27,13 +28,14 @@ const KIND_LABEL: Record<string, string> = {
 
 export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const [state, setState] = useState<State>({ kind: "loading" });
-  const base = `/api/sessions/${encodeURIComponent(sessionId)}/export`;
+  const reviewUrl = api.exportReview(sessionId);
+  const downloadUrl = api.exportDownload(sessionId);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${base}/review`)
+    fetch(reviewUrl)
       .then(async (res) => {
-        if (!res.ok) throw new Error(`GET ${base}/review -> ${res.status}`);
+        if (!res.ok) throw new Error(`GET ${reviewUrl} -> ${res.status}`);
         return (await res.json()) as ExportReviewResponse;
       })
       .then((data) => !cancelled && setState({ kind: "ready", data }))
@@ -41,7 +43,7 @@ export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose
     return () => {
       cancelled = true;
     };
-  }, [base]);
+  }, [reviewUrl]);
 
   return (
     <section className="export-panel" aria-label="Export report">
@@ -56,7 +58,7 @@ export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose
 
       {state.kind === "loading" && <p className="muted">Checking what to redact…</p>}
       {state.kind === "error" && <p className="error">Could not prepare the export: {state.message}</p>}
-      {state.kind === "ready" && <Review data={state.data} href={base} />}
+      {state.kind === "ready" && <Review data={state.data} href={downloadUrl} />}
     </section>
   );
 }

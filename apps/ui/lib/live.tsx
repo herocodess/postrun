@@ -12,8 +12,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { LiveChange } from "@postrun/core/server/api";
+import { DEMO } from "@/lib/api";
 
-export type LiveStatus = "connecting" | "live" | "offline";
+export type LiveStatus = "connecting" | "live" | "offline" | "demo";
 
 /** session_id is undefined for a reconnect, which means "anything may have changed". */
 type Listener = (sessionId: string | undefined) => void;
@@ -35,6 +36,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const listeners = useRef(new Set<Listener>());
 
   useEffect(() => {
+    // The public demo is static: there is no server to stream from.
+    if (DEMO) {
+      setStatus("demo");
+      return;
+    }
     let es: EventSource | undefined;
     let offlineTimer: ReturnType<typeof setTimeout> | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
+import { api, DEMO } from "@/lib/api";
 import type { SessionListResponse } from "@postrun/core/server/api";
 import type { SessionSummary } from "@postrun/core/store";
 
@@ -82,11 +83,12 @@ export function SessionList() {
 
   useEffect(() => {
     let cancelled = false;
-    const q = agent ? `?agent=${encodeURIComponent(agent)}` : "";
-    fetch(`/api/sessions${q}`)
+    fetch(api.sessions(agent))
       .then(async (res) => {
         if (!res.ok) throw new Error(`GET /api/sessions -> ${res.status}`);
-        return (await res.json()) as SessionListResponse;
+        const data = (await res.json()) as SessionListResponse;
+        // The static demo serves every session; filter here like the server would.
+        return DEMO && agent ? { ...data, sessions: data.sessions.filter((s) => s.agent.kind === agent) } : data;
       })
       .then((data) => {
         if (!cancelled) setState({ kind: "ready", data });

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* Fonts are self-hosted Geist (next/font via the geist package): no requests to Google, locally or in the public demo. */
 @import "../src/styles/tokens.css";
 
 * {
@@ -915,4 +915,135 @@ tr.failed:hover td {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
+}
+
+/* ---- brand mark in the top bar, demo mode ------------------------------------ */
+.topbar .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.live[data-status="demo"] .led {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: none;
+}
+.demo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  padding: 9px 16px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text-secondary);
+  background: rgba(99, 102, 241, 0.12);
+  border-bottom: 1px solid rgba(129, 140, 248, 0.25);
+}
+.demo-banner b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.demo-banner a {
+  color: #a5b4fc;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ---- small screens: the public demo runs on phones ---------------------------- */
+.table-scroll {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+}
+/* Grid cells may shrink: a long prompt truncates instead of widening the row. */
+.row > * {
+  min-width: 0;
+}
+.hero-top .title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 980px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding: 12px 14px;
+  }
+  .row .agent {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .row .cost {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .row .prompt,
+  .row .ws,
+  .row .when {
+    grid-column: 1 / -1;
+  }
+  .row .ws,
+  .row .when {
+    font-size: 12px;
+  }
+  .row .steps {
+    grid-column: 1;
+  }
+  .row .flags {
+    grid-column: 2;
+    justify-self: end;
+  }
+}
+@media (max-width: 760px) {
+  .wrap {
+    padding: 0 16px;
+  }
+  .topbar .pill {
+    display: none;
+  }
+  .head {
+    flex-wrap: wrap;
+  }
+  .filters {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .hero-top {
+    flex-wrap: wrap;
+  }
+  .hero-top .title {
+    flex-basis: 100%;
+    order: 3;
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .meta-row {
+    flex-wrap: wrap;
+  }
+  .finding {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .demo-banner {
+    font-size: 12px;
+  }
+}
+@media (max-width: 420px) {
+  .live {
+    padding: 4px 8px;
+  }
+}
+/* Fold cover screens: the status pill keeps its light, drops its words. */
+@media (max-width: 340px) {
+  .live {
+    font-size: 0;
+    gap: 0;
+    padding: 7px;
+  }
+  .topbar .back {
+    font-size: 12px;
+  }
 }

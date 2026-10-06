@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
+import { api } from "@/lib/api";
 import type { Step, Turn } from "@postrun/core/schema";
 import type { SessionDetailResponse } from "@postrun/core/server/api";
 import { summarize } from "@/lib/summarize";
@@ -39,7 +40,7 @@ export function Report() {
       return;
     }
     let cancelled = false;
-    fetch(`/api/sessions/${encodeURIComponent(id)}`)
+    fetch(api.session(id))
       .then(async (res) => {
         if (!res.ok) throw new Error(`GET /api/sessions/${id} -> ${res.status}`);
         return (await res.json()) as SessionDetailResponse;
@@ -149,6 +150,7 @@ export function Report() {
         {report.files.length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>No files were created, edited, or read.</p>
         ) : (
+          <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
@@ -171,6 +173,7 @@ export function Report() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -185,6 +188,7 @@ export function Report() {
         {report.commands.length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>No commands were run.</p>
         ) : (
+          <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
@@ -205,6 +209,7 @@ export function Report() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

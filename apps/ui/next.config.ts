@@ -8,11 +8,23 @@ import type { NextConfig } from "next";
  *   Rewrites are not supported with static export, so they exist only in dev.
  */
 const isDev = process.env.NODE_ENV !== "production";
+/** Public demo build (postrun.app/demo): static, reads example JSON, never touches the local API. */
+const isDemo = process.env["NEXT_PUBLIC_POSTRUN_DEMO"] === "1";
 const coreUrl = process.env["POSTRUN_CORE_URL"] ?? "http://127.0.0.1:1234";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  ...(isDev
+  transpilePackages: ["@postrun/brand"],
+  ...(isDemo
+    ? {
+        // Served from apps/web/public/demo; a separate dir keeps the normal ui/out intact.
+        output: "export" as const,
+        basePath: "/demo",
+        trailingSlash: true,
+        distDir: "out-demo",
+        env: { NEXT_PUBLIC_BASE_PATH: "/demo" },
+      }
+    : isDev
     ? {
         async rewrites() {
           return [{ source: "/api/:path*", destination: `${coreUrl}/api/:path*` }];

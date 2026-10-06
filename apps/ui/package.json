@@ -7,9 +7,12 @@
     "dev": "next dev --hostname 127.0.0.1 --port ${UI_PORT:-3000}",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:demo": "NEXT_PUBLIC_POSTRUN_DEMO=1 next build"
   },
   "dependencies": {
+    "@postrun/brand": "workspace:*",
+    "geist": "^1.4.2",
     "next": "^16.3.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
