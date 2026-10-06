@@ -72,3 +72,33 @@ CREATE TABLE IF NOT EXISTS feedback (
   status     text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'done'))
 );
 CREATE INDEX IF NOT EXISTS feedback_created ON feedback (created_at DESC);
+
+-- A person's plan (lib/plans.ts). No row means Free, which is what everyone had
+-- before plans existed, so this table changes nothing until a row is written.
+-- Billing (when it exists) writes plan, status and the provider ids from its
+-- webhook; `overrides` is set by hand for early access, comps, or to keep an
+-- existing user's old limits if Free ever changes. Example:
+--   {"plan": "pro", "limits": {"activeShares": 500}, "features": ["password_links"]}
+CREATE TABLE IF NOT EXISTS account_plan (
+  user_id                  text PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+  plan                     text NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'team')),
+  status                   text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'trialing', 'past_due', 'canceled')),
+  current_period_end       timestamptz,
+  provider                 text,
+  provider_customer_id     text,
+  provider_subscription_id text UNIQUE,
+  overrides                jsonb NOT NULL DEFAULT '{}'::jsonb,
+  note                     text,
+  created_at               timestamptz NOT NULL DEFAULT now(),
+  updated_at               timestamptz NOT NULL DEFAULT now()
+);
+
+-- Every billing event that changed a plan, once (webhooks retry). Kept for support.
+CREATE TABLE IF NOT EXISTS billing_event (
+  id          text PRIMARY KEY,
+  provider    text NOT NULL,
+  type        text NOT NULL,
+  user_id     text REFERENCES "user"(id) ON DELETE SET NULL,
+  received_at timestamptz NOT NULL DEFAULT now(),
+  payload     jsonb NOT NULL
+);

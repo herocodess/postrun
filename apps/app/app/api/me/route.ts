@@ -1,10 +1,11 @@
 /**
- * GET /api/me: who this computer is signed in as (postrun login checks it).
+ * GET /api/me: who this computer is signed in as (postrun login checks it), and their plan.
  * DELETE /api/me: sign this computer out; its token stops working (postrun logout).
  */
 
 import { apiError, fromError, json, unauthorized } from "@/lib/api";
 import { clientIp, enforce, hit, LIMITS } from "@/lib/limit";
+import { entitlementsFor, publicPlan } from "@/lib/entitlements";
 import { revokeTokenById, userForToken } from "@/lib/shares";
 
 async function who(req: Request) {
@@ -21,7 +22,8 @@ export async function GET(req: Request) {
   try {
     const w = await who(req);
     if (w instanceof Response) return w;
-    return json({ email: w.email, name: w.name });
+    // `plan` is additive: older CLIs read only email and name.
+    return json({ email: w.email, name: w.name, plan: publicPlan(await entitlementsFor(w.user_id)) });
   } catch (e) {
     return fromError(e);
   }

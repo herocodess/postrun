@@ -16,6 +16,7 @@ export const metadata: Metadata = pageMeta("/privacy/", {
 export default function Privacy() {
   return (
     <PageShell
+      crumbs={[["Privacy", "/privacy/"]]}
       kicker="PRIVACY"
       title="What Postrun collects, in plain words."
       lede="Postrun is a personal project by Hero Momoh. The short version: the app sends nothing anywhere unless you share a report, and this website keeps your email only if you ask it to."

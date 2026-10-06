@@ -42,6 +42,7 @@ const STEPS = [
 export default function ReviewBeforeMerge() {
   return (
     <PageShell
+      crumbs={[["Use cases", "/use-cases/"], ["Review before merge", "/use-cases/review-before-merge/"]]}
       kicker="USE CASE · REVIEW"
       title="Review an agent's work before you merge."
       lede="A pull request shows where the branch ended up. Postrun shows how it got there, so you can review the work and not only the result."

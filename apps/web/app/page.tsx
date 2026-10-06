@@ -10,6 +10,8 @@ import { Testimonials } from "@/components/Testimonials";
 import { InstallBox } from "@/components/InstallBox";
 import { Waitlist } from "@/components/Waitlist";
 import { APP_URL, START_URL } from "@/content/site";
+import { JsonLd } from "@/components/JsonLd";
+import { ORGANIZATION, SOFTWARE, WEBSITE } from "@/content/seo";
 
 const RECORD: TermLine[] = [
   { kind: "cmd", text: "npm install -g postrun && postrun setup" },
@@ -60,6 +62,7 @@ const SECURITY = [
 export default function Home() {
   return (
     <>
+      <JsonLd nodes={[ORGANIZATION, WEBSITE, SOFTWARE]} />
       <Nav />
       <main id="top">
         {/* HERO */}

@@ -13,6 +13,7 @@ export const metadata: Metadata = pageMeta("/use-cases/", {
 export default function UseCases() {
   return (
     <PageShell
+      crumbs={[["Use cases", "/use-cases/"]]}
       kicker="USE CASES"
       title="When someone needs to know what the agent did."
       lede="Postrun records Claude Code and Cline sessions on your machine. These are the moments where that record earns its place."

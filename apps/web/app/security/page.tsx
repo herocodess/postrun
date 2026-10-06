@@ -50,6 +50,7 @@ const SECRET_KINDS: Array<[string, string]> = [
 export default function Security() {
   return (
     <PageShell
+      crumbs={[["Security", "/security/"]]}
       kicker="SECURITY"
       title="Your sessions hold your secrets. Here is how Postrun keeps them."
       lede="Agent sessions contain full prompts, tool output and anything a command printed. Postrun records them on your own machine and shares nothing unless you export a session yourself."

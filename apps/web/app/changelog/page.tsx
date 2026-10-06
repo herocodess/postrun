@@ -17,7 +17,8 @@ const LABEL: Record<ChangeKind, string> = { new: "new", improved: "improved", fi
 
 export default function Changelog() {
   return (
-    <PageShell kicker="CHANGELOG" title="What's new in Postrun." lede="Everything that has shipped, newest first. A version number marks what reached npm; update with npm install -g postrun@latest.">
+    <PageShell
+      crumbs={[["Changelog", "/changelog/"]]} kicker="CHANGELOG" title="What's new in Postrun." lede="Everything that has shipped, newest first. A version number marks what reached npm; update with npm install -g postrun@latest.">
       <div className="releases">
         {RELEASES.map((r) => (
           <Reveal key={`${r.date}-${r.title}`} className="release">
