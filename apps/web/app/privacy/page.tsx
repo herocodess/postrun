@@ -69,8 +69,8 @@ export default function Privacy() {
 
         <h2 id="website">This website</h2>
         <p>
-          <b>Waitlist.</b> If you join the waitlist, your email address is sent to Formspree, which forwards it to me. I use it only to tell you when Postrun is ready for your
-          agent, and never share or sell it.
+          <b>Agent waitlist.</b> If you leave your email to hear when your agent is supported, it is sent to Formspree, which forwards it to me. I use it only to tell you
+          when Postrun supports your agent, and never share or sell it.
         </p>
         <p>
           <b>Visit counts.</b> The site is hosted on Vercel and uses Vercel Web Analytics to count visits, pages read and buttons clicked, in aggregate. It sets no cookies and I

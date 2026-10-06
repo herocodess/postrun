@@ -12,14 +12,21 @@ const g = globalThis as unknown as { __postrunPool?: Pool };
 
 export function pool(): Pool {
   if (!g.__postrunPool) {
-    const url = env("DATABASE_URL");
-    const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+    const raw = env("DATABASE_URL");
+    const local = /@(localhost|127\.0\.0\.1)[:/]/.test(raw);
+    // Neon's URL carries sslmode=require&channel_binding=require. TLS is set explicitly below
+    // (verified certificates), so those are dropped: pg warns that their meaning is changing.
+    const u = new URL(raw);
+    const off = u.searchParams.get("sslmode") === "disable";
+    u.searchParams.delete("sslmode");
+    u.searchParams.delete("channel_binding");
+    const url = u.toString();
     g.__postrunPool = new Pool({
       connectionString: url,
       max: 5,
       idleTimeoutMillis: 10_000,
       // Neon needs TLS; a database on this machine usually has none.
-      ssl: local || /sslmode=disable/.test(url) ? undefined : { rejectUnauthorized: true },
+      ssl: local || off ? undefined : { rejectUnauthorized: true },
     });
     // On Vercel, closes idle connections before a function instance is suspended, so none leak. A no-op elsewhere.
     attachDatabasePool(g.__postrunPool);

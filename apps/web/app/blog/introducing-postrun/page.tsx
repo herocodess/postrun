@@ -107,10 +107,10 @@ export default function IntroducingPostrun() {
           session is the unit. The <a href="/changelog/">changelog</a> lists everything that has shipped so far.
         </p>
 
-        <h2>Join early access</h2>
+        <h2>Try it</h2>
         <p>
-          Postrun is in early access. Leave your email on the <a href="/#waitlist">waitlist</a> and we will send you the install when your agent is supported. Tell us which
-          agent you use, and what you wish you could see after it finishes.
+          Install it with <code>npm install -g postrun</code> and run <code>postrun setup</code>. Using another agent? Leave your email at the <a href="/#install">bottom of
+          the home page</a> and we will tell you when it is supported. Either way, tell us what you wish you could see after your agent finishes.
         </p>
         <p>[FOUNDER: sign-off and how to reach you.]</p>
       </Reveal>

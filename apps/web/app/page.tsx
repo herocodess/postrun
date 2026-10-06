@@ -7,15 +7,15 @@ import { Nav } from "@/components/Nav";
 import { Reveal } from "@/components/Reveal";
 import { Terminal, type TermLine } from "@/components/Terminal";
 import { Testimonials } from "@/components/Testimonials";
+import { InstallBox } from "@/components/InstallBox";
 import { Waitlist } from "@/components/Waitlist";
 import { LOGIN_URL } from "@/content/site";
 
 const RECORD: TermLine[] = [
-  { kind: "comment", text: "# install ships with early access" },
-  { kind: "cmd", text: "postrun capture" },
+  { kind: "cmd", text: "npm install -g postrun && postrun setup" },
   { kind: "out", text: "● recording claude-code, cline", tone: "ok", after: 300 },
-  { kind: "out", text: "  telemetry  127.0.0.1:4318", tone: "muted" },
-  { kind: "out", text: "  store      ~/.postrun  (0600)", tone: "muted", after: 900 },
+  { kind: "out", text: "  review app  127.0.0.1:1234", tone: "muted" },
+  { kind: "out", text: "  store       ~/.postrun  (0600)", tone: "muted", after: 900 },
   { kind: "out", text: "↳ 8f3c2a71  +24 steps · 1 failed", tone: "accent" },
 ];
 
@@ -23,8 +23,8 @@ const REVIEW: TermLine[] = [
   { kind: "cmd", text: "postrun sessions" },
   { kind: "out", text: "14:02  claude-code  24 steps · 1 failed", tone: "plain" },
   { kind: "out", text: "11:40  cline        61 steps", tone: "plain", after: 600 },
-  { kind: "cmd", text: "postrun serve" },
-  { kind: "out", text: "listening on http://127.0.0.1:1234/", tone: "ok" },
+  { kind: "cmd", text: "postrun open" },
+  { kind: "out", text: "opened http://127.0.0.1:1234/", tone: "ok" },
   { kind: "out", text: "127.0.0.1 only · updates live", tone: "muted" },
 ];
 
@@ -34,7 +34,9 @@ const SHARE: TermLine[] = [
   { kind: "out", text: "masked 2 values, 19 home paths:", tone: "warn", after: 300 },
   { kind: "out", text: "  aws-access-key  step 4 · stdout", tone: "muted" },
   { kind: "out", text: "  credential      step 4 · stdout", tone: "muted" },
-  { kind: "out", text: "no scripts · opens anywhere", tone: "ok" },
+  { kind: "out", text: "no scripts · opens anywhere", tone: "ok", after: 500 },
+  { kind: "cmd", text: "postrun share 8f3c2a71" },
+  { kind: "out", text: "https://app.postrun.app/s/Xb3kP9qLmT2vR8wN", tone: "accent" },
 ];
 
 const FEATURES = [
@@ -233,15 +235,27 @@ export default function Home() {
         <Faq />
 
         {/* CTA */}
-        <section id="waitlist" className="section cta">
+        <section id="install" className="section cta">
+          <span id="waitlist" aria-hidden="true"></span>
           <div className="wrap">
             <Reveal className="cta-card">
               <div className="cta-glow" aria-hidden="true"></div>
               <Mark size={56} animated title="postrun" />
               <h2>Know what your agents did.</h2>
-              <p className="body-lg">Postrun is in early access. Leave your email and we will send you the install when your agent is supported.</p>
-              <Waitlist />
-              <span className="mono muted small">Works with Claude Code and Cline. Tell us which agent you use.</span>
+              <p className="body-lg">Install Postrun in a minute. Free, open source, and everything stays on your machine.</p>
+              <InstallBox />
+              <div className="cta-links">
+                <a href="https://docs.postrun.app/quickstart/" className="btn btn-ghost btn-sm" data-track="Quickstart" data-track-where="cta">
+                  Read the quickstart
+                </a>
+                <a href="/example-report.html" target="_blank" rel="noopener" className="btn btn-ghost btn-sm" data-track="Example report" data-track-where="cta">
+                  See an example report
+                </a>
+              </div>
+              <div className="cta-agent">
+                <span className="mono muted small">Works with Claude Code and Cline on macOS and Linux. Using another agent? Leave your email and we&apos;ll tell you when it&apos;s supported.</span>
+                <Waitlist />
+              </div>
             </Reveal>
           </div>
         </section>
