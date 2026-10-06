@@ -13,7 +13,7 @@ export function TopBar({ port }: { port: string }) {
   const label = status === "demo" ? "example data" : status === "live" ? "live" : status === "connecting" ? "connecting" : "server offline";
 
   return (
-    <div className="topbar">
+    <header className="topbar">
       <div className="wrap">
         <span className="brand">
           <Mark size={22} title="postrun" />
@@ -30,6 +30,6 @@ export function TopBar({ port }: { port: string }) {
         </span>
         <span className="pill">{DEMO ? "postrun.app/demo" : `127.0.0.1:${port}`}</span>
       </div>
-    </div>
+    </header>
   );
 }

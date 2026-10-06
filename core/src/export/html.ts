@@ -281,7 +281,7 @@ function agentClass(kind: string): string {
 const CSS = `
 :root{color-scheme:dark light;
 --bg:#0B0D12;--s1:#12151C;--s2:#181C25;--s3:#20242F;--border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);
---text:#E8EAF0;--text2:#9AA0AE;--muted:#646b7a;--accent:#6366F1;--accent2:#818cf8;--accent-dim:rgba(99,102,241,.14);
+--text:#E8EAF0;--text2:#9AA0AE;--muted:#808797;--accent:#6366F1;--accent2:#818cf8;--accent-dim:rgba(99,102,241,.14);
 --danger:#F0616D;--danger-bg:rgba(240,97,109,.10);--warn:#E0A458;--warn-bg:rgba(224,164,88,.10);--ok:#3FCF8E;
 --cc-bg:rgba(99,102,241,.16);--cc-fg:#a5b4fc;--cline-bg:rgba(94,234,212,.14);--cline-fg:#5EEAD4;--other-bg:rgba(148,163,184,.14);--other-fg:#c3cbd9;
 --add:#3FCF8E;--add-bg:rgba(63,207,142,.08);--del:#F0616D;--del-bg:rgba(240,97,109,.08);

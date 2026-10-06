@@ -87,7 +87,7 @@ export function Report() {
         <div className="hero-card">
           <div className="hero-top">
             <span className={`badge ${summary.agent.kind === "cline" ? "cline" : "cc"}`}>{summary.agent.kind}</span>
-            <span className="title">{firstLine(summary.title, 140) || summary.id}</span>
+            <h1 className="title">{firstLine(summary.title, 140) || summary.id}</h1>
             <span className="ver">v{summary.agent.version}</span>
             <button type="button" className="btn" onClick={() => setExporting((v) => !v)} aria-expanded={exporting}>
               Export report

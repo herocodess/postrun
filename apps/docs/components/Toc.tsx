@@ -32,7 +32,7 @@ export function Toc() {
 
   if (headings.length < 2) return <aside className="toc" aria-hidden="true"></aside>;
   return (
-    <aside className="toc">
+    <aside className="toc" aria-label="On this page">
       <nav aria-label="On this page">
         <span className="side-title">On this page</span>
         <ul>

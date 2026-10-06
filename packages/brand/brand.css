@@ -14,7 +14,7 @@
   --text: #eceef3;
   --text-2: #a3a9b7;
   --muted: #7d8496;
-  --faint: #6b7280;
+  --faint: #7a8191; /* 4.5:1 or better on every surface (WCAG AA) */
   --accent: #6366f1;
   --accent-ink: #a5b4fc;
   --accent-btn: #4f46e5;

@@ -17,7 +17,7 @@
   /* Text */
   --text-primary: #E8EAF0;
   --text-secondary: #9AA0AE;
-  --text-muted: #646b7a;
+  --text-muted: #808797; /* 4.5:1 or better up to surface-2 (WCAG AA) */
 
   /* Accent: indigo, interactive only */
   --accent: #6366F1;

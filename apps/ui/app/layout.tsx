@@ -20,12 +20,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <LiveProvider>
           {DEMO && (
-            <div className="demo-banner" role="note">
+            <aside className="demo-banner" aria-label="About this demo">
               <span>
                 <b>Demo:</b> the real Postrun review app with three example sessions. In real use it runs on your machine and nothing leaves it.
               </span>
               <a href="/#waitlist">Get early access →</a>
-            </div>
+            </aside>
           )}
           <TopBar port={port} />
           <div className="wrap">{children}</div>

@@ -591,3 +591,23 @@ a:hover {
     animation: none !important;
   }
 }
+
+/* Links inside running text need more than colour to stand out (WCAG 1.4.1). */
+.prose p a,
+.prose li a,
+.prose td a,
+.doc-foot a {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
+.prose p a:hover,
+.prose li a:hover,
+.prose td a:hover,
+.doc-foot a:hover {
+  text-decoration-color: currentColor;
+}
+.code pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

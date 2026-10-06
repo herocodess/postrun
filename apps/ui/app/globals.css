@@ -1047,3 +1047,8 @@ tr.failed:hover td {
     font-size: 12px;
   }
 }
+
+/* The session title is the page's h1; keep it looking like the inline title it replaced. */
+h1.title {
+  margin: 0;
+}

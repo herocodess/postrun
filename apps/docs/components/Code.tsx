@@ -18,7 +18,7 @@ export function Pre({ children, ...rest }: { children?: ReactNode } & React.HTML
   };
   return (
     <div className="code">
-      <pre ref={ref} {...rest}>
+      <pre ref={ref} tabIndex={0} {...rest}>
         {children}
       </pre>
       <button type="button" className="copy" onClick={copy} aria-label="Copy code">

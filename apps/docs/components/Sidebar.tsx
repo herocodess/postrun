@@ -31,7 +31,7 @@ export function Sidebar() {
   );
   return (
     <>
-      <aside className="sidebar">{list}</aside>
+      <aside className="sidebar" aria-label="Docs pages">{list}</aside>
       <details className="side-mobile">
         <summary>
           <span className="muted">Browse docs</span>
