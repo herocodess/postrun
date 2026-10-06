@@ -13,7 +13,7 @@
   "dependencies": {
     "@postrun/brand": "workspace:*",
     "geist": "^1.4.2",
-    "next": "^16.3.4",
+    "next": "^16.3.8",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -23,6 +23,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "typescript": "^5.3.3",
-    "vitest": "^1.0.4"
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
   }
 }
