@@ -62,7 +62,8 @@ export function CountUp({ value, format = String, className, ms = 650 }: { value
     const t0 = performance.now();
     let raf = 0;
     const step = (now: number) => {
-      const k = Math.min(1, (now - t0) / ms);
+      // A frame timestamp can be a little older than t0; clamp so the first frame never overshoots below the start.
+      const k = Math.max(0, Math.min(1, (now - t0) / ms));
       const eased = 1 - Math.pow(1 - k, 3);
       const v = Math.round(start + (value - start) * eased);
       setShown(v);

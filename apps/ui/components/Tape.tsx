@@ -41,9 +41,15 @@ export function Tape({ steps, onPick }: { steps: StepPreview[]; onPick: (seq: nu
 
   if (bars.length === 0) return null;
 
-  const at = (e: MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return Math.min(bars.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * bars.length)));
+  // Bars have a maximum width, so a short session fills only part of the tape. Measure where the
+  // bars actually are; past the last one there is no step to point at.
+  const at = (e: MouseEvent<HTMLDivElement>): number | undefined => {
+    const kids = e.currentTarget.querySelectorAll<HTMLElement>(":scope > .sb");
+    const first = kids[0]?.getBoundingClientRect();
+    const last = kids[kids.length - 1]?.getBoundingClientRect();
+    if (!first || !last || e.clientX > last.right + 2) return undefined;
+    const span = Math.max(1, last.right - first.left);
+    return Math.min(bars.length - 1, Math.max(0, Math.floor(((e.clientX - first.left) / span) * bars.length)));
   };
   const h = hover !== undefined ? bars[hover] : undefined;
 
@@ -55,7 +61,10 @@ export function Tape({ steps, onPick }: { steps: StepPreview[]; onPick: (seq: nu
         aria-label={`${steps.length} steps in order. Use the timeline below to open each one.`}
         onMouseMove={(e) => setHover(at(e))}
         onMouseLeave={() => setHover(undefined)}
-        onClick={(e) => onPick(bars[at(e)]!.first.seq)}
+        onClick={(e) => {
+          const i = at(e);
+          if (i !== undefined) onPick(bars[i]!.first.seq);
+        }}
       >
         {bars.map((b, i) => (
           <span key={i} className={`sb sb-${b.kind}${b.failed ? " sb-failed" : ""}${hover === i ? " hot" : ""}`} style={{ ["--i" as string]: i }}></span>
