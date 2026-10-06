@@ -42,6 +42,7 @@ const STEPS = [
 export default function AgentPostmortems() {
   return (
     <PageShell
+      crumbs={[["Use cases", "/use-cases/"], ["Agent post-mortems", "/use-cases/agent-postmortems/"]]}
       kicker="USE CASE · POST-MORTEMS"
       title="Post-mortem when an agent breaks something."
       lede="An agent deleted the wrong folder, ran a migration, or left the build red. Postrun has the whole session, step by step, so the write-up starts from facts."

@@ -17,7 +17,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "Does any of my code, prompts or output leave my machine?",
-    a: "No. The recorder and the review app run on your computer and listen on `127.0.0.1` only. Sessions are stored in `~/.postrun`, readable only by your user account. Postrun has no telemetry and never phones home.\n\nA session leaves your machine only when you export it yourself, one session at a time.",
+    a: "No. The recorder and the review app run on your computer and listen on `127.0.0.1` only. Sessions are stored in `~/.postrun`, readable only by your user account. Postrun has no telemetry and never phones home.\n\nA session leaves your machine only when you choose to share it: as an exported file, or as a share link you create, one session at a time.",
   },
   {
     q: "Which coding agents does it work with?",
@@ -25,7 +25,15 @@ export const FAQS: Faq[] = [
   },
   {
     q: "How does sharing work?",
-    a: "Export a session and you get a single HTML file: every command, edit and message, expandable, with failures and output. It has no JavaScript and loads nothing from the internet, so it's safe to open and works anywhere: email it, share it alongside a pull request, or drop it in a chat.\n\nHosted share links are planned, built on the same redacted file.",
+    a: "Two ways, both redacted first. Export a session and you get a single HTML file: every command, edit and message, with failures and output. It has no JavaScript and loads nothing from the internet, so it works anywhere: email it, attach it to a pull request, or drop it in a chat.\n\nOr click Share on the session for a link instead. The same redacted report goes to app.postrun.app as an unlisted link that lasts 1, 7, 30 or 90 days, shows how often it was opened, and can be turned off at any time. Share links need a free account; recording never does.",
+  },
+  {
+    q: "Do I need an account?",
+    a: "No. Recording, reviewing and exporting all work without one. A free account at app.postrun.app is only needed for share links, and you can connect it from the review app with one click when you first share.",
+  },
+  {
+    q: "Is Postrun free?",
+    a: "Yes. Postrun is free and open source under the MIT license. Everything that runs on your computer, recording, review and export, is free for good.",
   },
   {
     q: "What does redaction catch, and can I rely on it?",

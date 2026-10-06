@@ -42,6 +42,7 @@ const STEPS = [
 export default function ClientReporting() {
   return (
     <PageShell
+      crumbs={[["Use cases", "/use-cases/"], ["Client reporting", "/use-cases/client-reporting/"]]}
       kicker="USE CASE · AGENCIES AND FREELANCERS"
       title="Show a client what the agent did."
       lede="When a client asks what they paid for, send them the session: every command, edit and failure, with your keys and paths masked."

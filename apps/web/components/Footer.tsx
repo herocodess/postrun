@@ -15,6 +15,23 @@ const COLUMNS: Array<{ title: string; links: FooterLink[] }> = [
     ],
   },
   {
+    title: "Agents",
+    links: [
+      { href: "/claude-code/", label: "Claude Code" },
+      { href: "/cline/", label: "Cline" },
+      { href: "https://docs.postrun.app/capture/other-agents/", label: "Other agents" },
+    ],
+  },
+  {
+    title: "Guides",
+    links: [
+      { href: "/guides/see-what-claude-code-did/", label: "See what Claude Code did" },
+      { href: "/guides/share-ai-coding-session-safely/", label: "Share a session safely" },
+      { href: "/guides/review-ai-agent-session-checklist/", label: "Agent review checklist" },
+      { href: "/guides/", label: "All guides" },
+    ],
+  },
+  {
     title: "Use cases",
     links: [
       { href: "/use-cases/review-before-merge/", label: "Review before merge" },

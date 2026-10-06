@@ -155,4 +155,15 @@ describe.skipIf(!URL_)("share links in Postgres", () => {
     const [kept] = await db.query<{ user_id: string | null }>(`SELECT user_id FROM feedback WHERE message = 'love it'`);
     expect(kept?.user_id).toBeNull();
   });
+
+  it("reads a person's plan, and treats a missing plan table as Free", async () => {
+    const ent = await import("./entitlements");
+    expect((await ent.entitlementsFor("ben")).plan).toBe("free");
+    await db.query(`INSERT INTO account_plan (user_id, overrides) VALUES ('ben', '{"plan": "pro"}')`);
+    const pro = await ent.entitlementsFor("ben");
+    expect(pro.plan).toBe("pro");
+    expect(pro.limits.activeShares).toBeGreaterThan(200);
+    await db.query(`DROP TABLE account_plan`);
+    expect((await ent.entitlementsFor("ben")).plan).toBe("free");
+  });
 });

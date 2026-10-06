@@ -26,5 +26,5 @@ if (toBeCreated.length || toBeAdded.length) {
 } else console.log("Better Auth: tables are up to date");
 
 await pool().query(readFileSync(join(here, "..", "db", "schema.sql"), "utf8"));
-console.log("Postrun: share, cli_token, cli_code, rate_limit and feedback tables are up to date");
+console.log("Postrun: share, cli_token, cli_code, rate_limit, feedback, account_plan and billing_event tables are up to date");
 await pool().end();

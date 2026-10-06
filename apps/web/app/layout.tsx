@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   title: "postrun · the flight recorder for coding agents",
   description:
     "Postrun records every command, edit and file your coding agents touch, on your own machine. Review the whole session, then share a redacted report when someone else needs to see it.",
-  alternates: { canonical: "/" },
+  alternates: { canonical: "/", types: { "application/rss+xml": [{ url: "/changelog/feed.xml", title: "Postrun changelog" }] } },
   openGraph: {
     title: "postrun · the flight recorder for coding agents",
     description: "Record agent sessions locally. Review every step. Share a redacted report on purpose.",
@@ -22,6 +22,11 @@ export const metadata: Metadata = {
   },
   // Share images come from app/opengraph-image.png and app/twitter-image.png.
   twitter: { card: "summary_large_image", title: "postrun · the flight recorder for coding agents" },
+  applicationName: "Postrun",
+  authors: [{ name: "Hero Momoh", url: "https://herodion.dev" }],
+  creator: "Hero Momoh",
+  category: "developer tools",
+  keywords: ["Claude Code", "Cline", "coding agents", "AI agent session history", "agent observability", "session review", "redaction", "open source"],
 };
 
 export const viewport: Viewport = {

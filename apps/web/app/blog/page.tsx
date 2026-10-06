@@ -12,7 +12,8 @@ export const metadata: Metadata = pageMeta("/blog/", {
 
 export default function Blog() {
   return (
-    <PageShell kicker="BLOG" title="Notes from building Postrun." lede="What we are building, why, and what we learn from people reviewing their agents' work.">
+    <PageShell
+      crumbs={[["Blog", "/blog/"]]} kicker="BLOG" title="Notes from building Postrun." lede="What we are building, why, and what we learn from people reviewing their agents' work.">
       <Reveal>
         {LISTED_POSTS.length === 0 ? <p className="muted">The first post arrives with the launch.</p> : null}
         <ul className="post-list">

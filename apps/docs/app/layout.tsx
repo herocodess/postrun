@@ -27,6 +27,27 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@graph": [
+                { "@type": "WebSite", "@id": `${DOCS}/#website`, url: DOCS, name: "Postrun docs", inLanguage: "en", publisher: { "@id": `${SITE}/#org` } },
+                {
+                  "@type": "SoftwareApplication",
+                  "@id": `${SITE}/#software`,
+                  name: "Postrun",
+                  url: SITE,
+                  applicationCategory: "DeveloperApplication",
+                  operatingSystem: "macOS, Linux",
+                  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+                  softwareHelp: { "@type": "CreativeWork", url: DOCS },
+                },
+              ],
+            }).replace(/</g, "\\u003c"),
+          }}
+        />
         <a href="#content" className="skip">
           Skip to content
         </a>

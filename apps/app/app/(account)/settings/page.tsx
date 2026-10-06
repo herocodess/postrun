@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { query } from "@/lib/db";
 import { relative, shortDate } from "@/lib/format";
 import { requireViewer } from "@/lib/session";
+import { entitlementsFor } from "@/lib/entitlements";
 import { listTokens } from "@/lib/shares";
 import { Avatar } from "@/components/AccountNav";
 import { AddComputer, DeleteAccount, RemoveComputer } from "@/components/SettingsActions";
@@ -11,9 +12,10 @@ export const dynamic = "force-dynamic";
 
 export default async function Settings() {
   const v = await requireViewer("/settings");
-  const [tokens, providers] = await Promise.all([
+  const [tokens, providers, ent] = await Promise.all([
     listTokens(v.id),
     query<{ providerId: string }>(`SELECT DISTINCT "providerId" FROM account WHERE "userId" = $1`, [v.id]),
+    entitlementsFor(v.id),
   ]);
   const github = providers.some((p) => p.providerId === "github");
   const now = new Date();
@@ -51,7 +53,24 @@ export default async function Settings() {
         </div>
       </section>
 
-      <section className="card rise" style={{ ["--d" as string]: 2 }} aria-labelledby="comp-h">
+      <section className="card rise" style={{ ["--d" as string]: 2 }} aria-labelledby="plan-h">
+        <h2 id="plan-h">Plan</h2>
+        <div className="row">
+          <div className="row-text">
+            <div className="row-title">{ent.name}</div>
+            <div className="muted small">
+              Up to {ent.limits.activeShares.toLocaleString("en-GB")} live share links, each lasting up to {ent.limits.maxExpiryDays} days, from up to {ent.limits.computers} computers.
+              {ent.renews_at ? ` Renews ${shortDate(ent.renews_at)}.` : ""}
+            </div>
+          </div>
+          <div className="pills">
+            <span className="pill pill-on">{ent.name}</span>
+          </div>
+        </div>
+        <p className="card-sub">Recording, review and export happen on your computer and are free for good. A plan only covers what app.postrun.app hosts for you.</p>
+      </section>
+
+      <section className="card rise" style={{ ["--d" as string]: 3 }} aria-labelledby="comp-h">
         <h2 id="comp-h">Computers</h2>
         <p className="card-sub">
           Computers where you ran <code>postrun login</code>. Each can upload share links as you, and nothing else: it can&apos;t read your other links or change your account.
@@ -84,7 +103,7 @@ export default async function Settings() {
         <AddComputer />
       </section>
 
-      <section className="card card-danger rise" style={{ ["--d" as string]: 3 }} aria-labelledby="del-h">
+      <section className="card card-danger rise" style={{ ["--d" as string]: 4 }} aria-labelledby="del-h">
         <h2 id="del-h">Delete account</h2>
         <div className="row">
           <div className="row-text">

@@ -11,17 +11,21 @@
 import { createHash } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { query, tx } from "./db";
+import { entitlementsFor } from "./entitlements";
 import { hashToken, looksLikeCliToken, newCliToken, randomId } from "./ids";
+import { PLANS, type Limits } from "./plans";
 
 /** Vercel functions accept bodies up to 4.5 MB; reports are sent gzipped. */
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 /** A report this large is not a Postrun export, whatever it claims. */
 export const MAX_REPORT_BYTES = 60 * 1024 * 1024;
+// Free plan limits, kept as named exports for older callers. The real limits for a
+// person come from their entitlements (lib/entitlements.ts); these are the defaults.
 export const EXPIRY_DAYS = [1, 7, 30, 90] as const;
-export const DEFAULT_EXPIRY_DAYS = 30;
-export const MAX_ACTIVE_SHARES = 200;
-export const MAX_UPLOADS_PER_HOUR = 30;
-export const MAX_TOKENS = 20;
+export const DEFAULT_EXPIRY_DAYS = PLANS.free.limits.defaultExpiryDays;
+export const MAX_ACTIVE_SHARES = PLANS.free.limits.activeShares;
+export const MAX_UPLOADS_PER_HOUR = PLANS.free.limits.uploadsPerHour;
+export const MAX_TOKENS = PLANS.free.limits.computers;
 
 export class ShareError extends Error {
   constructor(
@@ -35,10 +39,11 @@ export class ShareError extends Error {
 
 // ---- pure helpers (tested in shares.test.ts) ---------------------------------
 
-export function parseExpiryDays(v: string | null | undefined): number {
-  if (v === null || v === undefined || v === "") return DEFAULT_EXPIRY_DAYS;
+/** The expiry asked for, checked against what this person's plan offers (Free by default). */
+export function parseExpiryDays(v: string | null | undefined, limits: Pick<Limits, "expiryDays" | "defaultExpiryDays"> = PLANS.free.limits): number {
+  if (v === null || v === undefined || v === "") return limits.defaultExpiryDays;
   const n = Number(v);
-  if (!(EXPIRY_DAYS as readonly number[]).includes(n)) throw new ShareError(400, "bad_expiry", `Expiry must be one of ${EXPIRY_DAYS.join(", ")} days.`);
+  if (!limits.expiryDays.includes(n)) throw new ShareError(400, "bad_expiry", `Expiry must be one of ${limits.expiryDays.join(", ")} days.`);
   return n;
 }
 
@@ -126,7 +131,8 @@ export async function sweepExpired(): Promise<void> {
   await query(`UPDATE share SET html_gz = NULL WHERE html_gz IS NOT NULL AND expires_at <= now()`);
 }
 
-export async function createShare(userId: string, report: { gz: Buffer; html: string; size: number }, days: number): Promise<ShareRow> {
+export async function createShare(userId: string, report: { gz: Buffer; html: string; size: number }, days: number, limits?: Limits): Promise<ShareRow> {
+  const lim = limits ?? (await entitlementsFor(userId)).limits;
   await sweepExpired();
   return tx(async (q) => {
     // One upload at a time per person, so parallel uploads can't slip past the limits.
@@ -137,8 +143,8 @@ export async function createShare(userId: string, report: { gz: Buffer; html: st
          FROM share WHERE user_id = $1`,
       [userId],
     );
-    if (Number(counts?.recent ?? 0) >= MAX_UPLOADS_PER_HOUR) throw new ShareError(429, "slow_down", "That's a lot of shares in an hour. Try again later.");
-    if (Number(counts?.active ?? 0) >= MAX_ACTIVE_SHARES) throw new ShareError(409, "too_many", `You have ${MAX_ACTIVE_SHARES} live links. Turn some off at app.postrun.app first.`);
+    if (Number(counts?.recent ?? 0) >= lim.uploadsPerHour) throw new ShareError(429, "slow_down", "That's a lot of shares in an hour. Try again later.");
+    if (Number(counts?.active ?? 0) >= lim.activeShares) throw new ShareError(409, "too_many", `You have ${lim.activeShares} live links. Turn some off at app.postrun.app first.`);
     const [row] = await q<ShareRow>(
       `INSERT INTO share (id, user_id, title, agent, html_gz, size_bytes, expires_at)
        VALUES ($1, $2, $3, $4, $5, $6, now() + make_interval(days => $7))
@@ -205,11 +211,12 @@ export function tokenName(raw: string | null | undefined): string {
   return n || "A computer";
 }
 
-export async function createToken(userId: string, name: string): Promise<{ token: string; row: TokenRow }> {
+export async function createToken(userId: string, name: string, limits?: Limits): Promise<{ token: string; row: TokenRow }> {
+  const max = (limits ?? (await entitlementsFor(userId)).limits).computers;
   return tx(async (q) => {
     await q(`SELECT pg_advisory_xact_lock(hashtext('token:' || $1))`, [userId]);
     const [n] = await q<{ c: string }>(`SELECT count(*) AS c FROM cli_token WHERE user_id = $1 AND revoked_at IS NULL`, [userId]);
-    if (Number(n?.c ?? 0) >= MAX_TOKENS) throw new ShareError(409, "too_many_tokens", `You have ${MAX_TOKENS} computers signed in. Remove one in Settings first.`);
+    if (Number(n?.c ?? 0) >= max) throw new ShareError(409, "too_many_tokens", `You have ${max} computers signed in. Remove one in Settings first.`);
     const t = newCliToken();
     const [row] = await q<TokenRow>(
       `INSERT INTO cli_token (id, user_id, name, token_hash, prefix) VALUES ($1, $2, $3, $4, $5)
