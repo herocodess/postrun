@@ -153,7 +153,13 @@ export function SessionList() {
                 <div className="n">{s.steps_total}</div>
                 <div className="brk">{breakdownCounts(s)}</div>
               </div>
-              <div className={`cost ${s.metrics.cost_usd === 0 ? "zero" : ""}`}>${s.metrics.cost_usd.toFixed(2)}</div>
+              {s.metrics.api_requests > 0 ? (
+                <div className={`cost ${s.metrics.cost_usd === 0 ? "zero" : ""}`}>${s.metrics.cost_usd.toFixed(2)}</div>
+              ) : (
+                <div className="cost zero" title="Cost not recorded for this session">
+                  ·
+                </div>
+              )}
               <div className={`flags ${s.flag_count > 0 ? "has" : ""}`}>{s.flag_count > 0 ? s.flag_count : "·"}</div>
             </Link>
           ))}

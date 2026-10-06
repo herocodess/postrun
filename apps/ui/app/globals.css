@@ -1053,3 +1053,9 @@ tr.failed:hover td {
 h1.title {
   margin: 0;
 }
+
+/* A stat whose value was not recorded (no API data for the session). */
+.stat .v.muted-v {
+  color: var(--text-muted);
+  font-size: 15px;
+}

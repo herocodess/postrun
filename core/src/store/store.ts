@@ -2,9 +2,10 @@
  * Local SQLite store for normalized sessions (better-sqlite3).
  *
  * - Tables follow the v1.2 shape: sessions, segments, actors, turns, steps.
- * - Steps are append-only from the store's point of view: ingest upserts by
- *   (session_id, id) and never deletes. Re-ingesting the same session is
- *   idempotent.
+ * - ingest() takes a whole session from a capture: it upserts by
+ *   (session_id, id) and removes children the record no longer contains, so
+ *   re-ingesting is idempotent and never leaves duplicates. appendBatch() is
+ *   the incremental push path and never deletes.
  * - Payloads, channels, and flags are stored as JSON text, faithfully.
  * - Projections (step counts, failed/reference-only/flag counts, title,
  *   turn step_ids) are computed on read, never stored. The one stored total is
@@ -268,6 +269,10 @@ export class PostrunStore {
         });
 
       this.writeChildren(r.id, r);
+      // A capture record is the whole session, so anything it no longer contains goes. This matters
+      // when a session was first read from hooks alone and its OTel data arrives later: the message
+      // steps then get their OTel ids, and the hook-based ones must not linger as duplicates.
+      this.pruneChildren(r);
 
       return { session_id: r.id, created: !existing, steps: r.steps.length, turns: r.turns.length, segments: r.segments.length, actors: r.actors.length };
     });
@@ -358,6 +363,15 @@ export class PostrunStore {
         (this.db.prepare("SELECT seq, id FROM steps WHERE session_id = ?").all(id) as Array<{ seq: number; id: string }>).map((r) => [r.seq, r.id]),
       ),
     };
+  }
+
+  /** Delete a session's children that are absent from a full record. Only ingest() calls this; pushed batches never delete. */
+  private pruneChildren(r: SessionRecord): void {
+    const keep = (ids: Array<string | number>) => JSON.stringify(ids);
+    this.db.prepare("DELETE FROM steps WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.steps.map((s) => s.id)));
+    this.db.prepare("DELETE FROM turns WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.turns.map((t) => t.id)));
+    this.db.prepare("DELETE FROM actors WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.actors.map((a) => a.id)));
+    this.db.prepare("DELETE FROM segments WHERE session_id = ? AND idx NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.segments.map((s) => s.index)));
   }
 
   private writeChildren(sessionId: string, c: Pick<SessionRecord, "segments" | "actors" | "turns" | "steps">): void {

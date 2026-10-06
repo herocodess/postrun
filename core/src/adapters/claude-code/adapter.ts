@@ -10,9 +10,17 @@
  * - When the hook does not carry the content, leave the content field unset
  *   and point output_ref / text_ref at the raw body or transcript.
  *
+ * Hooks without OTel: hooks.ndjson is written by Claude Code itself, so it is
+ * complete even when the OTLP receiver was not running. Any prompt, tool use
+ * or final reply the OTel channel does not cover becomes a hook-only step
+ * (channel "hook", decision "unknown", ordered by received_at), so a session
+ * recorded while the receiver was down, or before it started, is not lost.
+ * Only cost, tokens and permission decisions need OTel.
+ *
  * Read only. Never writes to the capture directory.
  */
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type {
   CommandPayload,
@@ -28,7 +36,7 @@ import type {
   StepOutcome,
   TokenUsage,
 } from "../../schema/index.js";
-import { readNdjson } from "./ndjson.js";
+import { readNdjson, type NdjsonResult } from "./ndjson.js";
 import { bool, eventAttrs, flattenOtlpLogs, num, str, type AttrPrimitive, type OtlpEvent } from "./otlp.js";
 import {
   asNumber,
@@ -47,6 +55,8 @@ export const ROOT_ACTOR_ID = "root"; // UNVERIFIED actor model; single root
 export interface AdapterInput {
   otlpLogs: unknown[];
   hooks: unknown[];
+  /** otlpLogs already flattened. Lets a caller adapt many sessions from one read. */
+  otlpEvents?: OtlpEvent[];
   /** Restrict to one session. Defaults to the only session in otlp-logs; errors if there are several. */
   sessionId?: string;
   /** Names recorded on segments as source_files. */
@@ -68,8 +78,12 @@ export interface AdapterStats {
   steps_total: number;
   steps_by_type: Record<string, number>;
   tool_results: { total: number; joined: number; unjoined: UnjoinedToolResult[] };
-  /** Hook tool records (PostToolUse / PostToolUseFailure) with no otlp tool_result. Not emitted: no seq available. */
+  /** Hook tool records (PostToolUse / PostToolUseFailure) with no otlp tool_result. Emitted as hook-only steps. */
   hook_tool_uses_without_otlp: string[];
+  /** Steps built from hooks alone because OTel did not cover them (prompts, tool uses, final replies). */
+  hook_only_steps: number;
+  /** Where the session's steps came from: both channels, hooks only (no OTel at all), or a mix. */
+  capture: "otel+hooks" | "hooks_only" | "partial";
   /** Tool names that fell through to OtherPayload, with counts. */
   other_tool_names: Record<string, number>;
   /** otlp events that are not steps (telemetry, lifecycle, cost). Counted, not emitted. */
@@ -102,22 +116,40 @@ export interface CaptureDirResult extends AdapterResult {
   };
 }
 
-/** Session ids present in otlp-logs.ndjson, in order of first appearance. A live capture file accumulates many. */
-export function listCaptureSessions(dir: string): string[] {
-  const otlp = readNdjson(join(dir, "otlp-logs.ndjson"));
-  const ids: string[] = [];
-  for (const e of flattenOtlpLogs(otlp.records)) if (!ids.includes(e.session_id)) ids.push(e.session_id);
-  return ids;
+/** Both capture files read once, so many sessions can be adapted from a single read. */
+export interface LoadedCapture {
+  otlpPath: string;
+  hooksPath: string;
+  otlp: NdjsonResult;
+  hooks: NdjsonResult;
+  events: OtlpEvent[];
 }
 
-/** Read otlp-logs.ndjson and hooks.ndjson from a captures directory and adapt them. */
-export function readCaptureDir(dir: string, sessionId?: string): CaptureDirResult {
+const EMPTY_NDJSON: NdjsonResult = { records: [], skipped: 0, total: 0, skipped_lines: [] };
+
+/** Read otlp-logs.ndjson and hooks.ndjson. A missing file reads as empty: the receiver may never have run. */
+export function loadCaptureDir(dir: string): LoadedCapture {
   const otlpPath = join(dir, "otlp-logs.ndjson");
   const hooksPath = join(dir, "hooks.ndjson");
-  const otlp = readNdjson(otlpPath);
-  const hooks = readNdjson(hooksPath);
+  const otlp = existsSync(otlpPath) ? readNdjson(otlpPath) : EMPTY_NDJSON;
+  const hooks = existsSync(hooksPath) ? readNdjson(hooksPath) : EMPTY_NDJSON;
+  return { otlpPath, hooksPath, otlp, hooks, events: flattenOtlpLogs(otlp.records) };
+}
+
+/** Session ids in either capture file, in order of first appearance. A live capture accumulates many. */
+export function listCaptureSessions(dir: string, loaded: LoadedCapture = loadCaptureDir(dir)): string[] {
+  const ids = new Set<string>();
+  for (const e of loaded.events) ids.add(e.session_id);
+  for (const h of loaded.hooks.records) if (isHookRecord(h)) ids.add(h.payload.session_id);
+  return [...ids];
+}
+
+/** Read otlp-logs.ndjson and hooks.ndjson from a captures directory and adapt them. Pass `loaded` to reuse one read. */
+export function readCaptureDir(dir: string, sessionId?: string, loaded: LoadedCapture = loadCaptureDir(dir)): CaptureDirResult {
+  const { otlpPath, hooksPath, otlp, hooks } = loaded;
   const input: AdapterInput = {
     otlpLogs: otlp.records,
+    otlpEvents: loaded.events,
     hooks: hooks.records,
     sourceFiles: { otlpLogs: "otlp-logs.ndjson", hooks: "hooks.ndjson" },
   };
@@ -133,10 +165,11 @@ export function readCaptureDir(dir: string, sessionId?: string): CaptureDirResul
 }
 
 export function adaptClaudeCode(input: AdapterInput): AdapterResult {
-  const allEvents = flattenOtlpLogs(input.otlpLogs);
-  const sessionId = pickSession(allEvents, input.sessionId);
+  const allEvents = input.otlpEvents ?? flattenOtlpLogs(input.otlpLogs);
+  const allHooks = input.hooks.filter(isHookRecord);
+  const sessionId = pickSession(allEvents, allHooks, input.sessionId);
   const events = allEvents.filter((e) => e.session_id === sessionId).sort((a, b) => a.seq - b.seq);
-  const hooks = input.hooks.filter(isHookRecord).filter((h) => h.payload.session_id === sessionId);
+  const hooks = allHooks.filter((h) => h.payload.session_id === sessionId);
 
   // ---- Correlation indexes (hook channel) ----
   const hookByToolUseId = new Map<string, HookRecord>();
@@ -226,6 +259,8 @@ export function adaptClaudeCode(input: AdapterInput): AdapterResult {
     steps_by_type: {},
     tool_results: { total: 0, joined: 0, unjoined: [] },
     hook_tool_uses_without_otlp: [],
+    hook_only_steps: 0,
+    capture: "otel+hooks",
     other_tool_names: {},
     non_step_events: {},
     messages: { user: { inline: 0, reference_only: 0 }, assistant: { inline: 0, reference_only: 0 } },
@@ -362,6 +397,104 @@ export function adaptClaudeCode(input: AdapterInput): AdapterResult {
   if (typeof version === "string") stats.agent_version = version;
 
   steps.sort((a, b) => a.seq - b.seq);
+
+  // ---- Hook-only steps: what the hooks recorded and OTel did not ----
+  const otlpToolIds = new Set<string>();
+  const otlpPromptIds = new Set<string>();
+  for (const e of events) {
+    if (e.name === "tool_result") {
+      const id = str(e.attrs, "tool_use_id");
+      if (id) otlpToolIds.add(id);
+    } else if (e.name === "user_prompt") {
+      const pid = str(e.attrs, "prompt.id");
+      if (pid) otlpPromptIds.add(pid);
+    }
+  }
+  const hookSteps: Array<{ step: Step; order: number }> = [];
+  const finalReplyByTurn = new Map<string, { hook: HookRecord; order: number }>();
+  const emittedToolIds = new Set<string>();
+  let currentTurn: string | undefined;
+  let promptCount = 0;
+  const hookBase = (h: HookRecord, id: string, turn: string | undefined, decision: StepDecision, outcome: StepOutcome, content_status: ContentStatus, error?: StepError): StepBaseFields => {
+    if (!turn) stats.steps_without_prompt_id++;
+    const b: StepBaseFields = {
+      id,
+      session_id: sessionId,
+      segment_index: segmentIndexFor(h.received_at),
+      turn_id: turn ? `turn:${turn}` : "turn:unknown",
+      actor_id: ROOT_ACTOR_ID,
+      seq: 0, // assigned when merged into the timeline below
+      at: h.received_at,
+      decision,
+      outcome,
+      content_status,
+      channels: [CHANNEL_HOOK],
+      flags: [],
+    };
+    if (error) b.error = error;
+    return b;
+  };
+  hooks.forEach((h, order) => {
+    const p = h.payload;
+    const ev = p.hook_event_name;
+    if (ev === "UserPromptSubmit") {
+      promptCount++;
+      currentTurn = p.prompt_id ?? `hook-${promptCount}`;
+      if (p.prompt_id && otlpPromptIds.has(p.prompt_id)) return;
+      const payload: MessagePayload = { role: "user" };
+      let contentStatus: ContentStatus = "inline";
+      if (typeof p.prompt === "string") {
+        payload.text = p.prompt;
+        stats.messages.user.inline++;
+      } else {
+        contentStatus = "reference_only";
+        stats.messages.user.reference_only++;
+        if (transcriptPath) payload.text_ref = transcriptPath;
+      }
+      hookSteps.push({ order, step: { ...hookBase(h, `prompt:${currentTurn}`, currentTurn, "n/a", "ok", contentStatus), type: "message", payload } });
+      return;
+    }
+    const turn = p.prompt_id ?? currentTurn;
+    if (ev === "PostToolUse" || ev === "PostToolUseFailure") {
+      const toolUseId = p.tool_use_id ?? `hook:${h.received_at}:${order}`;
+      if (otlpToolIds.has(toolUseId) || emittedToolIds.has(toolUseId)) return;
+      emittedToolIds.add(toolUseId);
+      const outcome: StepOutcome = ev === "PostToolUseFailure" ? "failed" : "ok";
+      const error = outcome === "failed" ? toolError(undefined, h) : undefined;
+      const b = hookBase(h, toolUseId, turn, "unknown", outcome, "inline", error);
+      const transcriptRef = transcriptPath ? `${transcriptPath}#tool_use_id=${toolUseId}` : undefined;
+      hookSteps.push({ order, step: toolStep(b, p.tool_name ?? "unknown", h, undefined, transcriptRef, stats) });
+      return;
+    }
+    if (ev === "Stop" && typeof p.last_assistant_message === "string") {
+      const key = turn ?? "unknown";
+      // OTel already has this turn's replies; the Stop text is attached to its final one above.
+      if (turn && mainThreadResponsesByPrompt.has(turn)) return;
+      finalReplyByTurn.set(key, { hook: h, order }); // a turn can stop more than once; the last reply wins
+    }
+  });
+  for (const [key, { hook, order }] of finalReplyByTurn) {
+    const turn = key === "unknown" ? undefined : key;
+    const payload: MessagePayload = { role: "assistant", text: hook.payload.last_assistant_message as string };
+    stats.messages.assistant.inline++;
+    hookSteps.push({ order, step: { ...hookBase(hook, `reply:${key}`, turn, "n/a", "ok", "inline"), type: "message", payload } });
+  }
+
+  if (hookSteps.length > 0) {
+    // One timeline ordered by time. Hook times are whole seconds, so ties keep OTel order first, then hook file order.
+    const time = (at: string) => {
+      const t = Date.parse(at);
+      return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+    };
+    const merged = [
+      ...steps.map((step, i) => ({ step, t: time(step.at), channel: 0, order: i })),
+      ...hookSteps.map(({ step, order }) => ({ step, t: time(step.at), channel: 1, order })),
+    ].sort((a, b) => a.t - b.t || a.channel - b.channel || a.order - b.order);
+    steps.length = 0;
+    merged.forEach(({ step }, i) => steps.push({ ...step, seq: i + 1 }));
+    stats.hook_only_steps = hookSteps.length;
+    stats.capture = events.length === 0 ? "hooks_only" : "partial";
+  }
   stats.steps_total = steps.length;
   for (const s of steps) stats.steps_by_type[s.type] = (stats.steps_by_type[s.type] ?? 0) + 1;
 
@@ -370,14 +503,14 @@ export function adaptClaudeCode(input: AdapterInput): AdapterResult {
 
 // ---------------------------------------------------------------------------
 
-function pickSession(events: OtlpEvent[], requested: string | undefined): string {
-  const ids = new Set(events.map((e) => e.session_id));
+function pickSession(events: OtlpEvent[], hooks: HookRecord[], requested: string | undefined): string {
+  const ids = new Set([...events.map((e) => e.session_id), ...hooks.map((h) => h.payload.session_id)]);
   if (requested !== undefined) {
-    if (!ids.has(requested)) throw new Error(`session ${requested} not found in otlp-logs (have: ${[...ids].join(", ") || "none"})`);
+    if (!ids.has(requested)) throw new Error(`session ${requested} not found in the captures (have: ${[...ids].join(", ") || "none"})`);
     return requested;
   }
-  if (ids.size === 0) throw new Error("no session found in otlp-logs");
-  if (ids.size > 1) throw new Error(`otlp-logs holds ${ids.size} sessions; pass sessionId (${[...ids].join(", ")})`);
+  if (ids.size === 0) throw new Error("no session found in the captures");
+  if (ids.size > 1) throw new Error(`the captures hold ${ids.size} sessions; pass sessionId (${[...ids].join(", ")})`);
   return [...ids][0] as string;
 }
 
@@ -426,10 +559,10 @@ function toolOutcome(e: OtlpEvent, hook: HookRecord | undefined): StepOutcome {
 }
 
 /** A3: error type from otlp error_type; message from the hook when present, else otlp. */
-function toolError(e: OtlpEvent, hook: HookRecord | undefined): StepError | undefined {
-  const message = hook?.payload.error ?? str(e.attrs, "error");
+function toolError(e: OtlpEvent | undefined, hook: HookRecord | undefined): StepError | undefined {
+  const message = hook?.payload.error ?? (e ? str(e.attrs, "error") : undefined);
   if (message === undefined) return undefined;
-  return { type: str(e.attrs, "error_type") ?? "unknown", message };
+  return { type: (e ? str(e.attrs, "error_type") : undefined) ?? "unknown", message };
 }
 
 type StepBaseFields = Omit<Extract<Step, { type: "other" }>, "type" | "payload">;
@@ -438,7 +571,7 @@ function toolStep(
   b: StepBaseFields,
   toolName: string,
   hook: HookRecord | undefined,
-  e: OtlpEvent,
+  e: OtlpEvent | undefined,
   transcriptRef: string | undefined,
   stats: AdapterStats,
 ): Step {
@@ -505,9 +638,12 @@ function toolStep(
     }
     default: {
       stats.other_tool_names[toolName] = (stats.other_tool_names[toolName] ?? 0) + 1;
-      const otel = eventAttrs(e);
-      delete otel["tool_input"]; // truncated content; never carried forward
-      const raw: Record<string, unknown> = { otel };
+      const raw: Record<string, unknown> = {};
+      if (e) {
+        const otel = eventAttrs(e);
+        delete otel["tool_input"]; // truncated content; never carried forward
+        raw["otel"] = otel;
+      }
       if (hook) {
         raw["hook_event"] = hook.payload.hook_event_name;
         raw["tool_input"] = hook.payload.tool_input;
@@ -527,15 +663,17 @@ function buildSegments(
   events: OtlpEvent[],
   sourceFiles: AdapterInput["sourceFiles"],
 ): SessionSegment[] {
-  const files = sourceFiles ? [sourceFiles.otlpLogs, sourceFiles.hooks] : [];
+  // Name only the files this session actually came from.
+  const files = sourceFiles ? [...(events.length > 0 ? [sourceFiles.otlpLogs] : []), ...(hooks.length > 0 ? [sourceFiles.hooks] : [])] : [];
   const starts = hooks.filter((h) => h.payload.hook_event_name === "SessionStart");
   const ends = hooks.filter((h) => h.payload.hook_event_name === "SessionEnd");
   const segments: SessionSegment[] = [];
   if (starts.length === 0) {
-    const first = events[0];
-    const last = events[events.length - 1];
-    const seg: SessionSegment = { index: 0, start_reason: "unknown", started_at: first?.timestamp ?? "", source_files: files };
-    if (last) seg.ended_at = last.timestamp;
+    const first = events[0]?.timestamp ?? hooks[0]?.received_at;
+    const last = events[events.length - 1]?.timestamp ?? hooks[hooks.length - 1]?.received_at;
+    const seg: SessionSegment = { index: 0, start_reason: "unknown", started_at: first ?? "", source_files: files };
+    if (ends.length > 0 && last) seg.ended_at = last;
+    else if (events.length > 0 && last) seg.ended_at = last;
     return [seg];
   }
   starts.sort((a, b) => a.received_at.localeCompare(b.received_at));

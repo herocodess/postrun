@@ -155,7 +155,8 @@ describe.skipIf(!hasCaptures)("claude-code adapter against real captures", () =>
   });
 
   it("splits status into decision and outcome, and carries errors for failed steps", () => {
-    const failed = steps.filter((s) => s.outcome === "failed");
+    // OTel-backed steps only: hook-only steps (turns OTel never saw) are covered by hooks-only.test.ts.
+    const failed = steps.filter((s) => s.outcome === "failed" && s.channels.includes("otel"));
     const otlpFailed = otlpEvents.filter((e) => e.session_id === result!.session_id && e.name === "tool_result" && str(e.attrs, "success") === "false");
     expect(failed.length).toBe(otlpFailed.length);
     // Every failed step in this capture was accepted (config or user) and then failed.

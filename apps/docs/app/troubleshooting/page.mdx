@@ -52,16 +52,19 @@ The port must be a whole number from 1 to 65535.
 
 Check these in order:
 
-1. **Is `pnpm capture` running?** Nothing is recorded while it is stopped. Hook events are still appended to `hooks.ndjson` by the hook script, but telemetry needs the receiver.
-2. **Was Claude Code restarted after setup?** The recorder logs this when it is not:
+1. **Is `pnpm capture` running?** Claude Code's hooks keep writing to `hooks.ndjson` while it is stopped, and the next time `pnpm capture` starts it catches up on every session it missed. Start it and the session appears.
+2. **Has the session finished a turn?** A Claude Code session is written at the end of each assistant turn (`Stop`) and at `SessionEnd`, after a 4 second pause. It does not appear while the first turn is still running.
+3. **Is the configuration in place?** Run `pnpm capture:cc:setup` and read its summary.
 
-   ```text
-   claude-code <id>: hooks only, no OTel data (this claude was started before Postrun's env was configured; restart it); skipped
-   ```
+### A Claude Code session shows "cost not recorded"
 
-   Claude Code reads `settings.json` only at launch. Quit the session and start `claude` again. A session with hooks but no telemetry cannot be built, because telemetry supplies the step order and cost.
-3. **Has the session finished a turn?** A Claude Code session is written at the end of each assistant turn (`Stop`) and at `SessionEnd`, after a 4 second pause. It does not appear while the first turn is still running.
-4. **Is the configuration in place?** Run `pnpm capture:cc:setup` and read its summary.
+The session was recorded from Claude Code's hooks alone, because no telemetry arrived for it. The recorder logs this once per session:
+
+```text
+claude-code <id>: recorded from hooks only (no OTel data: the receiver was not running, or this claude started before setup), so its cost and token counts are missing
+```
+
+Every prompt, command, edit, read and final reply is still there. Only cost, token counts and permission decisions need telemetry. To get them for future sessions, keep `pnpm capture` running while you work, and restart any `claude` that was started before setup, since Claude Code reads `settings.json` only at launch.
 
 To rebuild every session in the capture folder by hand:
 

@@ -15,7 +15,7 @@ pnpm capture:cc:setup
 
 This merges Postrun's settings into `~/.claude/settings.json` and prints what it changed. `pnpm capture` runs the same step on start, so you only need this command on its own if you want to configure without recording yet.
 
-Then restart any Claude Code session that is already running. Claude Code reads `settings.json` only at launch, so a session started before the change keeps its old settings and is not recorded.
+Then restart any Claude Code session that is already running. Claude Code reads `settings.json` only at launch, so a session started before the change keeps its old settings: it is still recorded from its hooks, but without cost and token counts.
 
 ### What the setup writes
 

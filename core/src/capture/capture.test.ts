@@ -9,6 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { readCaptureDir } from "../adapters/claude-code/index.js";
 import { locateClineSession } from "../adapters/cline/index.js";
 import { PostrunStore } from "../store/index.js";
 import {
@@ -248,7 +249,7 @@ describe("claude code self-configuration", () => {
 });
 
 describe.skipIf(!hasCaptures)("claude-code watcher on a copy of the real capture", () => {
-  it("ingests on Stop and SessionEnd, idempotently, and skips hook-only sessions", async () => {
+  it("catches up on start, ingests on Stop and SessionEnd idempotently, and keeps hook-only sessions", async () => {
     const dir = mkdtempSync(join(tmpdir(), "postrun-cc-"));
     copyFileSync(join(CAPTURES, "otlp-logs.ndjson"), join(dir, "otlp-logs.ndjson"));
     // Start with the real hooks lines EXCEPT the target session's SessionEnd, appended later to simulate live end.
@@ -262,18 +263,20 @@ describe.skipIf(!hasCaptures)("claude-code watcher on a copy of the real capture
     const logs: string[] = [];
     const w = createClaudeCodeWatcher({ captureDir: dir, store, pollMs: 50, debounceMs: 100, log: (l) => logs.push(l), onIngest: (r, t) => events.push(`${t}:${r.session_id}:${r.created}`) });
     w.start();
-    // Startup ingests only sessions with a SessionEnd; the target has none yet (in this copy).
-    expect(store.getSession(target)).toBeUndefined();
-    // Sessions that have hooks but no OTel data are reported once and never ingested.
-    const hookOnly = logs.filter((l) => /hooks only, no OTel data/.test(l)).map((l) => l.split(" ")[1]!.replace(/:$/, ""));
+    // Startup catches up on every session not yet complete in the store, including the target,
+    // which has no SessionEnd in this copy: it is stored open.
+    expect(events).toContain(`startup:${target}:true`);
+    expect(store.getSession(target)!.summary.ended_at).toBeUndefined();
+    // Sessions that have hooks but no OTel data are ingested from the hooks and reported once.
+    const hookOnly = logs.filter((l) => /recorded from hooks only/.test(l)).map((l) => l.split(" ")[1]!.replace(/:$/, ""));
     expect(hookOnly.length).toBeGreaterThan(0);
 
-    // A live Stop for the target: ingested while the session is still open.
+    // A live Stop for the target: re-ingested while the session is still open.
     appendFileSync(join(dir, "hooks.ndjson"), JSON.stringify({ received_at: "2026-09-04T23:30:00Z", channel: "hook", payload: { session_id: target, hook_event_name: "Stop" } }) + "\n");
     await sleep(400);
-    expect(events).toContain(`Stop:${target}:true`);
+    expect(events).toContain(`Stop:${target}:false`);
     const c1 = store.counts();
-    expect(store.getSession(target)!.steps).toHaveLength(100);
+    expect(store.getSession(target)!.steps).toHaveLength(readCaptureDir(dir, target).steps.length);
 
     // SessionEnd: re-ingest is an update, counts unchanged.
     appendFileSync(join(dir, "hooks.ndjson"), all.find(isEnd)! + "\n");
@@ -282,7 +285,7 @@ describe.skipIf(!hasCaptures)("claude-code watcher on a copy of the real capture
     expect(store.counts()).toEqual(c1);
     expect(w.sessions().get(target)?.ended).toBe(true);
 
-    for (const id of hookOnly) expect(store.getSession(id)).toBeUndefined();
+    for (const id of hookOnly) expect(store.getSession(id)!.steps.every((s) => s.channels.join() === "hook")).toBe(true);
     w.stop();
     store.close();
   });

@@ -2,14 +2,18 @@
  * Adapter output -> SessionRecord -> store. One function per adapter.
  */
 
-import { readCaptureDir } from "../adapters/claude-code/index.js";
+import { readCaptureDir, type LoadedCapture } from "../adapters/claude-code/index.js";
 import { adaptCline, loadClineSession } from "../adapters/cline/index.js";
 import { turnsFromSteps } from "../adapters/turns.js";
 import type { SessionRecord } from "./types.js";
 
-/** Build a SessionRecord from a Claude Code captures directory. */
-export function claudeCodeRecord(capturesDir: string, sessionId?: string): SessionRecord {
-  const r = readCaptureDir(capturesDir, sessionId);
+/**
+ * Build a SessionRecord from a Claude Code captures directory. Pass `loaded`
+ * (from loadCaptureDir) to build many sessions from one read of the files.
+ * A session recorded from hooks alone has no API metrics, so cost and tokens are zero.
+ */
+export function claudeCodeRecord(capturesDir: string, sessionId?: string, loaded?: LoadedCapture): SessionRecord {
+  const r = readCaptureDir(capturesDir, sessionId, loaded);
   const first = r.segments[0];
   const last = r.segments[r.segments.length - 1];
   const record: SessionRecord = {

@@ -7,18 +7,22 @@
  *   ingest is an idempotent upsert, so partial sessions are safe and visible.
  * - SessionEnd: ingest again after a short delay so the last OTel exports
  *   (2s interval by default) have been received.
- * - Startup: scan the whole file, ingest every session that already has a
- *   SessionEnd (idempotent; sessions without OTel data are reported, not
- *   ingested, because the adapter needs otlp-logs for ordering and cost).
+ * - Startup (catch-up): scan the whole file and ingest every session that is
+ *   not already complete in the store: new ones, and ones stored without an
+ *   end. That recovers sessions that ran while capture was stopped. Both
+ *   files are read once for the whole catch-up.
  *
- * The adapter needs both channels, so a session whose claude was launched
- * without the OTel env is skipped with a warning naming the session.
+ * A session with no OTel data (claude launched without the env, or the
+ * receiver was down) is still ingested from its hooks, which Claude Code
+ * writes itself. Only its cost and token counts are missing; that is logged
+ * once per session.
  *
  * Read only on the capture files: this tails, it never writes.
  */
 
 import { existsSync, openSync, readSync, closeSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { loadCaptureDir, type LoadedCapture } from "../adapters/claude-code/index.js";
 import { claudeCodeRecord } from "../store/ingest.js";
 import type { PostrunStore } from "../store/store.js";
 import type { IngestResult } from "../store/types.js";
@@ -38,7 +42,7 @@ export interface ClaudeCodeWatcher {
   start(): void;
   stop(): void;
   /** Ingest one session now (on demand). Returns undefined when the adapter cannot read it. */
-  ingest(sessionId: string, trigger?: string): IngestResult | undefined;
+  ingest(sessionId: string, trigger?: string, loaded?: LoadedCapture): IngestResult | undefined;
   /** Sessions seen in hooks.ndjson, with whether a SessionEnd was seen. */
   sessions(): Map<string, { ended: boolean; last_event: string }>;
 }
@@ -56,30 +60,26 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
   const log = opts.log ?? (() => undefined);
   const seen = new Map<string, { ended: boolean; last_event: string }>();
   const timers = new Map<string, NodeJS.Timeout>();
-  const skipped = new Set<string>(); // sessions without OTel data, reported once
+  const hooksOnlyReported = new Set<string>(); // sessions without OTel data, reported once
   let offset = 0;
   let remainder = "";
   let timer: NodeJS.Timeout | undefined;
   let running = false;
 
-  const ingest = (sessionId: string, trigger = "on-demand"): IngestResult | undefined => {
+  const ingest = (sessionId: string, trigger = "on-demand", loaded?: LoadedCapture): IngestResult | undefined => {
     try {
-      const record = claudeCodeRecord(opts.captureDir, sessionId);
+      const record = claudeCodeRecord(opts.captureDir, sessionId, loaded);
       const result = opts.store.ingest(record);
-      skipped.delete(sessionId);
+      const hooksOnly = record.segments.every((s) => !s.source_files.includes("otlp-logs.ndjson"));
+      if (hooksOnly && !hooksOnlyReported.has(sessionId)) {
+        hooksOnlyReported.add(sessionId);
+        log(`claude-code ${sessionId}: recorded from hooks only (no OTel data: the receiver was not running, or this claude started before setup), so its cost and token counts are missing`);
+      }
       log(`claude-code ${result.created ? "ingested" : "updated"} ${sessionId} (${result.steps} steps) on ${trigger}`);
       opts.onIngest?.(result, trigger);
       return result;
     } catch (err) {
-      const msg = (err as Error).message;
-      if (/not found in otlp-logs|no session found/.test(msg)) {
-        if (!skipped.has(sessionId)) {
-          skipped.add(sessionId);
-          log(`claude-code ${sessionId}: hooks only, no OTel data (this claude was started before Postrun's env was configured; restart it); skipped`);
-        }
-      } else {
-        log(`claude-code ${sessionId}: ingest failed on ${trigger}: ${msg}`);
-      }
+      log(`claude-code ${sessionId}: ingest failed on ${trigger}: ${(err as Error).message}`);
       return undefined;
     }
   };
@@ -144,9 +144,14 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
       if (running) return;
       running = true;
       readNew(false); // learn existing sessions without triggering per-line ingests
-      const ended = [...seen].filter(([, s]) => s.ended).map(([id]) => id);
-      log(`claude-code: tailing ${file} (${seen.size} session(s) seen, ${ended.length} ended)`);
-      for (const id of ended) ingest(id, "startup");
+      // Catch up: anything new, or stored without an end, may have changed while capture was stopped.
+      const complete = new Set(opts.store.listSessions({ agent: "claude-code" }).filter((s) => s.ended_at).map((s) => s.id));
+      const pending = [...seen.keys()].filter((id) => !complete.has(id));
+      log(`claude-code: tailing ${file} (${seen.size} session(s) seen, ${pending.length} to catch up)`);
+      if (pending.length > 0) {
+        const loaded = loadCaptureDir(opts.captureDir);
+        for (const id of pending) ingest(id, "startup", loaded);
+      }
       timer = setInterval(() => readNew(true), pollMs);
     },
     stop() {

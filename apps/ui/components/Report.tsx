@@ -97,9 +97,16 @@ export function Report() {
           <div className="stats">
             <div className="stat">
               <div className="k">cost</div>
-              <div className="v mono">
-                ${summary.metrics.cost_usd.toFixed(4)} <span className="sub">/ {summary.metrics.api_requests} req</span>
-              </div>
+              {summary.metrics.api_requests > 0 ? (
+                <div className="v mono">
+                  ${summary.metrics.cost_usd.toFixed(4)} <span className="sub">/ {summary.metrics.api_requests} req</span>
+                </div>
+              ) : (
+                // No API data, e.g. a Claude Code session recorded from hooks while the receiver was down.
+                <div className="v muted-v" title="This session has no API data, so cost and tokens were not recorded">
+                  not recorded
+                </div>
+              )}
             </div>
             <div className="stat">
               <div className="k">steps</div>
@@ -130,9 +137,11 @@ export function Report() {
             <span>
               owner <b className="mono">{summary.owner_id}</b> on {summary.captured_on}
             </span>
-            <span>
-              tokens <b className="mono">{summary.metrics.tokens.input} in / {summary.metrics.tokens.output} out</b>
-            </span>
+            {summary.metrics.api_requests > 0 ? (
+              <span>
+                tokens <b className="mono">{summary.metrics.tokens.input} in / {summary.metrics.tokens.output} out</b>
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
