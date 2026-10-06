@@ -1,11 +1,11 @@
 import { Suspense } from "react";
-import { SessionList } from "@/components/SessionList";
+import { Dashboard } from "@/components/Dashboard";
 
 export default function Page() {
   return (
     <main>
-      <Suspense fallback={<p>Loading…</p>}>
-        <SessionList />
+      <Suspense fallback={null}>
+        <Dashboard />
       </Suspense>
     </main>
   );

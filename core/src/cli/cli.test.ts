@@ -145,4 +145,12 @@ describe("start at login files", () => {
     expect(text).toContain("Restart=on-failure");
     expect(text).toContain("WantedBy=default.target");
   });
+  it("systemd unit keeps % and $ in paths literal, and refuses line breaks", () => {
+    const odd = ["/opt/50%off/node", "/home/a/$HOME/postrun.js", "run"];
+    const text = unit(odd, p);
+    expect(text).toContain('"/opt/50%%off/node"');
+    expect(text).toContain('"/home/a/$$HOME/postrun.js"');
+    expect(parseCommand("systemd", text)).toEqual(odd);
+    expect(() => unit(["/opt/a\nExecStartPre=/bin/evil", "run"], p)).toThrow(/line break/);
+  });
 });

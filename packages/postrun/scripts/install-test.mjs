@@ -71,8 +71,11 @@ const postrun = (args, opts = {}) => {
   const r = spawnSync(bin, args, { env, encoding: "utf8", timeout: 60_000, ...opts });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 };
-const api = async (path) => {
-  const res = await fetch(`http://127.0.0.1:${PORT}${path}`, { headers: { connection: "close" } });
+// The review app's key, as `postrun open` hands it to the browser.
+const appKey = () => readFileSync(join(home, ".postrun", "ingest-token"), "utf8").trim();
+const api = async (path, { key = true } = {}) => {
+  const headers = { connection: "close", ...(key ? { authorization: `Bearer ${appKey()}` } : {}) };
+  const res = await fetch(`http://127.0.0.1:${PORT}${path}`, { headers });
   return { status: res.status, type: res.headers.get("content-type") ?? "", body: await res.text() };
 };
 
@@ -100,9 +103,12 @@ try {
   fire("PostToolUse", { prompt_id: "p1", tool_use_id: "t2", tool_name: "Edit", tool_input: { file_path: "/w/app/a.ts", old_string: "a", new_string: "b" }, tool_response: { filePath: "/w/app/a.ts", structuredPatch: [] } });
   const otlp = settings.env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const attr = (key, v) => ({ key, value: typeof v === "number" ? { intValue: v } : { stringValue: String(v) } });
+  // Claude Code sends the headers setup put in its settings; a request without them is not stored.
+  const [hName, hValue] = String(settings.env.OTEL_EXPORTER_OTLP_HEADERS ?? "").split("=");
+  ok(hName === "x-postrun-key" && (hValue ?? "").length >= 32, "setup gives Claude Code a telemetry key");
   const tele = await fetch(`${otlp}/v1/logs`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", [hName]: hValue },
     body: JSON.stringify({
       resourceLogs: [
         {
@@ -113,6 +119,9 @@ try {
     }),
   });
   ok(tele.status === 200, "telemetry receiver accepts Claude Code logs");
+  const web = await fetch(`${otlp}/v1/logs`, { method: "POST", headers: { "content-type": "text/plain; application/json", origin: "https://evil.example" }, body: "{}" });
+  ok(web.status === 403, "telemetry receiver refuses a request from a web page");
+  ok((await api("/api/sessions", { key: false })).status === 401, "the API refuses requests without the key");
   fire("Stop", { prompt_id: "p1", last_assistant_message: "Added /health." });
 
   let list;

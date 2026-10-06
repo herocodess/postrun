@@ -21,7 +21,14 @@ import { Database } from "./sqlite.js";
 import { ensurePrivateDir, ensurePrivateFile } from "../util/files.js";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import type { Actor, AgentInfo, SessionSegment, Step, Turn, Verdict, Workspace } from "../schema/index.js";
+import type { Actor, AgentInfo, Flag, SessionSegment, Step, Turn, Verdict, Workspace } from "../schema/index.js";
+import { RISK_KINDS, RISK_RULES_VERSION, withRiskFlags } from "../report/risk.js";
+import { isUsageEvent, USAGE_EVENTS, USAGE_KEEP_DAYS, type UsageEvent, type UsageSummary } from "./usage.js";
+
+/** YYYY-MM-DD in this machine's time zone: a "day" of use is the user's day, not UTC's. */
+function localDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 import type { IngestResult, SessionBatch, SessionMetrics, SessionRecord, SessionRefs, SessionSummary, StoreCounts, StoredSession } from "./types.js";
 
 export const LOCAL_OWNER_ID = "local";
@@ -30,7 +37,7 @@ export const LOCAL_OWNER_ID = "local";
  * for live views); per-session counts kept on the session row; edits no longer
  * hold a full copy of the original file.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 4;
 
 export interface StoreOptions {
   /** SQLite file path. ":memory:" for tests. Default ~/.postrun/postrun.db or POSTRUN_DB. */
@@ -75,6 +82,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   flag_count           INTEGER NOT NULL DEFAULT 0,
   turn_count           INTEGER NOT NULL DEFAULT 0,
   step_counts          TEXT NOT NULL DEFAULT '{}',
+  strip                TEXT NOT NULL DEFAULT '',
+  git_branch           TEXT,
   -- when a write last removed steps: a live view older than this reloads instead of applying a delta
   pruned_at            TEXT
 );
@@ -143,10 +152,53 @@ CREATE TABLE IF NOT EXISTS deleted_sessions (
   deleted_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS steps_session_turn ON steps(session_id, turn_id, seq);
+-- Local feature counts (see usage.ts): a day, an event name from a fixed list, a number. Never content.
+CREATE TABLE IF NOT EXISTS usage_daily (
+  day   TEXT NOT NULL,
+  event TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  PRIMARY KEY (day, event)
+);
 `;
 
 /** Indexes on columns that version 1 stores gain by ALTER TABLE, so they run after the upgrade. */
-const DDL_V2_INDEXES = `CREATE INDEX IF NOT EXISTS steps_session_written ON steps(session_id, written_at);`;
+const DDL_V2_INDEXES = `CREATE INDEX IF NOT EXISTS steps_session_written ON steps(session_id, written_at);
+CREATE INDEX IF NOT EXISTS sessions_started ON sessions(started_at DESC, id);
+CREATE INDEX IF NOT EXISTS sessions_workspace ON sessions(workspace_root, started_at DESC);
+CREATE INDEX IF NOT EXISTS steps_at ON steps(at);`;
+
+/**
+ * Search inside sessions: a trigram index (any substring of 3 or more characters) over what a step
+ * holds that people search for: the command and the start of its output, the file path and the
+ * start of the new text, message text, the tool name. Kept in step with the steps table by
+ * triggers, keyed by the step's rowid, so every write path (ingest, push, prune, delete) stays in
+ * sync without code of its own.
+ */
+const FTS_TEXT = `trim(
+  coalesce(json_extract(new.payload, '$.command'), '') || ' ' ||
+  substr(coalesce(json_extract(new.payload, '$.stdout'), ''), 1, 4000) || ' ' ||
+  substr(coalesce(json_extract(new.payload, '$.stderr'), ''), 1, 2000) || ' ' ||
+  coalesce(json_extract(new.payload, '$.path'), '') || ' ' ||
+  substr(coalesce(json_extract(new.payload, '$.new_string'), ''), 1, 2000) || ' ' ||
+  substr(coalesce(json_extract(new.payload, '$.text'), ''), 1, 4000) || ' ' ||
+  coalesce(json_extract(new.payload, '$.tool_name'), ''))`;
+const DDL_FTS = `
+CREATE VIRTUAL TABLE IF NOT EXISTS steps_fts USING fts5(text, session_id UNINDEXED, seq UNINDEXED, tokenize = 'trigram');
+CREATE TRIGGER IF NOT EXISTS steps_fts_insert AFTER INSERT ON steps BEGIN
+  INSERT INTO steps_fts (rowid, text, session_id, seq) VALUES (new.rowid, ${FTS_TEXT}, new.session_id, new.seq);
+END;
+CREATE TRIGGER IF NOT EXISTS steps_fts_update AFTER UPDATE OF payload, seq ON steps BEGIN
+  DELETE FROM steps_fts WHERE rowid = old.rowid;
+  INSERT INTO steps_fts (rowid, text, session_id, seq) VALUES (new.rowid, ${FTS_TEXT}, new.session_id, new.seq);
+END;
+CREATE TRIGGER IF NOT EXISTS steps_fts_delete AFTER DELETE ON steps BEGIN
+  DELETE FROM steps_fts WHERE rowid = old.rowid;
+END;`;
+/** Deleted text is overwritten in the index too, as secure_delete does for the tables. A write: run only when unset. */
+const FTS_SECURE_DELETE = "INSERT INTO steps_fts (steps_fts, rank) VALUES ('secure-delete', 1)";
+const DDL_META = "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)";
+/** Steps re-flagged per transaction when the risk rules change: bounded memory, short write locks. */
+const RISK_BATCH = 2000;
 
 /** Columns added in version 2, for upgrading a version 1 store in place. */
 const V2_COLUMNS: Array<[table: string, column: string, decl: string]> = [
@@ -158,10 +210,148 @@ const V2_COLUMNS: Array<[table: string, column: string, decl: string]> = [
   ["sessions", "turn_count", "INTEGER NOT NULL DEFAULT 0"],
   ["sessions", "step_counts", "TEXT NOT NULL DEFAULT '{}'"],
   ["sessions", "pruned_at", "TEXT"],
+  ["sessions", "strip", "TEXT NOT NULL DEFAULT ''"],
+  ["sessions", "git_branch", "TEXT"],
   ["steps", "hash", "TEXT"],
   ["steps", "meta_hash", "TEXT"],
   ["steps", "written_at", "TEXT NOT NULL DEFAULT ''"],
 ];
+
+/** One character per step type for the session strip: c command, e edit, r read, m message, o other. */
+const STRIP_CHAR = `CASE st.type WHEN 'command' THEN 'c' WHEN 'edit' THEN 'e' WHEN 'read' THEN 'r' WHEN 'message' THEN 'm' ELSE 'o' END`;
+
+export interface DashboardTotals {
+  sessions: number;
+  steps: number;
+  failed: number;
+  cost: number;
+  /** Sessions with steps and no review yet. */
+  unreviewed: number;
+  /** Sessions with at least one flag. */
+  flagged: number;
+}
+
+export interface Dashboard {
+  days: number;
+  /** Start of the period: local midnight, as an ISO time. */
+  from: string;
+  totals: DashboardTotals;
+  /** The same totals for the period before, for comparison. */
+  previous: DashboardTotals;
+  /** One entry per local day: steps by kind (a failed step counts under failed only), sessions started and their cost. */
+  per_day: Array<{ day: string; command: number; edit: number; read: number; message: number; other: number; failed: number; sessions: number; cost: number }>;
+  /** Open sessions written in the last 15 minutes. */
+  running: SessionSummary[];
+  /** Sessions in the period with failures or flags, not yet marked as looking good. */
+  needs_review: SessionSummary[];
+  files: Array<{ path: string; edits: number; sessions: number }>;
+}
+
+export interface ProjectSummary {
+  root: string;
+  repo: string | null;
+  sessions: number;
+  steps: number;
+  failed: number;
+  flags: number;
+  cost: number;
+  last_at: string;
+  unreviewed: number;
+}
+
+/** Largest page querySessions returns. */
+export const MAX_PAGE = 500;
+
+export interface SessionQuery {
+  agent?: string;
+  owner_id?: string;
+  /** Matches the first prompt or the workspace path (anywhere), or the session id (from the start). Case-insensitive. */
+  q?: string;
+  /** Started at or after this ISO time. */
+  from?: string;
+  /** Started before this ISO time. */
+  to?: string;
+  minSteps?: number;
+  failedOnly?: boolean;
+  /** False leaves out sessions with no steps. Default true. */
+  includeEmpty?: boolean;
+  /** False searches titles, paths and ids only, not step content. Default true (for 3 or more characters). */
+  inSteps?: boolean;
+  /** Only sessions in this working folder (exact). */
+  workspace?: string;
+  /** Review state: "none" for not reviewed yet, or a verdict state. */
+  verdict?: "none" | "approved" | "needs_attention";
+  /** Only sessions with a risk or agent flag. */
+  flagged?: boolean;
+  /** Page size, 1 to MAX_PAGE. Without it, every match is returned. */
+  limit?: number;
+  /** next_cursor from the previous page. */
+  cursor?: string;
+}
+
+export interface SessionPage {
+  sessions: SessionSummary[];
+  /** Every session matching the filters, across all pages. */
+  total: number;
+  total_cost: number;
+  /** Sessions with no steps that match the other filters (shown or not). */
+  empty_count: number;
+  next_cursor?: string;
+  /**
+   * With a search of 3 or more characters: for sessions on this page whose steps matched, the first
+   * matching step's seq and the text around the match. \u0001 and \u0002 mark the matched part.
+   */
+  matches?: Record<string, { seq: number; text: string }>;
+}
+
+/** A search as an FTS5 phrase: any substring, nothing in it read as query syntax. */
+function ftsPhrase(text: string): string {
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+export class BadCursorError extends Error {}
+
+function encodeCursor(at: string, id: string): string {
+  return Buffer.from(JSON.stringify([at, id])).toString("base64url");
+}
+
+function decodeCursor(cursor: string): { at: string; id: string } {
+  try {
+    const v = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as unknown;
+    if (Array.isArray(v) && typeof v[0] === "string" && typeof v[1] === "string") return { at: v[0], id: v[1] };
+  } catch {
+    // fall through
+  }
+  throw new BadCursorError("invalid cursor");
+}
+
+/** Slices in the strip a summary carries: enough to draw, small enough for a list of hundreds. */
+export const STRIP_SLICES = 64;
+
+/**
+ * Shrink a session's full strip to at most STRIP_SLICES characters. Each slice
+ * shows the step type it holds most of, in upper case when any step in it
+ * failed, so one failure in a long session still shows.
+ */
+export function sliceStrip(full: string, slices = STRIP_SLICES): string {
+  if (full.length <= slices) return full;
+  let out = "";
+  for (let b = 0; b < slices; b++) {
+    const part = full.slice(Math.floor((b * full.length) / slices), Math.floor(((b + 1) * full.length) / slices));
+    const counts = new Map<string, number>();
+    let failed = false;
+    for (const ch of part) {
+      const lower = ch.toLowerCase();
+      if (ch !== lower) failed = true;
+      counts.set(lower, (counts.get(lower) ?? 0) + 1);
+    }
+    let best = "o";
+    let n = -1;
+    for (const [k, v] of counts) if (v > n) [best, n] = [k, v];
+    out += failed ? best.toUpperCase() : best;
+  }
+  return out;
+}
 
 /** Recompute one session's stored counts from its steps and turns. */
 const REFRESH_SUMMARY = `
@@ -175,7 +365,10 @@ UPDATE sessions SET
   reference_only_count = (SELECT count(*) FROM steps st WHERE st.session_id = sessions.id AND st.content_status = 'reference_only'),
   flag_count = (SELECT coalesce(sum(json_array_length(st.flags)), 0) FROM steps st WHERE st.session_id = sessions.id),
   turn_count = (SELECT count(*) FROM turns t WHERE t.session_id = sessions.id),
-  step_counts = (SELECT coalesce(json_group_object(type, n), '{}') FROM (SELECT type, count(*) AS n FROM steps st WHERE st.session_id = sessions.id GROUP BY type))
+  step_counts = (SELECT coalesce(json_group_object(type, n), '{}') FROM (SELECT type, count(*) AS n FROM steps st WHERE st.session_id = sessions.id GROUP BY type)),
+  strip = (SELECT coalesce(group_concat(
+             CASE WHEN st.outcome = 'failed' THEN upper(${STRIP_CHAR}) ELSE ${STRIP_CHAR} END, '' ORDER BY st.seq), '')
+           FROM steps st WHERE st.session_id = sessions.id)
 WHERE id = ?`;
 
 interface SessionRow {
@@ -209,6 +402,8 @@ interface SessionRow {
   flag_count: number;
   turn_count: number;
   step_counts: string;
+  strip: string;
+  git_branch: string | null;
   pruned_at: string | null;
 }
 
@@ -317,12 +512,67 @@ export class PostrunStore {
           `UPDATE steps SET payload = json_remove(payload, '$.structured_patch.originalFile'), hash = NULL
            WHERE type = 'edit' AND json_extract(payload, '$.structured_patch.originalFile') IS NOT NULL`,
         );
+        // Version 4: the search index, filled from the steps already stored, and risk flags on them.
+        const hadFts = this.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'steps_fts'").get() !== undefined;
+        this.db.exec(DDL_FTS);
+        if (!hadFts) {
+          this.db.exec(`INSERT INTO steps_fts (rowid, text, session_id, seq) SELECT rowid, ${FTS_TEXT.replace(/new\./g, "steps.")}, session_id, seq FROM steps`);
+        }
+        // Counts, titles and strips projected for every session (older stores lack some of them).
+        // Risk flags follow after, in batches: see recomputeRiskFlags.
         const refresh = this.db.prepare(REFRESH_SUMMARY);
         for (const { id } of this.db.prepare("SELECT id FROM sessions").all() as Array<{ id: string }>) refresh.run(id);
         this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
       })();
     }
     this.db.exec(DDL_V2_INDEXES);
+    this.db.exec(DDL_FTS);
+    this.db.exec(DDL_META);
+    const secure = this.db.prepare("SELECT v FROM steps_fts_config WHERE k = 'secure-delete'").get() as { v: unknown } | undefined;
+    if (!secure || Number(secure.v) !== 1) this.db.exec(FTS_SECURE_DELETE);
+    this.recomputeRiskFlags();
+  }
+
+  /**
+   * Bring stored risk flags up to the current rules, once per rules version. Only commands, edits
+   * and reads can carry them; they are read and rewritten a batch at a time, each batch in its own
+   * short transaction, so a large store neither fills memory nor holds the write lock for long.
+   * Safe to interrupt: the rules version is recorded only at the end, and recomputing is idempotent.
+   */
+  private recomputeRiskFlags(): void {
+    const row = this.db.prepare("SELECT value FROM meta WHERE key = 'risk_rules'").get() as { value: string } | undefined;
+    if (row && Number(row.value) >= RISK_RULES_VERSION) return;
+    const select = this.db.prepare(
+      `SELECT st.rowid AS rid, st.session_id AS sid, st.type, st.payload, st.flags, se.workspace_root AS root
+       FROM steps st JOIN sessions se ON se.id = st.session_id
+       WHERE st.rowid > ? AND st.type IN ('command', 'edit', 'read') ORDER BY st.rowid LIMIT ${RISK_BATCH}`,
+    );
+    const flag = this.db.prepare("UPDATE steps SET flags = ?, hash = NULL, meta_hash = NULL WHERE rowid = ?");
+    const refresh = this.db.prepare(REFRESH_SUMMARY);
+    let after = 0;
+    for (;;) {
+      const rows = select.all(after) as Array<{ rid: number; sid: string; type: string; payload: string; flags: string; root: string }>;
+      if (rows.length === 0) break;
+      this.db.transaction(() => {
+        const touched = new Set<string>();
+        for (const r of rows) {
+          let next: Flag[];
+          try {
+            next = withRiskFlags({ type: r.type, payload: JSON.parse(r.payload), flags: JSON.parse(r.flags) as Flag[] } as unknown as Step, r.root).flags;
+          } catch {
+            continue; // one unreadable row keeps its flags; it must never stop the store from opening
+          }
+          const json = JSON.stringify(next);
+          if (json !== r.flags) {
+            flag.run(json, r.rid);
+            touched.add(r.sid);
+          }
+        }
+        for (const id of touched) refresh.run(id);
+      })();
+      after = rows[rows.length - 1]!.rid;
+    }
+    this.db.prepare("INSERT INTO meta (key, value) VALUES ('risk_rules', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(RISK_RULES_VERSION));
   }
 
   close(): void {
@@ -335,6 +585,8 @@ export class PostrunStore {
     if (this.isDeleted(record.id)) throw new DeletedSessionError(record.id);
     const now = new Date().toISOString();
     const run = this.db.transaction((r: SessionRecord): IngestResult => {
+      // Checked again under the write lock: a delete that landed after the check above wins.
+      if (this.isDeleted(r.id)) throw new DeletedSessionError(r.id);
       const existing = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(r.id) as SessionRow | undefined;
       this.db
         .prepare(
@@ -381,7 +633,7 @@ export class PostrunStore {
           updated_at: existing?.updated_at ?? now,
         });
 
-      const { written, missing } = this.writeChildren(r.id, r, now, options.metaOnly);
+      const { written, missing } = this.writeChildren(r.id, r, now, options.metaOnly, r.workspace.root);
       // A capture record is the whole session, so anything it no longer contains goes. This matters
       // when a session was first read from hooks alone and its OTel data arrives later: the message
       // steps then get their OTel ids, and the hook-based ones must not linger as duplicates.
@@ -432,6 +684,7 @@ export class PostrunStore {
     if (this.isDeleted(b.session.id)) throw new DeletedSessionError(b.session.id);
     const now = new Date().toISOString();
     const run = this.db.transaction((batch: SessionBatch): IngestResult => {
+      if (this.isDeleted(batch.session.id)) throw new DeletedSessionError(batch.session.id);
       const h = batch.session;
       const existing = this.db.prepare("SELECT ingested_at FROM sessions WHERE id = ?").get(h.id) as { ingested_at: string } | undefined;
       const m = h.metrics;
@@ -477,7 +730,7 @@ export class PostrunStore {
           tokens_cache_creation: m?.tokens.cache_creation ?? null,
           now,
         });
-      const { written } = this.writeChildren(h.id, batch, now);
+      const { written } = this.writeChildren(h.id, batch, now, undefined, h.workspace.root);
       this.db.prepare(REFRESH_SUMMARY).run(h.id);
       return {
         session_id: h.id,
@@ -526,7 +779,8 @@ export class PostrunStore {
     sessionId: string,
     c: Pick<SessionRecord, "segments" | "actors" | "turns" | "steps">,
     now: string,
-    metaOnly?: ReadonlySet<string>,
+    metaOnly: ReadonlySet<string> | undefined,
+    workspaceRoot: string,
   ): { written: number; missing: number } {
     const seg = this.db.prepare(
       `INSERT INTO segments (session_id, idx, start_reason, started_at, ended_at, source_files)
@@ -568,18 +822,30 @@ export class PostrunStore {
     // One read of the stored fingerprints, then write only new or changed steps: a long session
     // updated every turn writes that turn's steps, not the whole session again.
     const stored = new Map(
-      (this.db.prepare("SELECT id, hash, meta_hash FROM steps WHERE session_id = ?").all(sessionId) as Array<{ id: string; hash: string | null; meta_hash: string | null }>).map((r) => [
+      (
+        this.db.prepare("SELECT id, hash, meta_hash, flags FROM steps WHERE session_id = ?").all(sessionId) as Array<{
+          id: string;
+          hash: string | null;
+          meta_hash: string | null;
+          flags: string;
+        }>
+      ).map((r) => [
         r.id,
         r,
       ]),
     );
     let written = 0;
     let missing = 0;
-    for (const s of c.steps) {
-      const prev = stored.get(s.id);
+    for (const raw of c.steps) {
+      const prev = stored.get(raw.id);
+      const payloadJson = metaOnly?.has(raw.id) ? undefined : JSON.stringify(raw.payload);
+      const light = payloadJson === undefined || payloadJson.includes(LIGHT_IN_JSON);
+      // Risk flags come from content. Without content here, keep the ones stored with it.
+      const s: Step = light
+        ? ({ ...raw, flags: [...raw.flags.filter((f) => !RISK_KINDS.has(f.kind)), ...(prev ? (JSON.parse(prev.flags) as Flag[]).filter((f) => RISK_KINDS.has(f.kind)) : [])] } as Step)
+        : withRiskFlags(raw, workspaceRoot);
       const metaHash = stepMetaHash(s);
-      const payloadJson = metaOnly?.has(s.id) ? undefined : JSON.stringify(s.payload);
-      if (payloadJson === undefined || payloadJson.includes(LIGHT_IN_JSON)) {
+      if (light) {
         // No real content here. Update order and status of a stored step if they moved; a step never
         // stored with content is left for a full ingest to write.
         if (!prev) {
@@ -609,19 +875,317 @@ export class PostrunStore {
   // ---- query ----------------------------------------------------------------
 
   listSessions(filter: { agent?: string; owner_id?: string } = {}): SessionSummary[] {
+    return this.querySessions(filter).sessions;
+  }
+
+  /**
+   * Sessions, newest first, filtered and optionally a page at a time. With a
+   * `limit`, the result carries `next_cursor` when there is more; pass it back
+   * as `cursor` for the next page. Totals cover every match, not just the page.
+   */
+  querySessions(query: SessionQuery = {}): SessionPage {
     const where: string[] = [];
-    const params: Record<string, string> = {};
-    if (filter.agent) {
+    const params: Record<string, string | number> = {};
+    if (query.agent) {
       where.push("s.agent_kind = @agent");
-      params["agent"] = filter.agent;
+      params["agent"] = query.agent;
     }
-    if (filter.owner_id) {
+    if (query.owner_id) {
       where.push("s.owner_id = @owner_id");
-      params["owner_id"] = filter.owner_id;
+      params["owner_id"] = query.owner_id;
     }
-    const sql = `${SESSION_SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY s.started_at DESC, s.id`;
+    // Control characters (NUL, the snippet markers) mean nothing in a search and break FTS5 phrases.
+    // eslint-disable-next-line no-control-regex
+    const text = query.q?.replace(/[\u0000-\u001f\u007f]/g, " ").trim() ?? "";
+    const deep = text.length >= 3 && query.inSteps !== false;
+    if (text) {
+      const inSteps = deep ? " OR s.id IN (SELECT session_id FROM steps_fts WHERE steps_fts MATCH @fts)" : "";
+      where.push(`(lower(coalesce(s.title, '')) LIKE @q ESCAPE '\\' OR lower(s.workspace_root) LIKE @q ESCAPE '\\' OR s.id LIKE @qp ESCAPE '\\'${inSteps})`);
+      const esc = text.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`);
+      params["q"] = `%${esc}%`;
+      params["qp"] = `${esc}%`;
+      if (deep) params["fts"] = ftsPhrase(text);
+    }
+    if (query.workspace) {
+      where.push("s.workspace_root = @workspace");
+      params["workspace"] = query.workspace;
+    }
+    if (query.verdict === "none") where.push("s.verdict_state IS NULL");
+    else if (query.verdict) {
+      where.push("s.verdict_state = @verdict");
+      params["verdict"] = query.verdict;
+    }
+    if (query.flagged) where.push("s.flag_count > 0");
+    if (query.from) {
+      where.push("s.started_at >= @from");
+      params["from"] = query.from;
+    }
+    if (query.to) {
+      where.push("s.started_at < @to");
+      params["to"] = query.to;
+    }
+    if (query.minSteps !== undefined && query.minSteps > 0) {
+      where.push("s.steps_total >= @min_steps");
+      params["min_steps"] = query.minSteps;
+    }
+    if (query.failedOnly) where.push("s.failed_count > 0");
+    // Empty sessions are counted separately, so the list can say how many it is hiding.
+    const beforeEmpty = [...where];
+    if (query.includeEmpty === false) where.push("s.steps_total > 0");
+
+    const clause = (w: string[]) => (w.length ? ` WHERE ${w.join(" AND ")}` : "");
+    const totals = this.db.prepare(`SELECT count(*) AS n, coalesce(sum(s.cost_usd), 0) AS cost FROM sessions s${clause(where)}`).get(params) as { n: number; cost: number };
+    const empty = this.db.prepare(`SELECT count(*) AS n FROM sessions s${clause([...beforeEmpty, "s.steps_total = 0"])}`).get(params) as { n: number };
+
+    const page = [...where];
+    if (query.cursor) {
+      const c = decodeCursor(query.cursor);
+      page.push("(s.started_at < @c_at OR (s.started_at = @c_at AND s.id > @c_id))");
+      params["c_at"] = c.at;
+      params["c_id"] = c.id;
+    }
+    const limit = query.limit !== undefined ? Math.max(1, Math.min(query.limit, MAX_PAGE)) : undefined;
+    const sql = `${SESSION_SELECT}${clause(page)} ORDER BY s.started_at DESC, s.id${limit !== undefined ? ` LIMIT ${limit + 1}` : ""}`;
     const rows = this.db.prepare(sql).all(params) as SessionRow[];
-    return rows.map((row) => this.toSummary(row));
+    const more = limit !== undefined && rows.length > limit;
+    const sessions = (more ? rows.slice(0, limit) : rows).map((row) => this.toSummary(row));
+    const last = sessions[sessions.length - 1];
+    // Where a search matched inside a session's steps: the first matching step, with the words around it.
+    let matches: Record<string, { seq: number; text: string }> | undefined;
+    if (deep && sessions.length > 0) {
+      matches = {};
+      const hit = this.db.prepare(
+        "SELECT seq, snippet(steps_fts, 0, '\u0001', '\u0002', '…', 12) AS text FROM steps_fts WHERE steps_fts MATCH ? AND session_id = ? ORDER BY seq LIMIT 1",
+      );
+      for (const sess of sessions) {
+        const h = hit.get(params["fts"], sess.id) as { seq: number; text: string } | undefined;
+        if (h) matches[sess.id] = { seq: Number(h.seq), text: h.text.replace(/\s+/g, " ").slice(0, 300) };
+      }
+    }
+    return {
+      ...(matches ? { matches } : {}),
+      sessions,
+      total: totals.n,
+      total_cost: totals.cost,
+      empty_count: empty.n,
+      ...(more && last ? { next_cursor: encodeCursor(last.started_at, last.id) } : {}),
+    };
+  }
+
+  /** Mark a session reviewed (or clear it with state null). Live views see it as a change. */
+  setVerdict(id: string, state: "approved" | "needs_attention" | null, note?: string): boolean {
+    const now = new Date().toISOString();
+    const r = this.db
+      .prepare("UPDATE sessions SET verdict_state = ?, verdict_note = ?, verdict_reviewer = NULL, updated_at = ? WHERE id = ?")
+      .run(state, state && note?.trim() ? note.trim().slice(0, 2000) : null, now, id);
+    return r.changes > 0;
+  }
+
+  /** The git branch a session's working folder was on when it was first recorded. Set once. */
+  setGitBranch(id: string, branch: string): void {
+    this.db.prepare("UPDATE sessions SET git_branch = ? WHERE id = ? AND git_branch IS NULL").run(branch.slice(0, 200), id);
+  }
+
+  /** Recent sessions with no branch recorded yet, for the recorder to fill in. */
+  sessionsWithoutBranch(limit = 50): Array<{ id: string; workspace_root: string }> {
+    return this.db
+      .prepare("SELECT id, workspace_root FROM sessions WHERE git_branch IS NULL AND workspace_root != '' ORDER BY started_at DESC LIMIT ?")
+      .all(limit) as Array<{ id: string; workspace_root: string }>;
+  }
+
+  /**
+   * The dashboard for the `days` days up to now (local time): totals with the previous period
+   * for comparison, steps per day by kind, sessions running now, sessions that need a look, and
+   * the most edited files.
+   */
+  dashboard(days: number, now = new Date()): Dashboard {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+    const prevStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - days);
+    const from = start.toISOString();
+    const prevFrom = prevStart.toISOString();
+    const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const keys: string[] = [];
+    for (let i = 0; i < days; i++) keys.push(dayKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)));
+    const perDay = new Map(keys.map((k) => [k, { command: 0, edit: 0, read: 0, message: 0, other: 0, failed: 0, sessions: 0, cost: 0 }]));
+
+    const totals = (a: string, b: string) =>
+      this.db
+        .prepare(
+          `SELECT count(*) AS sessions, coalesce(sum(steps_total), 0) AS steps, coalesce(sum(failed_count), 0) AS failed,
+             coalesce(sum(cost_usd), 0) AS cost,
+             coalesce(sum(CASE WHEN verdict_state IS NULL AND steps_total > 0 THEN 1 ELSE 0 END), 0) AS unreviewed,
+             coalesce(sum(CASE WHEN flag_count > 0 THEN 1 ELSE 0 END), 0) AS flagged
+           FROM sessions WHERE started_at >= ? AND started_at < ?`,
+        )
+        .get(a, b) as Dashboard["totals"];
+    const end = new Date(now.getTime() + 60_000).toISOString();
+    const cur = totals(from, end);
+    const prev = totals(prevFrom, from);
+
+    for (const r of this.db.prepare("SELECT started_at, cost_usd FROM sessions WHERE started_at >= ?").all(from) as Array<{ started_at: string; cost_usd: number }>) {
+      const d = perDay.get(dayKey(new Date(r.started_at)));
+      if (d) {
+        d.sessions++;
+        d.cost += r.cost_usd;
+      }
+    }
+    // Steps by the local day they happened (a long session can span days), grouped by hour in SQL.
+    for (const r of this.db
+      .prepare("SELECT substr(at, 1, 13) AS hour, type, outcome, count(*) AS n FROM steps WHERE at >= ? GROUP BY hour, type, outcome")
+      .all(from) as Array<{ hour: string; type: string; outcome: string; n: number }>) {
+      const t = new Date(`${r.hour}:00:00Z`);
+      const d = Number.isNaN(t.getTime()) ? undefined : perDay.get(dayKey(t));
+      if (!d) continue;
+      if (r.outcome === "failed") d.failed += r.n;
+      else if (r.type === "command" || r.type === "edit" || r.type === "read" || r.type === "message") d[r.type] += r.n;
+      else d.other += r.n;
+    }
+
+    const running = this.db
+      .prepare(
+        `${SESSION_SELECT} WHERE s.ended_at IS NULL AND s.steps_total > 0 AND s.updated_at >= @cut
+           AND (SELECT max(st.at) FROM steps st WHERE st.session_id = s.id) >= @cut
+         ORDER BY s.updated_at DESC LIMIT 6`,
+      )
+      .all({ cut: new Date(now.getTime() - 15 * 60_000).toISOString() }) as SessionRow[];
+    const needs = this.db
+      .prepare(
+        `${SESSION_SELECT} WHERE s.started_at >= ? AND (s.failed_count > 0 OR s.flag_count > 0)
+           AND (s.verdict_state IS NULL OR s.verdict_state = 'needs_attention')
+         ORDER BY (s.flag_count > 0) DESC, s.started_at DESC LIMIT 6`,
+      )
+      .all(from) as SessionRow[];
+    const files = this.db
+      .prepare(
+        `SELECT json_extract(payload, '$.path') AS path, count(*) AS edits, count(DISTINCT session_id) AS sessions
+         FROM steps WHERE type = 'edit' AND at >= ? AND json_extract(payload, '$.path') IS NOT NULL
+         GROUP BY path ORDER BY edits DESC LIMIT 6`,
+      )
+      .all(from) as Array<{ path: string; edits: number; sessions: number }>;
+
+    return {
+      days,
+      from,
+      totals: cur,
+      previous: prev,
+      per_day: keys.map((k) => ({ day: k, ...perDay.get(k)! })),
+      running: running.map((r) => this.toSummary(r)),
+      needs_review: needs.map((r) => this.toSummary(r)),
+      files,
+    };
+  }
+
+  /** Every working folder with recorded steps, most recent first. */
+  projects(): ProjectSummary[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT workspace_root AS root, max(workspace_repo) AS repo, count(*) AS sessions, coalesce(sum(steps_total), 0) AS steps,
+             coalesce(sum(failed_count), 0) AS failed, coalesce(sum(flag_count), 0) AS flags, coalesce(sum(cost_usd), 0) AS cost,
+             max(started_at) AS last_at,
+             coalesce(sum(CASE WHEN verdict_state IS NULL THEN 1 ELSE 0 END), 0) AS unreviewed
+           FROM sessions WHERE steps_total > 0 GROUP BY workspace_root ORDER BY last_at DESC`,
+        )
+        .all() as ProjectSummary[]
+    ).map((p) => ({ ...p, repo: p.repo ?? null }));
+  }
+
+  /** One working folder's most edited and read files. */
+  projectFiles(root: string, limit = 12): Array<{ path: string; edits: number; reads: number; sessions: number }> {
+    return this.db
+      .prepare(
+        `SELECT json_extract(st.payload, '$.path') AS path, sum(st.type = 'edit') AS edits, sum(st.type = 'read') AS reads,
+           count(DISTINCT st.session_id) AS sessions
+         FROM steps st JOIN sessions se ON se.id = st.session_id
+         WHERE se.workspace_root = ? AND st.type IN ('edit', 'read') AND json_extract(st.payload, '$.path') IS NOT NULL
+         GROUP BY path ORDER BY edits DESC, reads DESC LIMIT ?`,
+      )
+      .all(root, limit) as Array<{ path: string; edits: number; reads: number; sessions: number }>;
+  }
+
+  /**
+   * Delete every recorded session, overwritten on disk. Each is remembered as deleted, so it is not
+   * recorded again; new sessions are. Returns how many sessions were removed.
+   */
+  deleteAll(): number {
+    const n = (this.db.prepare("SELECT count(*) AS n FROM sessions").get() as { n: number }).n;
+    this.db.transaction(() => {
+      // Remembered as deleted, as one-by-one deletes are, so an agent's own copy (Cline's task store) is not read back in.
+      this.db.prepare("INSERT OR REPLACE INTO deleted_sessions (id, agent_kind, deleted_at) SELECT id, agent_kind, ? FROM sessions").run(new Date().toISOString());
+      for (const t of ["steps", "turns", "actors", "segments", "sessions", "usage_daily"]) this.db.exec(`DELETE FROM ${t}`);
+    })();
+    try {
+      this.db.exec("INSERT INTO steps_fts (steps_fts) VALUES ('optimize')");
+      this.db.pragma("wal_checkpoint(TRUNCATE)");
+    } catch {
+      // another connection is busy; the content is already overwritten
+    }
+    return n;
+  }
+
+  // ---- local usage counts ---------------------------------------------------
+
+  /** Count one use of a feature today (local time). Unknown event names are ignored, never stored. */
+  countUsage(event: string, now = new Date()): void {
+    if (!isUsageEvent(event)) return;
+    const day = localDay(now);
+    this.db
+      .prepare("INSERT INTO usage_daily (day, event, count) VALUES (?, ?, 1) ON CONFLICT(day, event) DO UPDATE SET count = count + 1")
+      .run(day, event);
+    const cutoff = localDay(new Date(now.getTime() - USAGE_KEEP_DAYS * 86_400_000));
+    this.db.prepare("DELETE FROM usage_daily WHERE day < ?").run(cutoff);
+  }
+
+  /** What `postrun stats` and Settings show: counts per feature, active days, and session totals. */
+  usage(meta: { version: string; platform: string }, now = new Date()): UsageSummary {
+    const from = localDay(new Date(now.getTime() - 29 * 86_400_000));
+    const rows = this.db.prepare("SELECT day, event, count FROM usage_daily").all() as Array<{ day: string; event: string; count: number }>;
+    const events = Object.fromEntries((Object.keys(USAGE_EVENTS) as UsageEvent[]).map((e) => [e, { total: 0, last_30: 0 }])) as UsageSummary["events"];
+    const byDay = new Map<string, { opened: boolean; actions: number }>();
+    let since: string | undefined;
+    for (const r of rows) {
+      if (!isUsageEvent(r.event)) continue;
+      events[r.event].total += r.count;
+      if (!since || r.day < since) since = r.day;
+      if (r.day < from) continue;
+      events[r.event].last_30 += r.count;
+      const d = byDay.get(r.day) ?? { opened: false, actions: 0 };
+      if (r.event === "app_opened") d.opened = true;
+      else d.actions += r.count;
+      byDay.set(r.day, d);
+    }
+    const daily: UsageSummary["daily"] = [];
+    for (let i = 29; i >= 0; i--) {
+      const day = localDay(new Date(now.getTime() - i * 86_400_000));
+      daily.push({ day, ...(byDay.get(day) ?? { opened: false, actions: 0 }) });
+    }
+    const agents = this.db.prepare("SELECT agent_kind AS k, count(*) AS n, min(started_at) AS first FROM sessions GROUP BY agent_kind").all() as Array<{ k: string; n: number; first: string }>;
+    const recent = (this.db.prepare("SELECT count(*) AS n FROM sessions WHERE started_at >= ?").get(new Date(now.getTime() - 30 * 86_400_000).toISOString()) as { n: number }).n;
+    const firstAt = agents.map((a) => a.first).sort()[0];
+    return {
+      ...(since ? { since } : {}),
+      days_active_30: daily.filter((d) => d.opened).length,
+      events,
+      daily,
+      sessions: { total: agents.reduce((n, a) => n + a.n, 0), by_agent: Object.fromEntries(agents.map((a) => [a.k, a.n])), ...(firstAt ? { first_at: firstAt } : {}), last_30: recent },
+      version: meta.version,
+      platform: meta.platform,
+    };
+  }
+
+  /** Write a consistent copy of the whole store to `path`, which must not exist yet. */
+  backupTo(path: string): void {
+    this.db.prepare("VACUUM INTO ?").run(path);
+  }
+
+  /** A session's last `n` steps, newest first: seq and outcome only. */
+  lastSteps(id: string, n: number): Array<{ seq: number; outcome: string }> {
+    return this.db.prepare("SELECT seq, outcome FROM steps WHERE session_id = ? ORDER BY seq DESC LIMIT ?").all(id, n) as Array<{ seq: number; outcome: string }>;
+  }
+
+  /** Agent kinds that have at least one session. */
+  agentKinds(): string[] {
+    return (this.db.prepare("SELECT DISTINCT agent_kind AS k FROM sessions ORDER BY agent_kind").all() as Array<{ k: string }>).map((r) => r.k);
   }
 
   getSession(id: string): StoredSession | undefined {
@@ -821,6 +1385,7 @@ export class PostrunStore {
       updated_at: row.updated_at,
       steps_total: row.steps_total,
       step_counts: JSON.parse(row.step_counts || "{}") as Record<string, number>,
+      strip: sliceStrip(row.strip ?? ""),
       failed_count: row.failed_count,
       reference_only_count: row.reference_only_count,
       flag_count: row.flag_count,
@@ -828,6 +1393,7 @@ export class PostrunStore {
       metrics,
     };
     if (row.title !== null) summary.title = row.title;
+    if (row.git_branch) summary.git_branch = row.git_branch;
     if (row.ended_at !== null) summary.ended_at = row.ended_at;
     if (row.verdict_state !== null) {
       const verdict: Verdict = { state: row.verdict_state };

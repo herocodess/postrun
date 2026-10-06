@@ -6,7 +6,7 @@
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createClaudeCodeWatcher } from "../capture/claude-code-watcher.js";
 import type { Step } from "../schema/index.js";
 import { createPostrunServer } from "../server/server.js";
@@ -47,6 +47,22 @@ function record(id: string, kind = "claude-code"): SessionRecord {
 }
 
 describe("deleting a session", () => {
+  it("is not undone by a capture that checked just before the delete landed", () => {
+    const store = new PostrunStore({ path: ":memory:" });
+    store.ingest(record("racy"));
+    store.deleteSession("racy");
+    // The recorder's first check ran before the delete (it saw "not deleted"); its write comes after.
+    const spy = vi.spyOn(store, "isDeleted").mockReturnValueOnce(false);
+    expect(() => store.ingest(record("racy"))).toThrow(DeletedSessionError);
+    spy.mockReturnValueOnce(false);
+    expect(() =>
+      store.appendBatch({ session: { id: "racy", agent: { kind: "claude-code", version: "1" }, workspace: { root: "/w" }, started_at: at }, segments: [], actors: [], turns: [], steps: [] }),
+    ).toThrow(DeletedSessionError);
+    spy.mockRestore();
+    expect(store.getSession("racy")).toBeUndefined();
+    store.close();
+  });
+
   it("removes it from the store and from the bytes on disk, and refuses it ever after", () => {
     const dir = mkdtempSync(join(tmpdir(), "postrun-del-"));
     const path = join(dir, "postrun.db");
@@ -129,5 +145,24 @@ describe("deleting a session", () => {
     expect(push.status).toBe(410);
     await app.stop();
     store.close();
+  });
+});
+
+describe("deleting with the search index", () => {
+  it("leaves no copy of a deleted session's output in the search index", () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-del-fts-"));
+    const path = join(dir, "postrun.db");
+    const store = new PostrunStore({ path });
+    const other = record("other");
+    (other.steps[0] as { payload: { stdout: string } }).payload.stdout = "nothing secret here\n".repeat(50);
+    store.ingest(other);
+    store.ingest(record("gone"));
+    expect(store.querySessions({ q: SECRET.slice(0, 20) }).sessions.map((s) => s.id)).toEqual(["gone"]);
+    store.deleteSession("gone");
+    expect(store.querySessions({ q: SECRET.slice(0, 20) }).total).toBe(0);
+    store.close();
+    for (const f of [path, `${path}-wal`]) {
+      if (existsSync(f)) expect(readFileSync(f).includes(Buffer.from(SECRET)), f).toBe(false);
+    }
   });
 });

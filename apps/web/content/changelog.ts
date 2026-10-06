@@ -20,6 +20,73 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "Share links and accounts",
+    summary: "Send a redacted session report as a link instead of a file. Recording still never needs an account.",
+    items: [
+      { kind: "new", text: "app.postrun.app: sign in with GitHub or an email link, no passwords. Either way creates your account the first time." },
+      { kind: "new", text: "Share link in the review app's export panel, and postrun share in the terminal: the same redacted report, as an unlisted link that works for 1, 7, 30 or 90 days." },
+      { kind: "new", text: "Share links at app.postrun.app lists every link with how many times it was opened. Turning one off deletes the report at once." },
+      { kind: "new", text: "postrun login connects a computer to your account through the browser; Settings lists connected computers and signs them out." },
+      { kind: "security", text: "Shared reports open in a sandbox with no scripts, forms or network access, on their own origin, and are never cached or indexed. Sign-in tokens are stored only as hashes." },
+    ],
+  },
+  {
+    date: "2026-10-06",
+    title: "See how you use Postrun",
+    summary: "Postrun counts how often you use each feature, on your computer only, and shows you.",
+    items: [
+      { kind: "new", text: "Settings has a Your usage card: days active, sessions recorded, reviews, PR summaries, exports and searches, with a 30-day activity strip." },
+      { kind: "new", text: "postrun stats prints the same summary as plain text, ready to paste. Copy summary in Settings does the same." },
+      { kind: "security", text: "Counts only: a day, a feature name and a number, never sessions, paths or text. Nothing is ever sent, and Delete all data clears them." },
+    ],
+  },
+  {
+    date: "2026-10-06",
+    title: "A security pass",
+    summary: "A full audit of Postrun, and fixes for everything it found, before accounts and sharing arrive.",
+    items: [
+      { kind: "security", text: "Exported reports mask many more secrets: lower-case bearer tokens, cut-off and PGP private keys, quoted passwords, cookies, curl -u and --password flags, npm, GitLab, Hugging Face, SendGrid and Google OAuth tokens, Slack and Discord webhooks, long random-looking values and email addresses." },
+      { kind: "security", text: "The review app opens only in a browser you connected with postrun open, so other accounts on a shared computer cannot read your sessions. Other sites can no longer frame it." },
+      { kind: "security", text: "Only Claude Code can send telemetry to Postrun: a web page can no longer slip fake data into your sessions." },
+      { kind: "fixed", text: "Events from tools that run in parallel are no longer lost when their output is large." },
+      { kind: "fixed", text: "Pause now really pauses: nothing is recorded until you resume." },
+      { kind: "fixed", text: "Delete everything removes every raw log, and a recording in progress can no longer bring a deleted session back." },
+      { kind: "improved", text: "Risk flags read commands the way a shell does: fewer false alarms from quoted text, and tricks like bash <(curl …) or git push +main are caught." },
+      { kind: "fixed", text: "postrun stop never touches a program that is not Postrun, setup keeps a symlinked Claude Code settings file a symlink, and uninstall refuses to delete a folder that is not Postrun's." },
+    ],
+  },
+  {
+    date: "2026-10-06",
+    title: "Review, not just replay",
+    summary: "The review app becomes a place to sign off on agent work: a dashboard, projects, your verdict on each session, what changed file by file, and what looks risky.",
+    items: [
+      { kind: "new", text: "A dashboard: sessions, steps, failures and what you have not reviewed yet, steps per day, what is running now, and the most edited files." },
+      { kind: "new", text: "Mark a session Looks good or Needs follow-up, with a note. Filter the list by review, and review several sessions at once." },
+      { kind: "new", text: "Copy as PR summary: Markdown for a pull request description, with the changes, commands, commits and anything worth checking." },
+      { kind: "new", text: "A Changes tab with every edit file by file, as diffs, and a plain summary of what happened at the top of each session." },
+      { kind: "new", text: "Risk flags for rm -rf, force pushes, scripts piped to a shell, secrets printed in output, secrets files, and edits outside the project." },
+      { kind: "new", text: "Search finds text inside sessions too: commands, output, edits and messages, with the matching line shown." },
+      { kind: "new", text: "Projects: each folder your agents worked in, with its sessions, failure rate and most changed files." },
+      { kind: "new", text: "The git branch and the commits an agent made, on every session." },
+      { kind: "new", text: "Keyboard review: j and k through steps, f to the next failure, a and n to review, c to copy, ? for the rest." },
+      { kind: "new", text: "Settings: pause recording, start at login, a light theme, storage and backups, delete everything, and the doctor checks, all from the app." },
+      { kind: "new", text: "Optional, off by default: a desktop notification when a session keeps failing, and a daily check for a newer Postrun." },
+      { kind: "new", text: "Export several sessions at once as a zip of redacted reports." },
+    ],
+  },
+  {
+    date: "2026-10-06",
+    title: "A review app that moves",
+    summary: "The session list and session view are redesigned around the strip: the shape of what an agent did, at a glance.",
+    items: [
+      { kind: "new", text: "Every session has a strip: its steps in order, coloured by kind, with failures standing out in red. On a session page, the tape shows every step; click a bar to jump to it." },
+      { kind: "new", text: "Search, date ranges, size and failure filters, and a list or grid view. Empty sessions are tucked away until you ask for them." },
+      { kind: "improved", text: "Long histories load 50 sessions at a time as you scroll, and the filtering runs in the store, so the list stays quick with thousands of sessions." },
+      { kind: "improved", text: "Sessions group by day, new sessions slide in live, numbers tick when they change, steps unfold smoothly, and loading shows the page's shape instead of a spinner." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "Postrun 0.1: one command to install",
     summary: "Postrun is now an installable command for early access: npm install -g postrun, then postrun setup.",
     items: [

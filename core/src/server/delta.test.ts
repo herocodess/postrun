@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Step } from "../schema/index.js";
 import { PostrunStore, type SessionRecord } from "../store/index.js";
-import type { SessionDeltaResponse, SessionDetailResponse, StepResponse } from "./api.js";
+import type { SessionDeltaResponse, SessionDetailResponse, SessionListResponse, StepResponse } from "./api.js";
 import { PREVIEW_CHARS } from "./preview.js";
 import { createPostrunServer, type PostrunServer } from "./server.js";
 
@@ -104,5 +104,53 @@ describe("light live views", () => {
     const { body: r } = await get<SessionDeltaResponse>(`/api/sessions/${SID}?since=${encodeURIComponent(d.as_of)}`);
     expect(r.reload).toBe(true);
     expect((await get(`/api/sessions/missing?since=${encodeURIComponent(d.as_of)}`)).status).toBe(404);
+  });
+});
+
+describe("session list paging and filters", () => {
+  it("pages newest first with a cursor, filters, and counts every match", async () => {
+    const { PostrunStore: Store } = await import("../store/index.js");
+    const { createPostrunServer: create } = await import("./server.js");
+    const store = new Store({ path: ":memory:" });
+    const base = Date.parse("2026-10-01T00:00:00Z");
+    for (let i = 0; i < 12; i++) {
+      const at = new Date(base + i * 86400000).toISOString();
+      const rec = record(i % 4 === 0 ? [] : [step(`x${i}`, 1, { type: "command", outcome: i % 3 === 0 ? "failed" : "ok", payload: { command: `job ${i}` } })]);
+      store.ingest({ ...rec, id: `p-${String(i).padStart(2, "0")}`, started_at: at, workspace: { root: i % 2 ? "/w/alpha" : "/w/beta" },
+        steps: rec.steps.map((s) => ({ ...s, session_id: `p-${String(i).padStart(2, "0")}` })), turns: rec.turns.map((t) => ({ ...t, session_id: `p-${String(i).padStart(2, "0")}` })),
+        metrics: { ...rec.metrics, cost_usd: 1 } });
+    }
+    const ui = mkdtempSync(join(tmpdir(), "postrun-ui-"));
+    writeFileSync(join(ui, "index.html"), "x");
+    const app = create({ port: 0, store, uiDir: ui });
+    const { url } = await app.start();
+    const get = async (qs: string) => {
+      const res = await fetch(new URL(`/api/sessions?${qs}`, url));
+      return { status: res.status, body: (await res.json()) as SessionListResponse & { error?: string } };
+    };
+    const ids: string[] = [];
+    let cursor = "";
+    for (let n = 0; n < 5; n++) {
+      const { body } = await get(`limit=5${cursor ? `&cursor=${cursor}` : ""}`);
+      expect(body.total).toBe(12);
+      ids.push(...body.sessions.map((s) => s.id));
+      if (!body.next_cursor) break;
+      cursor = body.next_cursor;
+    }
+    expect(ids).toEqual([...Array(12).keys()].map((i) => `p-${String(11 - i).padStart(2, "0")}`));
+    const nonEmpty = (await get("empty=0")).body;
+    expect(nonEmpty.total).toBe(9);
+    expect(nonEmpty.empty_count).toBe(3);
+    expect(nonEmpty.total_cost).toBe(9);
+    expect((await get("failed=1&empty=0")).body.sessions.map((s) => s.id)).toEqual(["p-09", "p-06", "p-03"]);
+    expect((await get("from=2026-10-03&to=2026-10-05")).body.sessions.map((s) => s.id)).toEqual(["p-03", "p-02"]);
+    expect((await get("q=ALPHA&limit=2")).body.total).toBe(6);
+    expect((await get("q=100%25")).body.total).toBe(0);
+    expect((await get("min_steps=1")).body.total).toBe(9);
+    expect((await get("limit=0")).status).toBe(400);
+    expect((await get("from=yesterday-ish")).status).toBe(400);
+    expect((await get("cursor=nonsense")).status).toBe(400);
+    await app.stop();
+    store.close();
   });
 });

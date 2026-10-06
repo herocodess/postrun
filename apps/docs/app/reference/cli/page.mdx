@@ -56,7 +56,7 @@ Prints whether Postrun is recording, its pid, the review app address and how man
 
 ## postrun open
 
-Opens the review app in your default browser, or prints its address if it cannot.
+Opens the review app in your default browser and connects that browser: the link carries this computer's key after `#`, which the app keeps and removes from the address bar. If it cannot open a browser, it prints the link to open yourself. Run it once in each browser you use.
 
 ## postrun sessions
 
@@ -65,6 +65,14 @@ postrun sessions [--agent claude-code|cline]
 ```
 
 Lists stored sessions, newest first: start time, agent and id, then the first line of the first prompt, then steps, turns, failures, cost and working folder.
+
+## postrun stats
+
+```bash
+postrun stats [--json]
+```
+
+Prints how you use Postrun, counted on this computer only: sessions recorded (by agent), days active in the last 30, and how often each feature was used in the last 30 days and in all. It shows counts only, with no sessions, paths or text, so it is safe to paste to someone. `--json` prints the same as JSON. Nothing is sent anywhere. See [Security](/security/#your-usage-counts).
 
 ## postrun export
 
@@ -78,6 +86,30 @@ Writes one redacted, self-contained HTML report to the current folder and lists 
 | --- | --- |
 | `-o <file>`, `--out <file>` | Output path. Default `postrun-<agent>-<date>-<short id>.html`. |
 | `--force` | Overwrite an existing file. |
+
+## postrun share
+
+```bash
+postrun share <session-id> [--expires 1|7|30|90] [--yes]
+```
+
+Uploads the redacted report `postrun export` would write to `app.postrun.app` and prints an unlisted link. Lists what redaction masked and asks first; `--yes` skips the question. Needs `postrun login` once. See [Share links](/share/).
+
+| Flag | Effect |
+| --- | --- |
+| `--expires <days>` | How long the link works: 1, 7, 30 or 90. Default 30. |
+| `--yes` | Upload without asking. |
+
+## postrun login and logout
+
+```bash
+postrun login [--with-token] [--no-open]
+postrun logout
+```
+
+`login` connects this computer to your Postrun account so it can make share links: it opens the browser to approve the computer, then saves the sign-in in `~/.postrun/account.json` (mode 0600). `--with-token` reads a token made in Settings from the terminal or stdin instead, for a computer without a browser. `--no-open` prints the link instead of opening it.
+
+`logout` signs this computer out on `app.postrun.app` as well and deletes the file. Links already made keep working until they expire or you turn them off.
 
 ## postrun delete
 
@@ -100,7 +132,7 @@ postrun restart
 
 `start` runs Postrun in the background and waits until the review app answers. If it is already running, it says so. If it cannot start, it prints the last lines of `~/.postrun/postrun.log`.
 
-`stop` stops it; nothing is recorded until you start it again. Claude Code keeps writing its hook log while Postrun is stopped, and the next start catches up on every session it missed.
+`stop` stops it. Claude Code's hook keeps saving events while Postrun is stopped, and the next start catches up on every session it missed, without cost data. To stop recording altogether, pause it in Settings instead. `stop` only signals the process in `~/.postrun/postrun.pid` after checking that it really is Postrun; a stale file is removed and nothing else is touched.
 
 The background process runs the telemetry receiver, both recorders and the review app together, and logs to `~/.postrun/postrun.log` (rotated at 5 MB).
 
@@ -161,6 +193,7 @@ You should not need these. They exist for tests and unusual setups.
 | `POSTRUN_CAPTURE_DIR` | `~/.postrun/captures` |
 | `POSTRUN_CLAUDE_SETTINGS` | `~/.claude/settings.json` |
 | `POSTRUN_CLINE_DIR` | `~/.cline/data/sessions` |
+| `POSTRUN_SHARE_SERVER` | `https://app.postrun.app`, where `postrun login` and share links go |
 | `POSTRUN_KEEP_CAPTURES` | Unset. `1` keeps raw capture files instead of removing them 24 hours after a session goes quiet. |
 
 Ports are kept in `~/.postrun/config.json` and changed with `postrun setup --port`.

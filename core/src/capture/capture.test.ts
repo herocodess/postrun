@@ -42,6 +42,34 @@ try {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("otlp receiver", () => {
+  it("only accepts telemetry from Claude Code: the key, no browser requests, exactly JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-cap-key-"));
+    let paused = false;
+    const r = createOtlpReceiver({ captureDir: dir, port: 0, key: "the-key-1234567890", paused: () => paused });
+    const { url } = await r.start();
+    const body = (sid: string) => JSON.stringify({ resourceLogs: [{ scopeLogs: [{ logRecords: [{ body: { stringValue: "x" }, attributes: [{ key: "session.id", value: { stringValue: sid } }] }] }] }] });
+    const post = (headers: Record<string, string>, sid: string) => fetch(`${url}/v1/logs`, { method: "POST", headers, body: body(sid) });
+    const ok = { "content-type": "application/json", "x-postrun-key": "the-key-1234567890" };
+
+    // A page on another site (no-cors POST): it carries Origin and Sec-Fetch-Site.
+    expect((await post({ ...ok, origin: "https://evil.example" }, "s-web")).status).toBe(403);
+    expect((await post({ ...ok, "sec-fetch-site": "cross-site" }, "s-web2")).status).toBe(403);
+    // A content type that merely contains application/json is the no-preflight trick.
+    expect((await post({ ...ok, "content-type": "text/plain; application/json" }, "s-ct")).status).toBe(415);
+    // No key, or the wrong one: acknowledged (no errors in Claude Code) but not written.
+    expect((await post({ "content-type": "application/json" }, "s-nokey")).status).toBe(200);
+    expect((await post({ ...ok, "x-postrun-key": "wrong" }, "s-badkey")).status).toBe(200);
+    expect(r.counts["rejected"]).toBe(2);
+    // Paused: acknowledged and dropped.
+    paused = true;
+    expect((await post(ok, "s-paused")).status).toBe(200);
+    paused = false;
+    // Claude Code itself.
+    expect((await post({ ...ok, "content-type": "application/json; charset=utf-8" }, "s-good")).status).toBe(200);
+    await r.stop();
+    expect(readdirSync(join(dir, "sessions"))).toEqual(["s-good"]);
+  });
+
   it("binds to 127.0.0.1, splits each logs export by session into its own folder, drops metrics and traces", async () => {
     const dir = mkdtempSync(join(tmpdir(), "postrun-cap-"));
     const r = createOtlpReceiver({ captureDir: dir, port: 0 });
@@ -108,6 +136,59 @@ describe("otlp receiver", () => {
 });
 
 describe("setup helper", () => {
+  it("puts the telemetry key in the export headers, and takes back only Postrun's own headers", () => {
+    const env = captureEnv("/c", 4318, "k_123");
+    expect(env["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-postrun-key=k_123");
+    const { settings } = mergeCaptureSettings({}, "/c", 4318, "/s.sh", true, "k_123");
+    expect((settings["env"] as Record<string, string>)["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-postrun-key=k_123");
+    // Switching to hooks only removes Postrun's headers value, never a user's own.
+    const ours = mergeCaptureSettings(settings, "/c", 4318, "/s.sh", false).settings["env"] as Record<string, string>;
+    expect(ours["OTEL_EXPORTER_OTLP_HEADERS"]).toBeUndefined();
+    const mixed = { ...(settings["env"] as Record<string, string>), OTEL_EXPORTER_OTLP_HEADERS: "authorization=Bearer theirs,x-postrun-key=k_123" };
+    const kept = mergeCaptureSettings({ env: mixed }, "/c", 4318, "/s.sh", false).settings["env"] as Record<string, string>;
+    expect(kept["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("authorization=Bearer theirs");
+    // Setup adds its key next to a user's own headers instead of replacing them.
+    const added = mergeCaptureSettings({ env: { OTEL_EXPORTER_OTLP_HEADERS: "x-tenant=acme" } }, "/c", 4318, "/s.sh", true, "k_9").settings["env"] as Record<string, string>;
+    expect(added["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-tenant=acme,x-postrun-key=k_9");
+  });
+
+  it("uninstall puts back a telemetry value setup replaced, and the user's own headers", async () => {
+    const { unconfigureClaudeCode } = await import("./index.js");
+    const root = mkdtempSync(join(tmpdir(), "postrun-restore-"));
+    const settingsPath = join(root, "settings.json");
+    const original = { env: { OTEL_EXPORTER_OTLP_PROTOCOL: "grpc", OTEL_EXPORTER_OTLP_HEADERS: "x-tenant=acme", MY_VAR: "1" } };
+    writeFileSync(settingsPath, JSON.stringify(original));
+    // Where setup installs it: ~/.postrun/bin.
+    const { mkdirSync: mk } = await import("node:fs");
+    mk(join(root, ".postrun", "bin"), { recursive: true });
+    const script = join(root, ".postrun", "bin", "capture-hook.sh");
+    writeFileSync(script, "#!/bin/sh\n", { mode: 0o700 });
+    configureClaudeCode({ captureDir: join(root, "c"), settingsPath, script, otlpKey: "k_1" });
+    const during = JSON.parse(readFileSync(settingsPath, "utf8")) as { env: Record<string, string> };
+    expect(during.env["OTEL_EXPORTER_OTLP_PROTOCOL"]).toBe("http/json");
+    expect(during.env["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-tenant=acme,x-postrun-key=k_1");
+    unconfigureClaudeCode({ settingsPath });
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual(original);
+  });
+
+  it("writes through a symlinked settings file, keeping the link", async () => {
+    const { symlinkSync, lstatSync, mkdirSync: mk } = await import("node:fs");
+    const root = mkdtempSync(join(tmpdir(), "postrun-link-"));
+    mk(join(root, "dotfiles"));
+    mk(join(root, ".claude"));
+    const real = join(root, "dotfiles", "claude-settings.json");
+    writeFileSync(real, JSON.stringify({ theme: "dark" }));
+    const link = join(root, ".claude", "settings.json");
+    symlinkSync(real, link);
+    const script = join(root, "capture-hook.sh");
+    writeFileSync(script, "#!/bin/sh\n", { mode: 0o700 });
+    configureClaudeCode({ captureDir: join(root, "c"), settingsPath: link, script });
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    const saved = JSON.parse(readFileSync(real, "utf8")) as Record<string, unknown>;
+    expect(saved["theme"]).toBe("dark");
+    expect(saved["hooks"]).toBeDefined();
+  });
+
   it("renders env and hooks pointing at the repo hook script", () => {
     const s = captureSettings("/tmp/cap", 4318) as { env: Record<string, string>; hooks: Record<string, unknown> };
     expect(s.env["OTEL_EXPORTER_OTLP_ENDPOINT"]).toBe("http://127.0.0.1:4318");
@@ -122,6 +203,10 @@ describe("setup helper", () => {
     expect(isPostrunHook({ type: "command", command: "/Users/x/dev/postrun-spike/hooks/capture.sh" })).toBe(true);
     expect(isPostrunHook({ type: "command", command: "/Users/x/bin/capture.sh" })).toBe(false);
     expect(isPostrunHook({ type: "command", command: "/Users/x/postrun/notify.sh" })).toBe(false);
+    // A user's own capture script that merely sits under a folder named postrun is not Postrun's.
+    expect(isPostrunHook({ type: "command", command: "/Users/x/work/postrun-notes/capture.sh" })).toBe(false);
+    expect(isPostrunHook({ type: "command", command: "/Users/x/postrun/tools/capture-hook.sh" })).toBe(false);
+    expect(isPostrunHook({ type: "command", command: "/Users/x/.postrun/bin/capture-hook.sh" })).toBe(true);
     expect(isPostrunHook({ type: "command", command: "prettier --write" })).toBe(false);
     expect(isPostrunHook("capture-hook.sh")).toBe(false);
   });

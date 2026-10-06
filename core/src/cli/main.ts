@@ -6,6 +6,8 @@
  *   postrun open         open the review app in your browser
  *   postrun sessions     list recorded sessions
  *   postrun export <id>  write a redacted HTML report
+ *   postrun share <id>   upload a redacted report and print its link (needs postrun login)
+ *   postrun login | logout   connect this computer to a Postrun account, for share links
  *   postrun delete <id>  delete one session for good
  *   postrun doctor       check everything, with a fix for each problem
  *   postrun autostart on|off
@@ -16,13 +18,31 @@
 import { spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { sessionDir } from "../capture/layout.js";
 import { configureClaudeCode, foreignTelemetry, readSettingsEnv, unconfigureClaudeCode } from "../capture/setup.js";
 import { exportSession } from "../export/index.js";
+import {
+  DEFAULT_SHARE_EXPIRY_DAYS,
+  forgetAccount,
+  readAccount,
+  revokeOnServer,
+  SHARE_EXPIRY_DAYS,
+  ShareFailed,
+  shareServer,
+  startBrowserLogin,
+  uploadReport,
+  validToken,
+  whoAmI,
+  writeAccount,
+} from "../share/client.js";
 import { PostrunStore } from "../store/store.js";
+import { formatUsage } from "../store/usage.js";
 import { ensurePrivateDir, PRIVATE_DIR_MODE } from "../util/files.js";
-import { bundledHookScript, VERSION } from "./assets.js";
+import { VERSION } from "./assets.js";
+import { installHook } from "./hook.js";
+import { loadOrCreateToken } from "../server/token.js";
 import { readPid, run, start, status, stop } from "./daemon.js";
 import { doctor, formatChecks, portFree } from "./doctor.js";
 import { paths, readConfig, writeConfig, type Paths } from "./paths.js";
@@ -80,6 +100,37 @@ async function ask(question: string, defaultYes: boolean): Promise<boolean> {
   }
 }
 
+/**
+ * The review app's address with this computer's key in the fragment. A fragment never reaches a
+ * server or its logs; the app keeps the key in this browser and removes it from the address bar.
+ */
+function appLink(p: Paths, url: string): string {
+  return `${url}#key=${loadOrCreateToken(p.token)}`;
+}
+
+/**
+ * Open the review app with its key without putting the key on a command line, where other
+ * accounts could read it with ps: the browser opens a private file (in ~/.postrun, owner only)
+ * that forwards to the keyed address.
+ */
+function openApp(p: Paths, url: string): boolean {
+  const link = appLink(p, url);
+  const file = join(p.home, "open.html");
+  try {
+    ensurePrivateDir(p.home);
+    const attr = link.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+    writeFileSync(
+      file,
+      `<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="0;url=${attr}"><title>Postrun</title><script>location.replace(${JSON.stringify(link)})</script><a href="${attr}">Open Postrun</a>\n`,
+      { mode: 0o600 },
+    );
+    chmodSync(file, 0o600);
+  } catch {
+    return false;
+  }
+  return openBrowser(file);
+}
+
 function openBrowser(url: string): boolean {
   const cmd = process.platform === "darwin" ? "open" : process.platform === "linux" ? "xdg-open" : undefined;
   if (!cmd) return false;
@@ -96,18 +147,6 @@ function openBrowser(url: string): boolean {
 async function firstFreePort(from: number, tries = 20): Promise<number | undefined> {
   for (let port = from; port < from + tries && port <= 65535; port++) if (await portFree(port)) return port;
   return undefined;
-}
-
-/** Copy the hook script to ~/.postrun/bin, so updating or moving Postrun never breaks recording. */
-function installHook(p: Paths): void {
-  ensurePrivateDir(p.home);
-  mkdirSync(p.bin, { recursive: true, mode: PRIVATE_DIR_MODE });
-  chmodSync(p.bin, PRIVATE_DIR_MODE);
-  // Copy then rename: a hook firing during an update never sees half a file.
-  const tmp = `${p.hook}.tmp-${process.pid}`;
-  copyFileSync(bundledHookScript(), tmp);
-  chmodSync(tmp, 0o700);
-  renameSync(tmp, p.hook);
 }
 
 async function cmdSetup(argv: string[]): Promise<number> {
@@ -157,7 +196,7 @@ async function cmdSetup(argv: string[]): Promise<number> {
   if (hasClaude) {
     const foreign = foreignTelemetry(readSettingsEnv(p.claudeSettings));
     config.telemetry = foreign === undefined;
-    const r = configureClaudeCode({ captureDir: p.captures, otlpPort: config.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: config.telemetry });
+    const r = configureClaudeCode({ captureDir: p.captures, otlpPort: config.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: config.telemetry, otlpKey: loadOrCreateToken(p.otlpKey) });
     out(`  Claude Code: ${r.changed || r.created ? "set up" : "already set up"} (${p.claudeSettings})`);
     if (r.backed_up) out(`    Your original settings are saved in ${r.backup_path}`);
     if (foreign) {
@@ -205,7 +244,7 @@ async function cmdSetup(argv: string[]): Promise<number> {
   out(`Postrun is recording. Review your sessions at ${url}`);
   if (hasClaude) out(`Restart any Claude Code session that is already open, so it is recorded too.`);
   out(`Check on it any time with postrun status, or postrun doctor if something looks wrong.`);
-  if (!a.flags.has("no-open") && interactive()) openBrowser(url);
+  if (!a.flags.has("no-open") && interactive()) openApp(p, url);
   return 0;
 }
 
@@ -223,7 +262,7 @@ async function cmdStart(): Promise<number> {
 
 async function cmdStop(): Promise<number> {
   const stopped = await stop(paths());
-  out(stopped ? "Postrun stopped. Nothing is recorded until you run postrun start." : "Postrun was not running.");
+  out(stopped ? "Postrun stopped. Claude Code sessions are still saved to disk, and are added (without cost data) when you run postrun start. To stop recording altogether, pause it in Settings." : "Postrun was not running.");
   return 0;
 }
 
@@ -250,12 +289,14 @@ async function cmdStatus(): Promise<number> {
 }
 
 async function cmdOpen(): Promise<number> {
-  const s = await status(paths());
+  const p = paths();
+  const s = await status(p);
   if (!s.running) {
     err("Postrun is not running. Start it with: postrun start");
     return 1;
   }
-  if (!openBrowser(s.url)) out(`Open ${s.url} in your browser.`);
+  // The link carries this computer's key, so this browser is connected from now on.
+  if (!openApp(p, s.url)) out(`Open this link in your browser (it connects the browser to Postrun):\n${appLink(p, s.url)}`);
   else out(s.url);
   return 0;
 }
@@ -290,6 +331,25 @@ function cmdSessions(argv: string[]): number {
       out(`    ${title}`);
       out(`    ${s.steps_total} steps, ${s.turn_count} turns${s.failed_count ? `, ${s.failed_count} failed` : ""}${s.metrics.cost_usd ? `, $${s.metrics.cost_usd.toFixed(2)}` : ""}  ${s.workspace.root}`);
     }
+    return 0;
+  });
+}
+
+/**
+ * Local usage counts, as plain text to read or paste (or JSON with --json). Nothing is sent
+ * anywhere: this is how a person chooses to share how they use Postrun.
+ */
+function cmdStats(argv: string[]): number {
+  const a = parse(argv);
+  onlyFlags(a, ["json"]);
+  const p = paths();
+  if (!existsSync(p.db)) {
+    out("Nothing counted yet: run postrun setup, then use Postrun for a while.");
+    return 0;
+  }
+  return withStore(p, (store) => {
+    const u = store.usage({ version: VERSION, platform: `${process.platform} ${process.arch}` });
+    out(a.flags.has("json") ? JSON.stringify(u, null, 2) : `${formatUsage(u)}\n\nThese counts never leave this computer unless you paste them somewhere.`);
     return 0;
   });
 }
@@ -395,6 +455,16 @@ function cmdAutostart(argv: string[]): number {
   return 0;
 }
 
+/**
+ * A folder uninstall may delete whole: Postrun's own files are in it, and it is not the home
+ * folder or the root. A mistyped POSTRUN_HOME must never take another folder with it.
+ */
+export function looksLikePostrunHome(dir: string, userHome = homedir()): boolean {
+  const d = resolve(dir);
+  if (d === resolve(userHome) || d === resolve("/") || d === dirname(resolve(userHome))) return false;
+  return ["postrun.db", "config.json", "ingest-token"].some((f) => existsSync(join(d, f)));
+}
+
 async function cmdUninstall(argv: string[]): Promise<number> {
   const a = parse(argv);
   onlyFlags(a, ["yes", "delete-data", "keep-data"]);
@@ -422,7 +492,9 @@ async function cmdUninstall(argv: string[]): Promise<number> {
     : a.flags.has("keep-data")
       ? false
       : await ask(`Also delete everything Postrun recorded (${p.home})? This cannot be undone.`, false);
-  if (deleteData) {
+  if (deleteData && !looksLikePostrunHome(p.home)) {
+    err(`  Not deleting ${p.home}: it does not look like Postrun's folder (no postrun.db, config.json or ingest-token in it). Check POSTRUN_HOME, then delete it yourself if you are sure.`);
+  } else if (deleteData) {
     rmSync(p.home, { recursive: true, force: true });
     out(`  Deleted ${p.home}`);
   } else {
@@ -432,6 +504,143 @@ async function cmdUninstall(argv: string[]): Promise<number> {
   out("Restart any open Claude Code session so it stops calling Postrun's hook.");
   out("To remove the postrun command itself: npm uninstall -g postrun");
   return 0;
+}
+
+const USER_AGENT = `postrun/${VERSION} (${process.platform})`;
+
+/** A line from stdin: typed (not echoed) at a terminal, or piped in. */
+async function readSecret(prompt: string): Promise<string> {
+  if (!process.stdin.isTTY) {
+    let data = "";
+    for await (const chunk of process.stdin) data += String(chunk);
+    return data.split("\n")[0] ?? "";
+  }
+  process.stdout.write(prompt);
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  // Hide what is typed or pasted.
+  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = () => undefined;
+  try {
+    return await rl.question("");
+  } finally {
+    rl.close();
+    process.stdout.write("\n");
+  }
+}
+
+/**
+ * Connect this computer to a Postrun account, so it can make share links. Opens the browser
+ * to approve it; --token takes one made by hand in Settings instead (for a server over SSH).
+ */
+async function cmdLogin(argv: string[]): Promise<number> {
+  const a = parse(argv);
+  onlyFlags(a, ["with-token", "no-open"]);
+  if (a.flags.has("help")) return help("login");
+  const p = paths();
+  const previous = readAccount(p.home);
+  const server = shareServer(process.env, previous);
+  let token: string;
+  if (a.flags.has("with-token")) {
+    // Read from stdin, never from the command line, where it would land in shell history and ps.
+    token = (await readSecret("Paste the token from Settings at app.postrun.app: ")).trim();
+    if (!validToken(token)) throw new UsageError("that doesn't look like a Postrun token (they start with prt_)");
+  } else {
+    const login = await startBrowserLogin(server, { userAgent: USER_AGENT });
+    const opened = !a.flags.has("no-open") && openBrowser(login.url);
+    out(opened ? "Opening your browser to connect this computer to Postrun." : "Open this link in a browser to connect this computer to Postrun:");
+    out(`  ${login.url}`);
+    out("Waiting for you to approve it there…  (Ctrl+C to stop)");
+    try {
+      token = await login.token;
+    } finally {
+      login.close();
+    }
+  }
+  let me: { email: string };
+  try {
+    me = await whoAmI(server, token, USER_AGENT);
+  } catch (e) {
+    if (e instanceof ShareFailed && e.code === "not_signed_in") {
+      err("That token doesn't work: it may have been removed. Make a new one in Settings at app.postrun.app, or run postrun login without --with-token.");
+      return 1;
+    }
+    throw e;
+  }
+  writeAccount(p.home, { server, token, email: me.email, saved_at: new Date().toISOString() });
+  // A computer that signs in again shouldn't leave its old sign-in working.
+  if (previous && previous.token !== token) await revokeOnServer(previous.server, previous.token, USER_AGENT);
+  out(`Signed in as ${me.email}. Share a session with: postrun share <id>`);
+  return 0;
+}
+
+async function cmdLogout(argv: string[]): Promise<number> {
+  const a = parse(argv);
+  onlyFlags(a, []);
+  const p = paths();
+  const acct = readAccount(p.home);
+  if (!acct) {
+    out("This computer isn't signed in.");
+    return 0;
+  }
+  const revoked = await revokeOnServer(acct.server, acct.token, USER_AGENT);
+  forgetAccount(p.home);
+  out(`Signed out${acct.email ? ` of ${acct.email}` : ""}.${revoked ? "" : " (Couldn't reach Postrun to remove this computer there; remove it in Settings.)"}`);
+  out("Links you already shared keep working until they expire. Turn them off at " + acct.server + "/shares");
+  return 0;
+}
+
+/** Upload one session's redacted report and print its link. */
+async function cmdShare(argv: string[]): Promise<number> {
+  const a = parse(argv, ["expires"]);
+  onlyFlags(a, ["expires", "yes"]);
+  if (a.flags.has("help")) return help("share");
+  const id = a.positional[0];
+  if (!id) throw new UsageError("share needs a session id (see postrun sessions)");
+  const e = a.flags.get("expires");
+  const days = e === undefined ? DEFAULT_SHARE_EXPIRY_DAYS : Number(String(e).replace(/d$/, ""));
+  if (!(SHARE_EXPIRY_DAYS as readonly number[]).includes(days)) throw new UsageError(`--expires must be ${SHARE_EXPIRY_DAYS.join(", ")} (days)`);
+  const p = paths();
+  const acct = readAccount(p.home);
+  if (!acct) {
+    err("Connect this computer to a Postrun account first: postrun login");
+    return 1;
+  }
+  if (!existsSync(p.db)) {
+    err(`No session ${id}. List them with: postrun sessions`);
+    return 1;
+  }
+  const result = withStore(p, (store) => {
+    const session = store.getSession(id);
+    return session ? exportSession(session) : undefined;
+  });
+  if (!result) {
+    err(`No session ${id}. List them with: postrun sessions`);
+    return 1;
+  }
+  const { findings, home_paths } = result.redaction;
+  if (findings.length === 0) out(`Redaction: no secrets found${home_paths ? `; ${home_paths} home path(s) shown as ~` : ""}.`);
+  else {
+    out(`Redaction: masked ${findings.length} value(s)${home_paths ? ` and ${home_paths} home path(s)` : ""}:`);
+    for (const f of findings.slice(0, 20)) out(`  ${f.kind.padEnd(15)} ${f.location}`);
+    if (findings.length > 20) out(`  …and ${findings.length - 20} more (postrun export ${id} lists them all)`);
+  }
+  if (!a.flags.has("yes") && !(await ask(`Upload this redacted report to ${acct.server.replace(/^https?:\/\//, "")}? Anyone with the link can open it for ${days} day${days === 1 ? "" : "s"}.`, true))) {
+    out("Nothing was uploaded.");
+    return 1;
+  }
+  try {
+    const r = await uploadReport(acct.server, acct.token, result.html, days, USER_AGENT);
+    out("");
+    out(`  ${r.url}`);
+    out("");
+    out(`Expires ${new Date(r.expires_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}. See opens or turn it off: ${acct.server}/shares`);
+    return 0;
+  } catch (err_) {
+    if (err_ instanceof ShareFailed) {
+      err(err_.message);
+      return 1;
+    }
+    throw err_;
+  }
 }
 
 const HELP: Record<string, string> = {
@@ -447,11 +656,17 @@ Everyday
   open                 Open the review app in your browser
   sessions             List recorded sessions
   export <id>          Write a redacted HTML report of one session
+  share <id>           Upload a redacted report and get a link to send
+  stats                How you use Postrun: counts only, to read or share
   delete <id>          Delete one session for good
 
 Running
   start | stop | restart
   autostart on|off     Start Postrun when you log in
+
+Account (only for share links; recording never needs one)
+  login                Connect this computer to your Postrun account
+  logout               Disconnect it
 
 Help
   doctor               Check everything, with a fix for each problem
@@ -470,6 +685,26 @@ updating Postrun or installing Claude Code.
   --no-autostart    Do not start at login
   --no-open         Do not open the browser
   --yes             Accept the defaults without asking`,
+  share: `Usage: postrun share <id> [--expires 1|7|30|90] [--yes]
+
+Uploads the same redacted report postrun export writes to app.postrun.app and
+prints an unlisted link to send. Shows what redaction masked first, and asks
+before uploading. Nothing else leaves this computer.
+
+  --expires <days>  How long the link works: 1, 7, 30 or 90 (default 30)
+  --yes             Upload without asking
+
+See opens and turn links off at https://app.postrun.app/shares.
+Run postrun login once first.`,
+  login: `Usage: postrun login [--with-token] [--no-open]
+
+Connects this computer to your Postrun account so it can make share links.
+Opens your browser to approve it; the sign-in is saved in ~/.postrun/account.json.
+
+  --with-token      Paste a token made in Settings at app.postrun.app instead of
+                    using the browser (for a computer without one). It is read
+                    from the terminal or stdin, never the command line.
+  --no-open         Print the link instead of opening the browser`,
 };
 
 function help(topic = "main"): number {
@@ -509,6 +744,14 @@ export async function main(argv: string[]): Promise<number> {
         return cmdSessions(rest);
       case "export":
         return cmdExport(rest);
+      case "stats":
+        return cmdStats(rest);
+      case "share":
+        return await cmdShare(rest);
+      case "login":
+        return await cmdLogin(rest);
+      case "logout":
+        return await cmdLogout(rest);
       case "delete":
         return cmdDelete(rest);
       case "doctor":

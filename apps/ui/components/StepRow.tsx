@@ -18,13 +18,14 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type { Step } from "@postrun/core/schema";
 import type { StepPreview, StepResponse } from "@postrun/core/server/api";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import { summarize } from "@/lib/summarize";
+import { Loader } from "@postrun/brand/logo";
 
 const OUTPUT_LIMIT = 100_000;
 
 /** Memoized: a step whose object is unchanged after a live update is not re-rendered. */
-export const StepRow = memo(function StepRow({ step, sessionId }: { step: StepPreview; sessionId: string }) {
+export const StepRow = memo(function StepRow({ step, sessionId, fresh = false }: { step: StepPreview; sessionId: string; fresh?: boolean }) {
   const [open, setOpen] = useState(false);
   const [full, setFull] = useState<{ step: Step } | { error: string } | undefined>(undefined);
   const cut = step.truncated !== undefined;
@@ -34,7 +35,7 @@ export const StepRow = memo(function StepRow({ step, sessionId }: { step: StepPr
   useEffect(() => {
     if (!open || !cut || full) return;
     let cancelled = false;
-    fetch(api.step(sessionId, step.id))
+    apiFetch(api.step(sessionId, step.id))
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
         return ((await res.json()) as StepResponse).step;
@@ -73,7 +74,7 @@ export const StepRow = memo(function StepRow({ step, sessionId }: { step: StepPr
   }
 
   return (
-    <details ref={ref} id={anchor} className={`step-d${step.outcome === "failed" ? " failed" : ""}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details ref={ref} id={anchor} className={`step-d${step.outcome === "failed" ? " failed" : ""}${fresh ? " arrived" : ""}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="step">
         <span className="st-caret" aria-hidden="true"></span>
         <span className="st-seq">{step.seq}</span>
@@ -85,7 +86,11 @@ export const StepRow = memo(function StepRow({ step, sessionId }: { step: StepPr
       {open && (
         <>
           <StepBody step={full && "step" in full ? full.step : step} />
-          {cut && !full ? <p className="sb-loading">Loading the full output…</p> : null}
+          {cut && !full ? (
+            <p className="sb-loading">
+              <Loader size={14} inline label="Loading the full output" /> Loading the full output…
+            </p>
+          ) : null}
           {full && "error" in full ? <p className="sb-loading">Could not load the full step ({full.error}); showing the first 2 KB.</p> : null}
         </>
       )}
@@ -196,7 +201,7 @@ function Content({ step }: { step: Step }) {
     }
     case "other": {
       const p = step.payload;
-      const raw = Object.keys(p.raw).length ? JSON.stringify(p.raw, null, 2) : "";
+      const raw = Object.keys(p.raw ?? {}).length ? JSON.stringify(p.raw, null, 2) : "";
       return (
         <>
           <div className="sb-kv">

@@ -102,7 +102,7 @@ function uploader(): SessionRecord {
   b.read(4, "src/storage/uploader.ts");
   b.read(6, "src/storage/uploader.test.ts");
   b.cmd(9, 'grep -rn "putObject" src', "src/storage/uploader.ts:41:    await this.s3.putObject(params);\nsrc/jobs/export.ts:88:    await uploader.put(key, body);");
-  b.cmd(13, "env | grep -i aws", "AWS_REGION=eu-west-2\nAWS_ACCESS_KEY_ID=AKIA" + "Z7Q4EXAMPLEKEYXY\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+  b.cmd(13, "env | grep -i aws", "AWS_REGION=eu-west-2\nAWS_ACCESS_KEY_ID=AKIA" + "IOSFODNN7EXAMPLE\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
   b.msg(18, "assistant", "The uploader calls putObject once with no retry. I'll add a small withRetry helper with exponential backoff and jitter, retry only on throttling and 5xx errors, and keep the attempt cap configurable.");
   b.write(
     25,

@@ -1,0 +1,1 @@
+{"days":1,"from":"2026-10-05T23:00:00.000Z","totals":{"sessions":0,"steps":0,"failed":0,"cost":0,"unreviewed":0,"flagged":0},"previous":{"sessions":1,"steps":24,"failed":1,"cost":0.87,"unreviewed":1,"flagged":1},"per_day":[{"day":"2026-10-06","command":0,"edit":0,"read":0,"message":0,"other":0,"failed":0,"sessions":0,"cost":0}],"running":[],"needs_review":[],"files":[]}

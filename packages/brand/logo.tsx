@@ -54,3 +54,25 @@ export function Wordmark({ size = 18 }: { size?: number }) {
     </span>
   );
 }
+
+/**
+ * The loader: the mark playing on a loop, steps lighting top to bottom like a
+ * playhead, then the play triangle nudging forward. Used instead of a generic
+ * spinner everywhere Postrun waits. Styles in loader.css. Under reduced motion
+ * it breathes gently instead.
+ *
+ * `label` is read to screen readers; `inline` sits beside text (in a button).
+ */
+export function Loader({ size = 28, label = "Loading", inline = false, fg = "currentColor" }: { size?: number; label?: string; inline?: boolean; fg?: string }) {
+  return (
+    <span className={inline ? "pr-loader pr-loader-inline" : "pr-loader"} role="status" aria-live="polite">
+      <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        {STEPS.map((y, i) => (
+          <rect key={y} className="pr-loader-step" style={{ animationDelay: `${i * 140}ms` }} x="13" y={y} width="11" height="9.5" rx="3" fill={fg} />
+        ))}
+        <path className="pr-loader-play" d="M29 13c0-2.3 2.5-3.7 4.4-2.5l16.4 10.3c1.8 1.1 1.8 3.8 0 4.9L33.4 36c-1.9 1.2-4.4-.2-4.4-2.5Z" fill="var(--accent, #ff6a1a)" />
+      </svg>
+      <span className="pr-loader-label">{label}</span>
+    </span>
+  );
+}

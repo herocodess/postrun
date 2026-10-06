@@ -7,17 +7,23 @@
  * answers GET /api/health so `status` can tell it is really Postrun.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createClaudeCodeWatcher } from "../capture/claude-code-watcher.js";
 import { createClineWatcher } from "../capture/cline-watcher.js";
 import { createOtlpReceiver, OtlpPortInUseError } from "../capture/receiver.js";
+import { PAUSED_FILE } from "../capture/layout.js";
+import { installHook } from "./hook.js";
+import { configureClaudeCode, OTLP_KEY_HEADER, readSettingsEnv } from "../capture/setup.js";
+import { join } from "node:path";
 import { createPostrunServer, LOCALHOST, PortInUseError } from "../server/server.js";
 import { loadOrCreateToken } from "../server/token.js";
 import { PostrunStore } from "../store/store.js";
 import { ensurePrivateDir, ensurePrivateFile, PRIVATE_FILE_MODE } from "../util/files.js";
 import { uiDir, VERSION } from "./assets.js";
 import { readConfig, type Paths } from "./paths.js";
+import { createControl, gitBranch, type Recorder } from "./control.js";
+import type { IngestResult } from "../store/types.js";
 
 const LOG_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -44,6 +50,23 @@ export function alive(pid: number): boolean {
     return true;
   } catch (err) {
     return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Whether the process in the pid file is really Postrun. After a crash or a reboot the pid file can
+ * name a process id the system has since given to something else; that process must never be
+ * signalled. Postrun answers its health route with its own pid, and its command line names it.
+ */
+export async function isPostrun(info: PidInfo): Promise<boolean> {
+  if (!alive(info.pid)) return false;
+  const h = await health(info.port);
+  if (h?.pid === info.pid) return true;
+  try {
+    const r = spawnSync("ps", ["-p", String(info.pid), "-o", "command="], { encoding: "utf8", timeout: 2000 });
+    return r.status === 0 && /postrun/i.test(r.stdout) && /\brun\b/.test(r.stdout);
+  } catch {
+    return false;
   }
 }
 
@@ -78,7 +101,7 @@ export async function status(p: Paths): Promise<Status> {
   const info = readPid(p);
   const port = info?.port ?? readConfig(p).port;
   const url = `http://${LOCALHOST}:${port}/`;
-  if (!info || !alive(info.pid)) return { running: false, port, url };
+  if (!info || !(await isPostrun(info))) return { running: false, port, url };
   const h = await health(port);
   return { running: true, pid: info.pid, port, url, ...(h ? { health: h } : {}) };
 }
@@ -120,15 +143,100 @@ export async function run(p: Paths): Promise<number> {
     return 0;
   }
 
+  // Starting always records: a pause does not outlive the process (Settings says so).
+  const pausedMarker = join(p.captures, PAUSED_FILE);
+  rmSync(pausedMarker, { force: true });
+  // After an upgrade, the installed hook script is refreshed to the version this process expects.
+  if (existsSync(p.hook)) {
+    try {
+      installHook(p);
+    } catch (err) {
+      log(`could not refresh the hook script: ${(err as Error).message}`);
+    }
+  }
+
+  // The telemetry key. Installs from before it existed get it added to Claude Code's settings here,
+  // only where those settings already point at Postrun's receiver (Postrun's own keys, nothing else).
+  const otlpKey = loadOrCreateToken(p.otlpKey);
+  if (config.telemetry) {
+    try {
+      const env = readSettingsEnv(p.claudeSettings);
+      if (typeof env["OTEL_EXPORTER_OTLP_ENDPOINT"] === "string" && env["OTEL_EXPORTER_OTLP_ENDPOINT"] === `http://${LOCALHOST}:${config.otlpPort}` && !String(env["OTEL_EXPORTER_OTLP_HEADERS"] ?? "").split(",").map((h) => h.trim()).includes(`${OTLP_KEY_HEADER}=${otlpKey}`)) {
+        const r = configureClaudeCode({ captureDir: p.captures, otlpPort: config.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: true, otlpKey });
+        if (r.changed) log("added the telemetry key to Claude Code's settings; Claude Code sessions started before now send no cost data until restarted");
+      }
+    } catch (err) {
+      log(`could not add the telemetry key to Claude Code's settings: ${(err as Error).message}. Run: postrun setup`);
+    }
+  }
+
   const store = new PostrunStore({ path: p.db });
-  const healthInfo: Record<string, unknown> = { version: VERSION, pid: process.pid, telemetry: config.telemetry ? "starting" : "off (hooks only)", catching_up: true };
+  const healthInfo: Record<string, unknown> = { version: VERSION, pid: process.pid, telemetry: config.telemetry ? "starting" : "off (hooks only)", catching_up: true, paused: false };
+
+  // Recording: both watchers, which can be paused, resumed and restarted with new settings.
+  let cc: ReturnType<typeof createClaudeCodeWatcher> | undefined;
+  let cline: ReturnType<typeof createClineWatcher> | undefined;
+  let paused = false;
+  let control: ReturnType<typeof createControl> | undefined;
+  const afterIngest = (result: IngestResult) => {
+    if (result.created) {
+      // The branch the project is on as the session starts, read once.
+      const root = store.getSessionShell(result.session_id)?.summary.workspace.root ?? "";
+      const branch = gitBranch(root);
+      if (branch) store.setGitBranch(result.session_id, branch);
+    }
+    control?.onFailures(result.session_id);
+  };
+  const startWatchers = () => {
+    const hours = readConfig(p).rawLogHours;
+    cc = createClaudeCodeWatcher({ captureDir: p.captures, store, log, retainMs: hours > 0 ? hours * 3_600_000 : Infinity, onIngest: afterIngest });
+    cline = createClineWatcher({ sessionsDir: p.clineSessions, store, log, onIngest: afterIngest });
+    cc.start();
+    cline.start();
+  };
+  const stopWatchers = () => {
+    cc?.stop();
+    cline?.stop();
+    cc = cline = undefined;
+  };
+  const recorder: Recorder = {
+    since: new Date().toISOString(),
+    health: healthInfo,
+    paused: () => paused,
+    pause() {
+      paused = true;
+      healthInfo["paused"] = true;
+      // The hook script checks this file and drops events; telemetry is dropped in the receiver.
+      ensurePrivateDir(p.captures);
+      writeFileSync(pausedMarker, "", { mode: PRIVATE_FILE_MODE });
+      stopWatchers();
+      log("recording paused from the review app");
+    },
+    resume() {
+      paused = false;
+      healthInfo["paused"] = false;
+      rmSync(pausedMarker, { force: true });
+      startWatchers();
+      recorder.since = new Date().toISOString();
+      log("recording resumed");
+    },
+    restart() {
+      stopWatchers();
+      startWatchers();
+      log("recording restarted with new settings");
+    },
+  };
+  control = createControl({ paths: p, store, recorder, log, port: config.port });
+
   const app = createPostrunServer({
     port: config.port,
     store,
     uiDir: uiDir(),
     captureDir: p.captures,
     ingestToken: loadOrCreateToken(p.token),
+    requireKey: true,
     health: healthInfo,
+    control,
   });
   try {
     await app.start();
@@ -142,7 +250,7 @@ export async function run(p: Paths): Promise<number> {
   ensurePrivateFile(p.pid);
   log(`postrun ${VERSION} started (pid ${process.pid}); review app on http://${LOCALHOST}:${config.port}/`);
 
-  const receiver = config.telemetry ? createOtlpReceiver({ captureDir: p.captures, port: config.otlpPort, log: (l) => log(`telemetry: ${l}`) }) : undefined;
+  const receiver = config.telemetry ? createOtlpReceiver({ captureDir: p.captures, port: config.otlpPort, log: (l) => log(`telemetry: ${l}`), paused: () => paused, key: otlpKey }) : undefined;
   if (receiver) {
     try {
       await receiver.start();
@@ -154,17 +262,15 @@ export async function run(p: Paths): Promise<number> {
       log(`telemetry receiver NOT running (${(err as Error).message}); recording from hooks only. Run: postrun doctor`);
     }
   }
-
-  const cc = createClaudeCodeWatcher({ captureDir: p.captures, store, log });
-  const cline = createClineWatcher({ sessionsDir: p.clineSessions, store, log });
+  if (config.updateCheck) control.startUpdateChecks();
 
   let stopping = false;
   const shutdown = (signal: string) => {
     if (stopping) return;
     stopping = true;
     log(`stopping (${signal})`);
-    cc.stop();
-    cline.stop();
+    stopWatchers();
+    control?.stopUpdateChecks();
     const pidNow = readPid(p);
     if (pidNow?.pid === process.pid) rmSync(p.pid, { force: true });
     void Promise.allSettled([receiver?.stop(), app.stop()]).finally(() => {
@@ -182,8 +288,7 @@ export async function run(p: Paths): Promise<number> {
   // Catch up after the review app is listening, so `start` can report success straight away.
   setImmediate(() => {
     const t = Date.now();
-    cc.start();
-    cline.start();
+    startWatchers();
     healthInfo["catching_up"] = false;
     log(`caught up in ${Date.now() - t} ms; recording`);
   });
@@ -220,7 +325,8 @@ export async function start(p: Paths, opts: { waitMs?: number } = {}): Promise<{
 /** Stop the background process. Resolves true when one was running. */
 export async function stop(p: Paths, waitMs = 8000): Promise<boolean> {
   const info = readPid(p);
-  if (!info || !alive(info.pid)) {
+  // A stale pid file (the id now belongs to another program) is removed, and nothing is signalled.
+  if (!info || !(await isPostrun(info))) {
     rmSync(p.pid, { force: true });
     return false;
   }

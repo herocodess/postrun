@@ -12,7 +12,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { LiveChange } from "@postrun/core/server/api";
-import { DEMO } from "@/lib/api";
+import { api, DEMO, hasKey, LOCKED_EVENT } from "@/lib/api";
 
 export type LiveStatus = "connecting" | "live" | "offline" | "demo";
 
@@ -41,6 +41,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       setStatus("demo");
       return;
     }
+    // Not connected (no key, or a key the API refused): no stream until `postrun open` connects it.
+    if (!hasKey()) return;
+    let locked = false;
+    const onLocked = () => {
+      locked = true;
+      clearTimeout(retryTimer);
+      es?.close();
+    };
+    window.addEventListener(LOCKED_EVENT, onLocked);
     let es: EventSource | undefined;
     let offlineTimer: ReturnType<typeof setTimeout> | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -59,7 +68,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     };
 
     const connect = () => {
-      const source = new EventSource("/api/events");
+      const source = new EventSource(api.events());
       es = source;
       source.addEventListener("ready", () => {
         disarmOffline();
@@ -78,7 +87,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         armOffline();
         // EventSource retries network errors itself, but gives up for good on an
         // HTTP error such as the 503 connection cap. Start a fresh one then.
-        if (source.readyState === EventSource.CLOSED && retryTimer === undefined) {
+        if (source.readyState === EventSource.CLOSED && retryTimer === undefined && !locked) {
           retryTimer = setTimeout(() => {
             retryTimer = undefined;
             connect();
@@ -90,6 +99,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     armOffline();
     connect();
     return () => {
+      window.removeEventListener(LOCKED_EVENT, onLocked);
       disarmOffline();
       clearTimeout(retryTimer);
       es?.close();

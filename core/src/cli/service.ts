@@ -97,15 +97,24 @@ ${env}  <key>RunAtLoad</key><true/>
 `;
 }
 
-const quote = (s: string) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+/**
+ * Quote one value for a systemd unit. systemd expands %-specifiers everywhere and $VARIABLES in
+ * ExecStart, so a path holding % or $ is doubled to stay literal; a newline cannot be written at all.
+ */
+const quote = (s: string, dollars = true) => {
+  if (/[\r\n]/.test(s)) throw new Error(`cannot write a path with a line break into a systemd unit: ${JSON.stringify(s)}`);
+  let v = s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%");
+  if (dollars) v = v.replace(/\$/g, "$$$$");
+  return `"${v}"`;
+};
 
 export function unit(cmd: string[], p: Paths): string {
-  const env = process.env["POSTRUN_HOME"] ? `Environment=${quote(`POSTRUN_HOME=${p.home}`)}\n` : "";
+  const env = process.env["POSTRUN_HOME"] ? `Environment=${quote(`POSTRUN_HOME=${p.home}`, false)}\n` : "";
   return `[Unit]
 Description=Postrun, the flight recorder for coding agents
 
 [Service]
-ExecStart=${cmd.map(quote).join(" ")}
+ExecStart=${cmd.map((c) => quote(c)).join(" ")}
 ${env}Restart=on-failure
 RestartSec=60
 
@@ -120,7 +129,7 @@ export function parseCommand(kind: "launchd" | "systemd", text: string): string[
     return [...arr.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => m[1]!.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
   }
   const line = /^ExecStart=(.*)$/m.exec(text)?.[1] ?? "";
-  return [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]!.replace(/\\(.)/g, "$1"));
+  return [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]!.replace(/\\(.)/g, "$1").replace(/%%/g, "%").replace(/\$\$/g, "$"));
 }
 
 export function serviceState(): ServiceState {

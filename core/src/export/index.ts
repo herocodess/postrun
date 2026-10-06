@@ -21,7 +21,8 @@ export interface SessionExport {
 
 export function exportSession(session: StoredSession, opts: { now?: Date } = {}): SessionExport {
   const { doc, redaction } = buildExport(session, opts);
-  const day = doc.started_at.slice(0, 10);
+  // Only digits and dashes from the date: the name ends up in a Content-Disposition header.
+  const day = doc.started_at.slice(0, 10).replace(/[^0-9-]/g, "") || "undated";
   const shortId = doc.session_id.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 8) || "session";
   return { html: renderExportHtml(doc, redaction), redaction, filename: `postrun-${doc.agent.kind.replace(/[^a-z0-9-]/gi, "")}-${day}-${shortId}.html` };
 }

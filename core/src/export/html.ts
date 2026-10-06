@@ -14,6 +14,8 @@ import type { Step, Turn } from "../schema/index.js";
 import type { RedactionReport, SecretKind } from "../redact/redact.js";
 import type { ExportDocument } from "./model.js";
 
+// app.postrun.app only hosts uploads carrying this exact policy and the generator tag below
+// (apps/app/lib/shares.ts isPostrunReport). Change both together.
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
 
 export function renderExportHtml(doc: ExportDocument, redaction: RedactionReport): string {
@@ -40,6 +42,7 @@ export function renderExportHtml(doc: ExportDocument, redaction: RedactionReport
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="generator" content="postrun">
+<meta name="postrun:agent" content="${esc(doc.agent.kind.replace(/[^a-z0-9-]/gi, "").slice(0, 32))}">
 <title>${esc(clip(title, 80))} · postrun report</title>
 <style>${CSS}</style>
 </head>
@@ -126,9 +129,18 @@ const KIND_LABEL: Record<SecretKind, string> = {
   "slack-token": "Slack token",
   "google-api-key": "Google API key",
   jwt: "JWT",
+  "gitlab-token": "GitLab token",
+  "npm-token": "npm token",
+  "huggingface-token": "Hugging Face token",
+  "sendgrid-key": "SendGrid key",
+  "google-oauth-secret": "Google OAuth secret",
+  "webhook-url": "webhook URL",
   "url-password": "URL password",
   "auth-header": "auth header",
+  cookie: "cookie",
   credential: "credential",
+  "high-entropy": "random-looking value",
+  email: "email address",
 };
 
 function redactionNote(r: RedactionReport): string {
@@ -211,7 +223,7 @@ function stepBody(s: Step): string {
     }
     case "other": {
       const p = s.payload;
-      return `<div class="kv">tool <span class="mono">${esc(p.tool_name)}</span></div>${Object.keys(p.raw).length ? `<pre class="code scroll">${esc(JSON.stringify(p.raw, null, 2))}</pre>` : ""}`;
+      return `<div class="kv">tool <span class="mono">${esc(p.tool_name)}</span></div>${Object.keys(p.raw ?? {}).length ? `<pre class="code scroll">${esc(JSON.stringify(p.raw, null, 2))}</pre>` : ""}`;
     }
   }
 }

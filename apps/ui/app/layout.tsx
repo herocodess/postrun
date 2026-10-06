@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
-import { TopBar } from "@/components/TopBar";
+import { Shell } from "@/components/Shell";
 import { LiveProvider } from "@/lib/live";
-import { DEMO } from "@/lib/api";
+import { StatusProvider } from "@/lib/status";
+import "@postrun/brand/loader.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,22 +14,21 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const port = process.env.PORT || "1234";
-
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* The chosen theme and sidebar width before first paint, so nothing flashes or jumps. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var d=document.documentElement,t=localStorage.getItem("postrun.theme");if(t==="light"||t==="dark")d.dataset.theme=t;if(localStorage.getItem("postrun.sidebar")==="collapsed")d.dataset.sidebar="collapsed"}catch(e){}`,
+          }}
+        />
+      </head>
       <body>
         <LiveProvider>
-          {DEMO && (
-            <aside className="demo-banner" aria-label="About this demo">
-              <span>
-                <b>Demo:</b> the real Postrun review app with three example sessions. In real use it runs on your machine and nothing leaves it.
-              </span>
-              <a href="/#waitlist">Get early access →</a>
-            </aside>
-          )}
-          <TopBar port={port} />
-          <div className="wrap">{children}</div>
+          <StatusProvider>
+            <Shell>{children}</Shell>
+          </StatusProvider>
         </LiveProvider>
       </body>
     </html>

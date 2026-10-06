@@ -166,14 +166,14 @@ src/jobs/export.ts:88:    await uploader.put(key, body);</pre>
       
     </div>
   </details><details class="step">
-    <summary><span class="seq">4</span><span class="chip t-command">command</span><span class="sum mono">env | grep -i aws</span><span class="flagdot" title="secret_in_output"></span><span class="out"><span class="ok">ok</span></span></summary>
+    <summary><span class="seq">4</span><span class="chip t-command">command</span><span class="sum mono">env | grep -i aws</span><span class="flagdot" title="secret_in_output, secret_in_output"></span><span class="out"><span class="ok">ok</span></span></summary>
     <div class="body">
       <div class="when mono">2026-10-05 14:02:13 UTC · accepted · via otel, hook</div>
       <pre class="code cmd"><span class="prompt">$ </span>env | grep -i aws</pre><div class="kv">cwd <span class="mono">~/code/acme-api</span> · exit <span class="mono">0</span></div><div class="label">stdout</div><pre class="code scroll">AWS_REGION=eu-west-2
 AWS_ACCESS_KEY_ID=[REDACTED:aws-access-key]
 AWS_SECRET_ACCESS_KEY=[REDACTED:credential]</pre>
       
-      <ul class="flags"><li class="sev-warn"><b>secret in output</b> 2 values redacted on export</li></ul>
+      <ul class="flags"><li class="sev-danger"><b>secret in output</b> printed what looks like a secret (aws-access-key, credential)</li><li class="sev-warn"><b>secret in output</b> 2 values redacted on export</li></ul>
     </div>
   </details><details class="step">
     <summary><span class="seq">5</span><span class="chip t-message">message</span><span class="sum mono">assistant: The uploader calls putObject once with no retry. I&#39;ll add a small withRetry helper with exponential backoff and jitter, retry only on throttling and 5xx errors…</span><span class="out"><span class="ok">ok</span></span></summary>
@@ -392,14 +392,14 @@ Error: Test timed out in 5000ms.
       
     </div>
   </details><details class="step">
-    <summary><span class="seq">23</span><span class="chip t-edit">edit</span><span class="sum mono">edit ~/code/acme-api/.env.example</span><span class="out"><span class="ok">ok</span></span></summary>
+    <summary><span class="seq">23</span><span class="chip t-edit">edit</span><span class="sum mono">edit ~/code/acme-api/.env.example</span><span class="flagdot" title="sensitive_read"></span><span class="out"><span class="ok">ok</span></span></summary>
     <div class="body">
       <div class="when mono">2026-10-05 14:04:48 UTC · accepted · via otel, hook</div>
       <div class="kv">edited <span class="mono">~/code/acme-api/.env.example</span></div><pre class="code scroll diff"><span class="del">- S3_BUCKET=</span>
 <span class="add">+ S3_BUCKET=</span>
 <span class="add">+ S3_MAX_ATTEMPTS=5</span></pre>
       
-      
+      <ul class="flags"><li class="sev-warn"><b>sensitive read</b> changed a secrets file: .env.example</li></ul>
     </div>
   </details>
   </div>

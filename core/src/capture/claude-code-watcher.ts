@@ -42,7 +42,7 @@ import { DeletedSessionError, type PostrunStore } from "../store/store.js";
 import type { IngestResult } from "../store/types.js";
 import { ensurePrivateDir, PRIVATE_FILE_MODE } from "../util/files.js";
 import { IncrementalSession } from "./incremental.js";
-import { INBOX_FILE, isSafeId, SESSION_HOOKS_FILE, SESSION_OTLP_FILE, sessionDir, sessionsDir } from "./layout.js";
+import { INBOX_FILE, isSafeId, ROTATING_SUFFIX, ROUTER_STATE_FILE as STATE_FILE, SESSION_HOOKS_FILE, SESSION_OTLP_FILE, sessionDir, sessionsDir, spoolDir } from "./layout.js";
 import { createPacer } from "./pacer.js";
 import { splitLogsBySession } from "./receiver.js";
 
@@ -77,8 +77,8 @@ export interface ClaudeCodeWatcher {
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** An open session's in-memory state is dropped after this long without a turn, and rebuilt if it resumes. */
 const IDLE_EVICT_MS = 30 * 60 * 1000;
-const STATE_FILE = ".router-state.json";
-const ROTATING_SUFFIX = ".routing";
+/** A hook killed mid-write leaves a hidden temporary file; it is removed after this long. */
+const SPOOL_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
 
 interface RouterState {
   offset: number;
@@ -179,54 +179,103 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
     }
   };
 
-  /** Route complete lines of `file` from `from`; returns the new offset. Live routing schedules ingests. */
-  const routeFile = (file: string, from: number, live: boolean): number => {
-    if (!existsSync(file)) return from;
-    const batches = new Map<string, string[]>();
-    const triggers: Array<[string, string]> = [];
-    const next = forEachLine(
-      file,
-      (line) => {
-        if (!line.trim()) return;
-        let sid: unknown;
-        let ev: unknown;
-        try {
-          const parsed = JSON.parse(line) as { payload?: { session_id?: unknown; hook_event_name?: unknown } };
-          sid = parsed.payload?.session_id;
-          ev = parsed.payload?.hook_event_name;
-        } catch {
-          return; // a spliced concurrent append; the adapter would skip it too
-        }
-        // Ids and event names come from a file other processes append to; only plain tokens reach paths and logs.
-        if (!isSafeId(sid) || !isSafeId(ev)) return;
-        if (isDeleted(sid)) {
-          // Deleted by the user: never written to disk again, and any folder left from before goes too.
-          if (existsSync(sessionDir(opts.captureDir, sid))) forget(sid);
-          return;
-        }
-        const list = batches.get(sid) ?? [];
-        list.push(line);
-        batches.set(sid, list);
-        const s = seen.get(sid) ?? { ended: false, last_event: ev };
-        s.last_event = ev;
-        if (ev === "SessionEnd") s.ended = true;
-        seen.set(sid, s);
-        if (ev === "Stop" || ev === "SessionEnd") triggers.push([sid, ev]);
-      },
-      from,
-    );
-    for (const [sid, lines] of batches) {
+  type Routing = { batches: Map<string, string[]>; triggers: Array<[string, string]> };
+  const newRouting = (): Routing => ({ batches: new Map(), triggers: [] });
+
+  /** Route one hook event line into its session's batch. */
+  const routeLine = (line: string, r: Routing): void => {
+    if (!line.trim()) return;
+    let sid: unknown;
+    let ev: unknown;
+    try {
+      const parsed = JSON.parse(line) as { payload?: { session_id?: unknown; hook_event_name?: unknown } };
+      sid = parsed.payload?.session_id;
+      ev = parsed.payload?.hook_event_name;
+    } catch {
+      return; // a spliced append from an older hook script; the adapter would skip it too
+    }
+    // Ids and event names come from files other processes write; only plain tokens reach paths and logs.
+    if (!isSafeId(sid) || !isSafeId(ev)) return;
+    if (isDeleted(sid)) {
+      // Deleted by the user: never written to disk again, and any folder left from before goes too.
+      if (existsSync(sessionDir(opts.captureDir, sid))) forget(sid);
+      return;
+    }
+    const list = r.batches.get(sid) ?? [];
+    list.push(line);
+    r.batches.set(sid, list);
+    const s = seen.get(sid) ?? { ended: false, last_event: ev };
+    s.last_event = ev;
+    if (ev === "SessionEnd") s.ended = true;
+    seen.set(sid, s);
+    if (ev === "Stop" || ev === "SessionEnd") r.triggers.push([sid, ev]);
+  };
+
+  /** Write routed lines to their session folders and schedule ingests. */
+  const flushRouting = (r: Routing, live: boolean): void => {
+    for (const [sid, lines] of r.batches) {
       const dir = sessionDir(opts.captureDir, sid);
       ensurePrivateDir(dir);
       appendFileSync(join(dir, SESSION_HOOKS_FILE), lines.join("\n") + "\n", { mode: PRIVATE_FILE_MODE });
     }
-    if (live) for (const [sid, ev] of triggers) pacer.trigger(sid, ev);
+    if (live) for (const [sid, ev] of r.triggers) pacer.trigger(sid, ev);
+  };
+
+  /** Route complete lines of `file` from `from`; returns the new offset. Live routing schedules ingests. */
+  const routeFile = (file: string, from: number, live: boolean): number => {
+    if (!existsSync(file)) return from;
+    const r = newRouting();
+    const next = forEachLine(file, (line) => routeLine(line, r), from);
+    flushRouting(r, live);
     return next;
+  };
+
+  /**
+   * Route the spool: one event per file, oldest first. Each file is removed once its event is in
+   * its session folder. Hidden files are hooks still writing; ones older than an hour were abandoned.
+   */
+  const routeSpool = (live: boolean): void => {
+    const dir = spoolDir(opts.captureDir);
+    if (!existsSync(dir)) return;
+    const now = Date.now();
+    const ready: Array<{ name: string; t: bigint }> = [];
+    for (const name of readdirSync(dir)) {
+      const f = join(dir, name);
+      try {
+        const st = statSync(f, { bigint: true });
+        if (!st.isFile()) continue;
+        if (name.startsWith(".")) {
+          if (now - Number(st.mtimeMs) > SPOOL_TEMP_MAX_AGE_MS) unlinkSync(f);
+          continue;
+        }
+        ready.push({ name, t: st.mtimeNs });
+      } catch {
+        // removed meanwhile
+      }
+    }
+    if (ready.length === 0) return;
+    ready.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const r = newRouting();
+    const done: string[] = [];
+    for (const { name } of ready) {
+      const f = join(dir, name);
+      try {
+        for (const line of readFileSync(f, "utf8").split("\n")) routeLine(line, r);
+        done.push(f);
+      } catch (err) {
+        log(`claude-code: could not read spool file ${name}: ${(err as Error).message}`);
+      }
+    }
+    // Lines reach their session folders before the spool files go: a crash in between can repeat
+    // those few events (tool results join by tool_use_id, keeping the first), but never loses them.
+    flushRouting(r, live);
+    for (const f of done) rmSync(f, { force: true });
   };
 
   /** One routing pass: drain a rotated inbox, route new inbox bytes, rotate when due. */
   const routeOnce = (live: boolean) => {
     const before = JSON.stringify(state);
+    routeSpool(live);
     if (state.rotating && existsSync(rotating)) {
       state.rotating.offset = routeFile(rotating, state.rotating.offset, live);
       // A hook that opened the inbox just before the rename appends to the old file. Two quiet polls

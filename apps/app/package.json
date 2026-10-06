@@ -1,0 +1,35 @@
+{
+  "name": "@postrun/app",
+  "version": "0.0.0",
+  "description": "app.postrun.app: accounts and share links (Next.js on Vercel, Postgres on Neon)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname localhost --port ${APP_PORT:-3001}",
+    "build": "next build",
+    "start": "next start --port ${APP_PORT:-3001}",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@postrun/brand": "workspace:*",
+    "@vercel/functions": "^3.9.11",
+    "better-auth": "^1.7.7",
+    "geist": "^1.4.2",
+    "next": "^16.3.8",
+    "pg": "^8.23.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "resend": "^6.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "tsx": "^4.23.13",
+    "typescript": "^5.3.3",
+    "vitest": "^5.0.3"
+  }
+}

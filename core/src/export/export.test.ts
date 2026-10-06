@@ -65,6 +65,15 @@ describe("exportSession", () => {
     expect(html).toContain(`http-equiv="Content-Security-Policy" content="default-src 'none'`);
   });
 
+  it("carries the exact tags app.postrun.app checks before hosting a share link", () => {
+    // Keep in step with apps/app/lib/shares.ts isPostrunReport.
+    const head = html.slice(0, 4000);
+    expect(head).toMatch(/^\s*<!doctype html>/i);
+    expect(head).toContain('<meta name="generator" content="postrun">');
+    expect(head).toContain(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">`);
+    expect(html).not.toMatch(/<(script|form|iframe|object|embed|input)\b/i);
+  });
+
   it("takes the title from the redacted prompt", () => {
     expect(html).toContain("<h1>deploy with token [REDACTED:github-token] please</h1>");
   });
@@ -123,5 +132,25 @@ describe("export over the API", () => {
 
   it("404s an unknown session", async () => {
     expect((await fetch(new URL("/api/sessions/nope/export", url))).status).toBe(404);
+  });
+});
+
+describe("exportSession masks a secret wherever it is stored", () => {
+  it("leaves no copy in any field of any step type, including keys and adapter-filled fields", () => {
+    const S = "ghp_" + "Z".repeat(36);
+    const all: Step[] = [
+      { ...base, id: "a", seq: 0, at: T0, type: "message", payload: { role: "user", text: `use ${S}` } },
+      { ...base, id: "b", seq: 1, at: T0, type: "command", channels: ["hook", S], decision: S, payload: { command: `echo ${S}`, stdout: S, stderr: S, cwd: `/tmp/${S}`, output_ref: S } },
+      { ...base, id: "c", seq: 2, at: T0, type: "edit", outcome: "failed", error: { type: S, message: S }, payload: { path: `/w/${S}.ts`, old_string: S, new_string: S, structured_patch: [{ lines: [`+${S}`] }], is_full_write: false } },
+      { ...base, id: "d", seq: 3, at: T0, type: "read", flags: [{ kind: S, severity: "warn", reason: S }], payload: { path: `/w/${S}` } },
+      { ...base, id: "e", seq: 4, at: T0, type: "other", payload: { tool_name: S, raw: { [S]: [S, { nested: S }] } } },
+    ];
+    const rec: SessionRecord = { ...record, id: "exp-all", agent: { kind: "claude-code", version: S }, workspace: { root: `/w/${S}`, repo: S }, steps: all.map((s) => ({ ...s, session_id: "exp-all" })) as Step[], turns: [{ ...record.turns[0]!, session_id: "exp-all", mode: S }] };
+    const st = new PostrunStore({ path: ":memory:" });
+    st.ingest(rec);
+    const { html } = exportSession(st.getSession("exp-all")!, { now: new Date("2026-10-06T08:00:00Z") });
+    expect(html).not.toContain(S);
+    expect(html).not.toContain("Z".repeat(36));
+    st.close();
   });
 });

@@ -94,16 +94,33 @@ export class Database {
       const savepoint = this.depth > 0 ? `postrun_sp_${this.depth}` : undefined;
       this.db.exec(savepoint ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE");
       this.depth++;
+      // The depth drops only once the transaction is really over: a COMMIT that fails (disk full,
+      // a deferred constraint) leaves it open, so it is rolled back here rather than left to block
+      // every later BEGIN. A failing rollback never hides the error that caused it.
+      const rollback = () => {
+        try {
+          this.db.exec(savepoint ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
+        } catch {
+          // the original error is the one that matters
+        }
+      };
+      let result: R;
       try {
-        const result = fn(...args);
-        this.depth--;
-        this.db.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
-        return result;
+        result = fn(...args);
       } catch (err) {
         this.depth--;
-        this.db.exec(savepoint ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
+        rollback();
         throw err;
       }
+      try {
+        this.db.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
+      } catch (err) {
+        this.depth--;
+        rollback();
+        throw err;
+      }
+      this.depth--;
+      return result;
     };
   }
 

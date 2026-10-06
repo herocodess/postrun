@@ -10,7 +10,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { ApiError, DeleteSessionResponse } from "@postrun/core/server/api";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 
 type State = { kind: "confirm" } | { kind: "deleting" } | { kind: "error"; message: string };
 
@@ -25,10 +25,10 @@ export function DeletePanel({ sessionId, agent, steps, onClose }: { sessionId: s
   const remove = async () => {
     setState({ kind: "deleting" });
     try {
-      const res = await fetch(api.deleteSession(sessionId), { method: "DELETE" });
+      const res = await apiFetch(api.deleteSession(sessionId), { method: "DELETE" });
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as Partial<ApiError>).error ?? `${res.status}`);
       (await res.json()) as DeleteSessionResponse;
-      router.push("/");
+      router.push("/sessions");
     } catch (err) {
       setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }

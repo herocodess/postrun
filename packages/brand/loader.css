@@ -1,0 +1,94 @@
+/*
+ * The Postrun loader (Loader in logo.tsx). One cycle is 1.4s: the four steps
+ * light in turn, top to bottom, and the play triangle nudges forward as the
+ * last one lands.
+ */
+.pr-loader {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2, var(--text-secondary, #a3a9b7));
+}
+.pr-loader svg {
+  overflow: visible;
+}
+.pr-loader-step {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.22;
+  animation: pr-loader-step 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.pr-loader-play {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: pr-loader-play 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes pr-loader-step {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: none;
+  }
+  14% {
+    opacity: 1;
+    transform: scaleX(1.12);
+  }
+  40% {
+    opacity: 1;
+    transform: none;
+  }
+  70% {
+    opacity: 0.22;
+  }
+}
+@keyframes pr-loader-play {
+  0%,
+  30%,
+  100% {
+    transform: none;
+    opacity: 0.85;
+  }
+  48% {
+    transform: translateX(4px) scale(1.06);
+    opacity: 1;
+  }
+  64% {
+    transform: none;
+  }
+}
+.pr-loader-label {
+  font-size: 13px;
+}
+/* Beside text, in a button: no visible label (the button says it), screen readers still hear it. */
+.pr-loader-inline {
+  flex-direction: row;
+  gap: 0;
+  vertical-align: -0.2em;
+}
+.pr-loader-inline .pr-loader-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pr-loader-step,
+  .pr-loader-play {
+    animation: pr-loader-breathe 2.4s ease-in-out infinite !important;
+    animation-delay: 0ms !important;
+    animation-duration: 2.4s !important;
+    animation-iteration-count: infinite !important;
+  }
+  @keyframes pr-loader-breathe {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}

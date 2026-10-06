@@ -11,7 +11,7 @@
  * running keeps its old configuration until it is restarted.
  */
 
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,8 +30,13 @@ export function defaultSettingsPath(): string {
   return join(homedir(), ".claude", "settings.json");
 }
 
-export function captureEnv(captureDir: string, otlpPort = DEFAULT_OTLP_PORT): Record<string, string> {
+/** The header that carries the telemetry key, so only Claude Code (which reads it from settings) can write telemetry. */
+export const OTLP_KEY_HEADER = "x-postrun-key";
+const OTLP_HEADERS_KEY = "OTEL_EXPORTER_OTLP_HEADERS";
+
+export function captureEnv(captureDir: string, otlpPort = DEFAULT_OTLP_PORT, otlpKey?: string): Record<string, string> {
   return {
+    ...(otlpKey ? { [OTLP_HEADERS_KEY]: `${OTLP_KEY_HEADER}=${otlpKey}` } : {}),
     CLAUDE_CODE_ENABLE_TELEMETRY: "1",
     // Logs only. Metrics and traces are never read, so Claude Code is not asked to send them
     // (that costs CPU in Claude Code and disk here for nothing). See RETIRED_ENV.
@@ -98,7 +103,16 @@ export function isPostrunHook(hook: unknown, script = hookScriptPath()): boolean
   const command = shellUnquote(hook["command"]);
   if (command === script) return true;
   const name = basename(command);
-  return (name === "capture-hook.sh" || name === "capture.sh") && /postrun/i.test(dirname(command));
+  if (name !== "capture-hook.sh" && name !== "capture.sh") return false;
+  // Only Postrun's own folders: the installed copy (~/.postrun/bin), a checkout's scripts folder
+  // (…/postrun/core/scripts), or the first prototype's (…/postrun-spike/hooks). A user's hook
+  // elsewhere is never taken, whatever its path contains.
+  const dir = dirname(command).replace(/\\/g, "/");
+  return (
+    /(?:^|\/)\.postrun\/bin$/.test(dir) ||
+    /(?:^|\/)postrun-spike\/hooks$/i.test(dir) ||
+    (/(?:^|\/)postrun(?:\/|$)/i.test(dir) && /\/(?:core\/)?scripts$/.test(dir))
+  );
 }
 
 /**
@@ -117,7 +131,24 @@ const RETIRED_ENV: Array<{ key: string; ours: (value: unknown, env: Json) => boo
 ];
 
 /** Telemetry keys Postrun sets, other than POSTRUN_CAPTURE_DIR. */
-const TELEMETRY_KEYS = Object.keys(captureEnv("")).filter((k) => k !== "POSTRUN_CAPTURE_DIR");
+const TELEMETRY_KEYS = Object.keys(captureEnv("", DEFAULT_OTLP_PORT, "k")).filter((k) => k !== "POSTRUN_CAPTURE_DIR");
+
+/** The headers value is Postrun's when it is exactly its key header and nothing else. */
+const ownHeaders = (v: unknown): boolean => typeof v === "string" && new RegExp(`^${OTLP_KEY_HEADER}=[A-Za-z0-9_-]+$`).test(v);
+
+/** OTEL_EXPORTER_OTLP_HEADERS is a comma-separated list: Postrun's entry is added or taken out, the user's stay. */
+function withoutOurHeader(v: unknown): string {
+  if (typeof v !== "string") return "";
+  return v
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => x && !x.toLowerCase().startsWith(`${OTLP_KEY_HEADER}=`))
+    .join(",");
+}
+function withOurHeader(v: unknown, ours: string): string {
+  const rest = withoutOurHeader(v);
+  return rest ? `${rest},${ours}` : ours;
+}
 
 /**
  * Remove the telemetry keys Postrun set, in place. A key is Postrun's only while
@@ -129,9 +160,21 @@ function removeOwnTelemetry(env: Json, judgeBy: Json, before?: Json): string[] {
   const ours = captureEnv(String(judgeBy["POSTRUN_CAPTURE_DIR"]), Number(String(judgeBy["OTEL_EXPORTER_OTLP_ENDPOINT"]).split(":").pop()));
   const removed: string[] = [];
   for (const k of TELEMETRY_KEYS) {
-    if (!(k in env) || env[k] !== ours[k]) continue;
+    if (!(k in env)) continue;
+    if (k === OTLP_HEADERS_KEY) {
+      // Take out Postrun's entry only; the user's own headers stay as they were.
+      const rest = withoutOurHeader(env[k]);
+      if (rest === env[k]) continue;
+      if (rest) env[k] = rest;
+      else delete env[k];
+      removed.push(k);
+      continue;
+    }
+    if (env[k] !== ours[k]) continue;
     if (before && k !== "OTEL_EXPORTER_OTLP_ENDPOINT" && before[k] === env[k]) continue;
-    delete env[k];
+    // A value setup replaced is put back as the user had it, rather than removed.
+    if (before && k in before && k !== "OTEL_EXPORTER_OTLP_ENDPOINT") env[k] = before[k];
+    else delete env[k];
     removed.push(k);
   }
   return removed;
@@ -194,6 +237,7 @@ export function mergeCaptureSettings(
   otlpPort = DEFAULT_OTLP_PORT,
   script = hookScriptPath(),
   telemetry = true,
+  otlpKey?: string,
 ): { settings: Json; report: MergeReport } {
   const report: MergeReport = { env_added: [], env_changed: [], env_removed: [], hooks_added: [], hooks_updated: [], hooks_deduplicated: [], changed: false };
   const out: Json = { ...existing };
@@ -202,12 +246,13 @@ export function mergeCaptureSettings(
   const currentEnv = existing["env"];
   if (currentEnv !== undefined && !isObject(currentEnv)) throw new Error(`settings "env" is not an object; refusing to merge`);
   const env: Json = { ...(currentEnv ?? {}) };
-  const wanted = telemetry ? captureEnv(captureDir, otlpPort) : { POSTRUN_CAPTURE_DIR: captureDir };
+  const wanted = telemetry ? captureEnv(captureDir, otlpPort, otlpKey) : { POSTRUN_CAPTURE_DIR: captureDir };
   if (!telemetry) {
     // Hooks only: take back any telemetry keys Postrun set earlier, never the user's own.
     for (const k of removeOwnTelemetry(env, currentEnv ?? {})) report.env_removed.push(k);
   }
-  for (const [k, v] of Object.entries(wanted)) {
+  for (const [k, raw] of Object.entries(wanted)) {
+    const v = k === OTLP_HEADERS_KEY ? withOurHeader(env[k], raw) : raw;
     if (!(k in env)) {
       env[k] = v;
       report.env_added.push(k);
@@ -297,6 +342,8 @@ export interface ConfigureOptions {
   script?: string;
   /** Ask Claude Code for telemetry (cost, tokens). False records from hooks only. Default true. */
   telemetry?: boolean;
+  /** The telemetry key Claude Code sends in its export headers (~/.postrun/otlp-key). */
+  otlpKey?: string;
 }
 
 export interface ConfigureResult extends MergeReport {
@@ -323,6 +370,9 @@ function readSettings(path: string): Json | undefined {
 }
 
 function writeSettings(path: string, settings: Json, created: boolean): void {
+  // A settings file kept by a dotfiles manager is a symlink: write the file it points at, beside it,
+  // so the link stays a link instead of being replaced by a plain copy.
+  if (!created) path = realpathSync(path);
   // Keep the file's existing permissions; a new file gets the usual 0644.
   const mode = created ? 0o644 : statSync(path).mode & 0o777;
   const tmp = `${path}.postrun-tmp-${process.pid}`;
@@ -370,7 +420,7 @@ export function configureClaudeCode(opts: ConfigureOptions): ConfigureResult {
 
   const existing = readSettings(settingsPath);
   const created = existing === undefined;
-  const { settings, report } = mergeCaptureSettings(existing ?? {}, opts.captureDir, otlpPort, script, opts.telemetry ?? true);
+  const { settings, report } = mergeCaptureSettings(existing ?? {}, opts.captureDir, otlpPort, script, opts.telemetry ?? true, opts.otlpKey);
 
   let backedUp = false;
   if (report.changed || created) {
