@@ -17,6 +17,12 @@ const repo = resolve(pkgDir, "..", "..");
 const dist = join(pkgDir, "dist");
 const { version } = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
 
+// The review app type-checks against Node 22's types (node:sqlite). An old install lacks them.
+if (!existsSync(join(repo, "apps", "ui", "node_modules", "@types", "node", "sqlite.d.ts"))) {
+  console.error("Dependencies are out of date. Run `pnpm install` at the repository root, then build again.");
+  process.exit(1);
+}
+
 rmSync(dist, { recursive: true, force: true });
 
 // The review app.

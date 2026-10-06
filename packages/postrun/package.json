@@ -4,9 +4,10 @@
   "description": "The flight recorder for coding agents: record Claude Code and Cline sessions on your machine and review everything they did.",
   "type": "module",
   "bin": {
-    "postrun": "dist/postrun.js"
+    "postrun": "bin/postrun.js"
   },
   "files": [
+    "bin",
     "dist",
     "README.md"
   ],
