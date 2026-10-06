@@ -15,7 +15,8 @@ import { EmptySessions } from "@/components/EmptySessions";
 import { Strip, StripLegend, stripOf } from "@/components/Strip";
 import { useLiveVersion } from "@/lib/live";
 import { stagger, useArrivals } from "@/lib/motion";
-import { activeFilters, fetchSessions, NO_FILTERS, PAGE_SIZE, type ListFilters, type Size } from "@/lib/sessions";
+import { activeFilters, fetchSessions, NO_FILTERS, PAGE_SIZE, type ListFilters, type Review, type Size } from "@/lib/sessions";
+import { api, DEMO } from "@/lib/api";
 import type { SessionListResponse } from "@postrun/core/server/api";
 import type { SessionSummary } from "@postrun/core/store";
 
@@ -77,11 +78,20 @@ function writePref(key: string, value: string): void {
   }
 }
 
-export function SessionList() {
+export function SessionList({ workspace = "" }: { workspace?: string } = {}) {
   const params = useSearchParams();
   const agent = params.get("agent") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
-  const [filters, setFilters] = useState<Omit<ListFilters, "agent">>(NO_FILTERS);
+  // Links from the dashboard open the list already filtered (?verdict=none, ?failed=1, ?flagged=1).
+  const [filters, setFilters] = useState<Omit<ListFilters, "agent" | "workspace">>(() => ({
+    ...NO_FILTERS,
+    review: (["none", "approved", "needs_attention"] as const).find((v) => v === params.get("verdict")) ?? "any",
+    failed: params.get("failed") === "1",
+    flagged: params.get("flagged") === "1",
+  }));
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<string | undefined>(undefined);
   const [typed, setTyped] = useState(""); // the search box, applied after a short pause
   const [view, setView] = useState<View>("list");
   const [more, setMore] = useState<"idle" | "loading" | "error">("idle");
@@ -89,7 +99,7 @@ export function SessionList() {
   const sentinel = useRef<HTMLDivElement>(null);
   // Bumps on any session write and on reconnect: the loaded pages refetch in place.
   const live = useLiveVersion();
-  const f: ListFilters = useMemo(() => ({ ...filters, agent }), [filters, agent]);
+  const f: ListFilters = useMemo(() => ({ ...filters, agent, workspace }), [filters, agent, workspace]);
   const key = JSON.stringify(f);
   const loaded = useRef(PAGE_SIZE);
 
@@ -196,7 +206,30 @@ export function SessionList() {
 
   const data = ready!;
   const narrowed = activeFilters(f) > 0;
-  const set = (patch: Partial<Omit<ListFilters, "agent">>) => setFilters((x) => ({ ...x, ...patch }));
+  const set = (patch: Partial<Omit<ListFilters, "agent" | "workspace">>) => setFilters((x) => ({ ...x, ...patch }));
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const stopSelecting = () => {
+    setSelecting(false);
+    setSelected(new Set());
+    setBulk(undefined);
+  };
+  const markLooksGood = async () => {
+    const ids = [...selected];
+    setBulk(`Marking ${ids.length}…`);
+    let done = 0;
+    for (const id of ids) {
+      const r = await fetch(api.verdict(id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: "approved" }) }).catch(() => undefined);
+      if (r?.ok) done++;
+    }
+    setBulk(`Marked ${done} as looks good`);
+    setSelected(new Set());
+  };
   const pickView = (v: View) => {
     setView(v);
     writePref("postrun.view", v);
@@ -211,17 +244,20 @@ export function SessionList() {
   };
 
   // Nothing recorded at all yet: the first-run screen.
-  if (data.total === 0 && data.empty_count === 0 && !narrowed && !agent) return <EmptySessions />;
+  if (data.total === 0 && data.empty_count === 0 && !narrowed && !agent && !workspace) return <EmptySessions />;
+  const Heading = workspace ? "h2" : "h1";
 
   let order = 0;
   return (
     <>
-      <header className="list-head enter">
-        <h1>Sessions</h1>
+      <header className={`list-head enter${workspace ? " embedded" : ""}`}>
+        <Heading>{workspace ? "Sessions in this project" : "Sessions"}</Heading>
         <p className="list-sum" aria-live="polite">
           {narrowed || agent
             ? `${data.total} matching${data.total_cost > 0 ? `, ${money(data.total_cost)} in reported cost` : ""}`
-            : `${data.total} recorded on this machine${data.total_cost > 0 ? `, ${money(data.total_cost)} in reported cost` : ""}`}
+            : workspace
+              ? `${data.total} recorded in this folder`
+              : `${data.total} recorded on this machine${data.total_cost > 0 ? `, ${money(data.total_cost)} in reported cost` : ""}`}
         </p>
       </header>
 
@@ -237,17 +273,23 @@ export function SessionList() {
         </label>
 
         <nav className="seg" aria-label="Agent">
-          <Link href="/" className={agent === "" ? "on" : ""} aria-current={agent === "" ? "page" : undefined}>
+          <Link href="/sessions" className={agent === "" ? "on" : ""} aria-current={agent === "" ? "page" : undefined}>
             All
           </Link>
           {data.agents.map((a) => (
-            <Link key={a} href={`/?agent=${encodeURIComponent(a)}`} className={agent === a ? "on" : ""} aria-current={agent === a ? "page" : undefined}>
+            <Link key={a} href={`/sessions?agent=${encodeURIComponent(a)}`} className={agent === a ? "on" : ""} aria-current={agent === a ? "page" : undefined}>
               {agentName(a)}
             </Link>
           ))}
         </nav>
 
         <span className="grow"></span>
+
+        {!DEMO && (
+          <button type="button" className={`btn-quiet${selecting ? " on" : ""}`} aria-pressed={selecting} onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
+            {selecting ? "Done" : "Select"}
+          </button>
+        )}
 
         <div className="seg seg-icons" role="group" aria-label="View">
           <button type="button" className={view === "list" ? "on" : ""} aria-pressed={view === "list"} onClick={() => pickView("list")}>
@@ -305,9 +347,22 @@ export function SessionList() {
             <option value={100}>100+ steps</option>
           </select>
         </label>
+        <label className="select">
+          <span className="sr-only">Review</span>
+          <select value={f.review} onChange={(e) => set({ review: e.target.value as Review })}>
+            <option value="any">Any review</option>
+            <option value="none">Not reviewed</option>
+            <option value="approved">Looks good</option>
+            <option value="needs_attention">Needs follow-up</option>
+          </select>
+        </label>
         <button type="button" className={`toggle${f.failed ? " on" : ""}`} aria-pressed={f.failed} onClick={() => set({ failed: !f.failed })}>
           <span className="knob" aria-hidden="true"></span>
           With failures
+        </button>
+        <button type="button" className={`toggle${f.flagged ? " on" : ""}`} aria-pressed={f.flagged} onClick={() => set({ flagged: !f.flagged })}>
+          <span className="knob" aria-hidden="true"></span>
+          Flagged
         </button>
         {data.empty_count > 0 && (
           <button type="button" className={`toggle${f.empty ? " on" : ""}`} aria-pressed={f.empty} onClick={toggleEmpty}>
@@ -359,7 +414,13 @@ export function SessionList() {
                 {g.sessions.map((s) => {
                   const i = order++;
                   const cls = arrived.has(s.id) ? " arrived" : " enter";
-                  return view === "grid" ? <Card key={s.id} s={s} cls={cls} i={i} /> : <Row key={s.id} s={s} cls={cls} i={i} />;
+                  const pick = selecting ? { checked: selected.has(s.id), onToggle: () => toggle(s.id) } : undefined;
+                  const match = data.matches?.[s.id];
+                  return view === "grid" ? (
+                    <Card key={s.id} s={s} cls={cls} i={i} pick={pick} match={match} />
+                  ) : (
+                    <Row key={s.id} s={s} cls={cls} i={i} pick={pick} match={match} />
+                  );
                 })}
               </div>
             </section>
@@ -384,7 +445,55 @@ export function SessionList() {
           </div>
         ) : null}
       </div>
+
+      {selecting && (
+        <div className="select-bar" role="region" aria-label="Selected sessions">
+          <span>
+            <b>{selected.size}</b> selected
+          </span>
+          <button type="button" className="link-btn" onClick={() => setSelected(new Set(data.sessions.map((s) => s.id)))}>
+            Select all {data.sessions.length} shown
+          </button>
+          <span className="grow"></span>
+          {bulk ? <span className="muted" role="status">{bulk}</span> : null}
+          <button type="button" className="btn" disabled={selected.size === 0} onClick={() => void markLooksGood()}>
+            Mark as looks good
+          </button>
+          <a className={`btn primary${selected.size === 0 ? " disabled" : ""}`} href={selected.size ? api.exportMany([...selected]) : undefined} aria-disabled={selected.size === 0}>
+            Export {selected.size || ""} as zip
+          </a>
+          <button type="button" className="btn ghost" onClick={stopSelecting}>
+            Cancel
+          </button>
+        </div>
+      )}
     </>
+  );
+}
+
+type Pick = { checked: boolean; onToggle: () => void } | undefined;
+type Match = { seq: number; text: string } | undefined;
+
+/** The words around a search match inside a session, the match itself marked. */
+function MatchLine({ m }: { m: NonNullable<Match> }) {
+  const parts = m.text.split(/(\u0001[^\u0002]*\u0002)/);
+  return (
+    <span className="match-line">
+      <span className="match-at">step {m.seq}</span>
+      <span className="match-text">
+        {parts.map((p, i) => (p.startsWith("\u0001") ? <mark key={i}>{p.slice(1, -1)}</mark> : <span key={i}>{p}</span>))}
+      </span>
+    </span>
+  );
+}
+
+function VerdictChip({ s }: { s: SessionSummary }) {
+  if (!s.verdict) return null;
+  const ok = s.verdict.state === "approved";
+  return (
+    <span className={`verdict-chip ${ok ? "ok" : "needs"}`} title={s.verdict.note}>
+      {ok ? "Looks good" : "Needs follow-up"}
+    </span>
   );
 }
 
@@ -407,10 +516,23 @@ function Cost({ s }: { s: SessionSummary }) {
   );
 }
 
-function Row({ s, cls, i }: { s: SessionSummary; cls: string; i: number }) {
+function rowLink(s: SessionSummary, match: Match): string {
+  return match ? `${href(s)}#step-${match.seq}` : href(s);
+}
+
+function Row({ s, cls, i, pick, match }: { s: SessionSummary; cls: string; i: number; pick: Pick; match: Match }) {
   return (
-    <Link href={href(s)} className={`srow${cls}`} style={stagger(i)}>
-      <span className={`agent-dot ${s.agent.kind === "cline" ? "cline" : "cc"}`} title={agentName(s.agent.kind)}></span>
+    <Link
+      href={rowLink(s, match)}
+      className={`srow${cls}${pick?.checked ? " picked" : ""}`}
+      style={stagger(i)}
+      {...(pick ? { onClick: (e: React.MouseEvent) => (e.preventDefault(), pick.onToggle()), "aria-pressed": pick.checked, role: "button" } : {})}
+    >
+      {pick ? (
+        <span className={`check${pick.checked ? " on" : ""}`} aria-hidden="true"></span>
+      ) : (
+        <span className={`agent-dot ${s.agent.kind === "cline" ? "cline" : "cc"}`} title={agentName(s.agent.kind)}></span>
+      )}
       <span className="srow-main">
         <span className="srow-title">
           <Title s={s} />
@@ -420,7 +542,9 @@ function Row({ s, cls, i }: { s: SessionSummary; cls: string; i: number }) {
           <span>{agentName(s.agent.kind)}</span>
           {s.failed_count > 0 && <span className="fail">{s.failed_count} failed</span>}
           {s.flag_count > 0 && <span className="flag">{s.flag_count} flagged</span>}
+          <VerdictChip s={s} />
         </span>
+        {match ? <MatchLine m={match} /> : null}
       </span>
       <Strip strip={stripOf(s)} />
       <span className="srow-num">
@@ -438,16 +562,23 @@ function Row({ s, cls, i }: { s: SessionSummary; cls: string; i: number }) {
   );
 }
 
-function Card({ s, cls, i }: { s: SessionSummary; cls: string; i: number }) {
+function Card({ s, cls, i, pick, match }: { s: SessionSummary; cls: string; i: number; pick: Pick; match: Match }) {
   return (
-    <Link href={href(s)} className={`scard${cls}`} style={stagger(i)}>
+    <Link
+      href={rowLink(s, match)}
+      className={`scard${cls}${pick?.checked ? " picked" : ""}`}
+      style={stagger(i)}
+      {...(pick ? { onClick: (e: React.MouseEvent) => (e.preventDefault(), pick.onToggle()), "aria-pressed": pick.checked, role: "button" } : {})}
+    >
       <span className="scard-top">
+        {pick ? <span className={`check${pick.checked ? " on" : ""}`} aria-hidden="true"></span> : null}
         <span className="proj">{basename(s.workspace.root)}</span>
         <span className={`badge ${s.agent.kind === "cline" ? "cline" : "cc"}`}>{agentName(s.agent.kind)}</span>
       </span>
       <span className="scard-title">
         <Title s={s} />
       </span>
+      {match ? <MatchLine m={match} /> : null}
       <Strip strip={stripOf(s)} size="card" />
       <span className="scard-foot">
         <span>
@@ -458,6 +589,7 @@ function Card({ s, cls, i }: { s: SessionSummary; cls: string; i: number }) {
         </span>
         {s.failed_count > 0 && <span className="fail">{s.failed_count} failed</span>}
         <Cost s={s} />
+        <VerdictChip s={s} />
         <span className="grow"></span>
         <time dateTime={s.started_at} title={new Date(s.started_at).toLocaleString()}>
           {relativeTime(s.started_at)}

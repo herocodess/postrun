@@ -31,6 +31,45 @@ export const api = {
   exportReview(id: string): string {
     return DEMO ? `${BASE}/data/exports/${enc(id)}.review.json` : `/api/sessions/${enc(id)}/export/review`;
   },
+  /** PUT { state, note } to review a session. Never offered in the demo. */
+  verdict(id: string): string {
+    return `/api/sessions/${enc(id)}/verdict`;
+  },
+  /** The demo has one snapshot per period, written by demo:build. */
+  dashboard(days: number): string {
+    return DEMO ? `${BASE}/data/dashboard-${days}.json` : `/api/dashboard?days=${days}`;
+  },
+  projects(): string {
+    return DEMO ? `${BASE}/data/projects.json` : "/api/projects";
+  },
+  projectFiles(root: string): string {
+    return DEMO ? `${BASE}/data/project-files/${enc(root.replace(/[^A-Za-z0-9._-]+/g, "_"))}.json` : `/api/projects/files?root=${enc(root)}`;
+  },
+  /** Several sessions as one zip of redacted reports. Not in the demo. */
+  exportMany(ids: string[]): string {
+    return `/api/export?ids=${ids.map(enc).join(",")}`;
+  },
+  status(): string {
+    return "/api/status";
+  },
+  doctor(): string {
+    return "/api/doctor";
+  },
+  settings(): string {
+    return "/api/settings";
+  },
+  recording(): string {
+    return "/api/recording";
+  },
+  setup(): string {
+    return "/api/setup";
+  },
+  backup(): string {
+    return "/api/backup";
+  },
+  deleteAll(): string {
+    return "/api/data/delete";
+  },
   exportDownload(id: string): string {
     return DEMO ? `${BASE}/data/exports/${enc(id)}.html` : `/api/sessions/${enc(id)}/export`;
   },

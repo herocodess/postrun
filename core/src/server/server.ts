@@ -517,7 +517,9 @@ function readBody(req: IncomingMessage, max: number): Promise<Buffer | "too_larg
 /** Resolve a request path to a file under the UI root. Extensionless paths map to Next's static export (<name>.html). */
 function resolveStatic(pathname: string, uiRoot: string): string | undefined {
   const rel = pathname === "/" ? "/index.html" : decodeURIComponent(pathname);
-  const candidates = extname(rel) ? [rel] : [`${rel}.html`, join(rel, "index.html")];
+  // "/settings/" and "/settings" are the same page: drop the trailing slash before adding ".html".
+  const bare = rel.length > 1 ? rel.replace(/\/+$/, "") : rel;
+  const candidates = extname(bare) ? [bare] : [`${bare}.html`, join(bare, "index.html")];
   for (const c of candidates) {
     const filePath = resolve(uiRoot, "." + c);
     // Path traversal guard: the resolved file must live under the UI directory.

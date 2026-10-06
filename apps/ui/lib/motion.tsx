@@ -6,7 +6,7 @@
  * class, and every animation is switched off for prefers-reduced-motion.
  */
 
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 /**
  * Ids that appeared after the first time this list was shown: a session that
@@ -41,4 +41,40 @@ export function useArrivals(ids: readonly string[] | undefined, scope = ""): Set
 /** Entrance stagger for the i-th item: the first `cap` items fan in, the rest arrive together. */
 export function stagger(i: number, cap = 12, stepMs = 35): CSSProperties {
   return { ["--enter-delay" as string]: `${Math.min(i, cap) * stepMs}ms` };
+}
+
+/**
+ * A number that counts from its previous value to the new one (eased, about
+ * half a second), so totals visibly move when the period changes or a session
+ * lands. Reduced motion shows the final number at once.
+ */
+export function CountUp({ value, format = String, className, ms = 650 }: { value: number; format?: (n: number) => string; className?: string; ms?: number }) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    const start = from.current;
+    if (start === value) return;
+    if (typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      from.current = value;
+      setShown(value);
+      return;
+    }
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / ms);
+      const eased = 1 - Math.pow(1 - k, 3);
+      const v = Math.round(start + (value - start) * eased);
+      setShown(v);
+      from.current = v;
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return (
+    <span className={className} aria-label={format(value)}>
+      <span aria-hidden="true">{format(shown)}</span>
+    </span>
+  );
 }

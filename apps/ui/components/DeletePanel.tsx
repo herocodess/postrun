@@ -28,7 +28,7 @@ export function DeletePanel({ sessionId, agent, steps, onClose }: { sessionId: s
       const res = await fetch(api.deleteSession(sessionId), { method: "DELETE" });
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as Partial<ApiError>).error ?? `${res.status}`);
       (await res.json()) as DeleteSessionResponse;
-      router.push("/");
+      router.push("/sessions");
     } catch (err) {
       setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }

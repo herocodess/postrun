@@ -102,7 +102,7 @@ export function Report() {
   if (state.kind === "error")
     return /-> 404$/.test(state.message) ? (
       <p className="muted-block">
-        This session is not in Postrun anymore; it may have been deleted. <a href="/">See all sessions</a>
+        This session is not in Postrun anymore; it may have been deleted. <a href="/sessions">See all sessions</a>
       </p>
     ) : (
       <p className="error">Could not load session: {state.message}</p>

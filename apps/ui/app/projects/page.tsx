@@ -1,11 +1,11 @@
 import { Suspense } from "react";
-import { Dashboard } from "@/components/Dashboard";
+import { Projects } from "@/components/Projects";
 
-export default function Page() {
+export default function ProjectsPage() {
   return (
     <main>
       <Suspense fallback={null}>
-        <Dashboard />
+        <Projects />
       </Suspense>
     </main>
   );

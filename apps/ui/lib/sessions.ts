@@ -24,14 +24,22 @@ export interface ListFilters {
   size: Size;
   failed: boolean;
   empty: boolean;
+  /** Review state: any, not reviewed yet, Looks good, Needs follow-up. */
+  review: Review;
+  /** Only sessions with risk flags. */
+  flagged: boolean;
+  /** Only this working folder (a project page). */
+  workspace: string;
 }
 
-export const NO_FILTERS: Omit<ListFilters, "agent"> = { q: "", range: "all", from: "", to: "", size: 0, failed: false, empty: false };
+export type Review = "any" | "none" | "approved" | "needs_attention";
+
+export const NO_FILTERS: Omit<ListFilters, "agent" | "workspace"> = { q: "", range: "all", from: "", to: "", size: 0, failed: false, empty: false, review: "any", flagged: false };
 
 /** How many filters (beyond the agent tabs) are narrowing the list. */
 export function activeFilters(f: ListFilters): number {
   const dated = f.range !== "all" && (f.range !== "custom" || Boolean(f.from || f.to));
-  return (f.q.trim() ? 1 : 0) + (dated ? 1 : 0) + (f.size > 0 ? 1 : 0) + (f.failed ? 1 : 0);
+  return (f.q.trim() ? 1 : 0) + (dated ? 1 : 0) + (f.size > 0 ? 1 : 0) + (f.failed ? 1 : 0) + (f.review !== "any" ? 1 : 0) + (f.flagged ? 1 : 0);
 }
 
 const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -70,6 +78,9 @@ function params(f: ListFilters, limit: number, cursor?: string): URLSearchParams
   if (to) p.set("to", to);
   if (f.size) p.set("min_steps", String(f.size));
   if (f.failed) p.set("failed", "1");
+  if (f.flagged) p.set("flagged", "1");
+  if (f.review !== "any") p.set("verdict", f.review);
+  if (f.workspace) p.set("workspace", f.workspace);
   if (!f.empty) p.set("empty", "0");
   p.set("limit", String(limit));
   if (cursor) p.set("cursor", cursor);
@@ -104,6 +115,9 @@ async function demoPage(f: ListFilters, limit: number, cursor?: string): Promise
     (!to || s.started_at < to) &&
     s.steps_total >= f.size &&
     (!f.failed || s.failed_count > 0) &&
+    (!f.flagged || s.flag_count > 0) &&
+    (!f.workspace || s.workspace.root === f.workspace) &&
+    (f.review === "any" || (f.review === "none" ? !s.verdict : s.verdict?.state === f.review)) &&
     (withEmpty || s.steps_total > 0);
   const hits = all.filter((s) => match(s, f.empty));
   const start = cursor ? Number(cursor) : 0;
