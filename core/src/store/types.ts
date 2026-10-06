@@ -67,6 +67,10 @@ export interface StoredSession {
 export interface IngestResult {
   session_id: string;
   created: boolean; // false when the session row already existed (update)
+  /** Whether anything stored changed. An unchanged re-read leaves updated_at alone, so live views stay quiet. */
+  changed: boolean;
+  /** Steps actually written: new or changed. Unchanged steps are skipped. */
+  written: number;
   steps: number;
   turns: number;
   segments: number;

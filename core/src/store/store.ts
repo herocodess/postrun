@@ -16,6 +16,7 @@
  * Default file: ~/.postrun/postrun.db (override with the path option or POSTRUN_DB).
  */
 
+import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { ensurePrivateDir, ensurePrivateFile } from "../util/files.js";
 import { homedir, hostname } from "node:os";
@@ -24,7 +25,12 @@ import type { Actor, AgentInfo, SessionSegment, Step, Turn, Verdict, Workspace }
 import type { IngestResult, SessionBatch, SessionMetrics, SessionRecord, SessionRefs, SessionSummary, StoreCounts, StoredSession } from "./types.js";
 
 export const LOCAL_OWNER_ID = "local";
-export const SCHEMA_VERSION = 1;
+/**
+ * 1: initial. 2: per-step hash and written_at (write only what changed, deltas
+ * for live views); per-session counts kept on the session row; edits no longer
+ * hold a full copy of the original file.
+ */
+export const SCHEMA_VERSION = 2;
 
 export interface StoreOptions {
   /** SQLite file path. ":memory:" for tests. Default ~/.postrun/postrun.db or POSTRUN_DB. */
@@ -60,7 +66,17 @@ CREATE TABLE IF NOT EXISTS sessions (
   verdict_note         TEXT,
   verdict_reviewer     TEXT,
   ingested_at          TEXT NOT NULL,
-  updated_at           TEXT NOT NULL
+  updated_at           TEXT NOT NULL,
+  -- kept up to date on every write (refreshSummary), so listing never scans steps
+  title                TEXT,
+  steps_total          INTEGER NOT NULL DEFAULT 0,
+  failed_count         INTEGER NOT NULL DEFAULT 0,
+  reference_only_count INTEGER NOT NULL DEFAULT 0,
+  flag_count           INTEGER NOT NULL DEFAULT 0,
+  turn_count           INTEGER NOT NULL DEFAULT 0,
+  step_counts          TEXT NOT NULL DEFAULT '{}',
+  -- when a write last removed steps: a live view older than this reloads instead of applying a delta
+  pruned_at            TEXT
 );
 CREATE INDEX IF NOT EXISTS sessions_started_at ON sessions(started_at DESC);
 CREATE INDEX IF NOT EXISTS sessions_owner ON sessions(owner_id);
@@ -113,11 +129,45 @@ CREATE TABLE IF NOT EXISTS steps (
   channels       TEXT NOT NULL,
   payload        TEXT NOT NULL,
   flags          TEXT NOT NULL,
+  hash           TEXT,
+  written_at     TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (session_id, id)
 );
 CREATE INDEX IF NOT EXISTS steps_session_seq ON steps(session_id, seq);
 CREATE INDEX IF NOT EXISTS steps_session_turn ON steps(session_id, turn_id, seq);
 `;
+
+/** Indexes on columns that version 1 stores gain by ALTER TABLE, so they run after the upgrade. */
+const DDL_V2_INDEXES = `CREATE INDEX IF NOT EXISTS steps_session_written ON steps(session_id, written_at);`;
+
+/** Columns added in version 2, for upgrading a version 1 store in place. */
+const V2_COLUMNS: Array<[table: string, column: string, decl: string]> = [
+  ["sessions", "title", "TEXT"],
+  ["sessions", "steps_total", "INTEGER NOT NULL DEFAULT 0"],
+  ["sessions", "failed_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["sessions", "reference_only_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["sessions", "flag_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["sessions", "turn_count", "INTEGER NOT NULL DEFAULT 0"],
+  ["sessions", "step_counts", "TEXT NOT NULL DEFAULT '{}'"],
+  ["sessions", "pruned_at", "TEXT"],
+  ["steps", "hash", "TEXT"],
+  ["steps", "written_at", "TEXT NOT NULL DEFAULT ''"],
+];
+
+/** Recompute one session's stored counts from its steps and turns. */
+const REFRESH_SUMMARY = `
+UPDATE sessions SET
+  title = (SELECT json_extract(st.payload, '$.text') FROM steps st
+             WHERE st.session_id = sessions.id AND st.type = 'message' AND json_extract(st.payload, '$.role') = 'user'
+               AND json_extract(st.payload, '$.text') IS NOT NULL
+             ORDER BY st.seq LIMIT 1),
+  steps_total = (SELECT count(*) FROM steps st WHERE st.session_id = sessions.id),
+  failed_count = (SELECT count(*) FROM steps st WHERE st.session_id = sessions.id AND st.outcome = 'failed'),
+  reference_only_count = (SELECT count(*) FROM steps st WHERE st.session_id = sessions.id AND st.content_status = 'reference_only'),
+  flag_count = (SELECT coalesce(sum(json_array_length(st.flags)), 0) FROM steps st WHERE st.session_id = sessions.id),
+  turn_count = (SELECT count(*) FROM turns t WHERE t.session_id = sessions.id),
+  step_counts = (SELECT coalesce(json_group_object(type, n), '{}') FROM (SELECT type, count(*) AS n FROM steps st WHERE st.session_id = sessions.id GROUP BY type))
+WHERE id = ?`;
 
 interface SessionRow {
   id: string;
@@ -142,13 +192,15 @@ interface SessionRow {
   verdict_reviewer: string | null;
   ingested_at: string;
   updated_at: string;
-  // projected
+  // kept up to date on write (REFRESH_SUMMARY)
   title: string | null;
   steps_total: number;
   failed_count: number;
   reference_only_count: number;
   flag_count: number;
   turn_count: number;
+  step_counts: string;
+  pruned_at: string | null;
 }
 
 interface StepRow {
@@ -168,20 +220,18 @@ interface StepRow {
   channels: string;
   payload: string;
   flags: string;
+  hash: string | null;
+  written_at: string;
 }
 
-const SESSION_SELECT = `
-SELECT s.*,
-  (SELECT json_extract(st.payload, '$.text') FROM steps st
-     WHERE st.session_id = s.id AND st.type = 'message' AND json_extract(st.payload, '$.role') = 'user'
-       AND json_extract(st.payload, '$.text') IS NOT NULL
-     ORDER BY st.seq LIMIT 1) AS title,
-  (SELECT count(*) FROM steps st WHERE st.session_id = s.id) AS steps_total,
-  (SELECT count(*) FROM steps st WHERE st.session_id = s.id AND st.outcome = 'failed') AS failed_count,
-  (SELECT count(*) FROM steps st WHERE st.session_id = s.id AND st.content_status = 'reference_only') AS reference_only_count,
-  (SELECT coalesce(sum(json_array_length(st.flags)), 0) FROM steps st WHERE st.session_id = s.id) AS flag_count,
-  (SELECT count(*) FROM turns t WHERE t.session_id = s.id) AS turn_count
-FROM sessions s`;
+const SESSION_SELECT = `SELECT s.* FROM sessions s`;
+
+/** Fingerprint of everything a step row stores, to skip rewriting unchanged steps. */
+function stepHash(s: Step): string {
+  return createHash("sha1")
+    .update(JSON.stringify([s.segment_index, s.turn_id, s.actor_id, s.seq, s.at, s.type, s.decision, s.outcome, s.content_status, s.error ?? null, s.channels, s.payload, s.flags]))
+    .digest("base64");
+}
 
 export class PostrunStore {
   readonly path: string;
@@ -211,7 +261,24 @@ export class PostrunStore {
     const version = this.db.pragma("user_version", { simple: true }) as number;
     if (version > SCHEMA_VERSION) throw new Error(`${this.path} has schema version ${version}, newer than this build (${SCHEMA_VERSION})`);
     this.db.exec(DDL);
-    if (version < SCHEMA_VERSION) this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    if (version < SCHEMA_VERSION) {
+      this.db.transaction(() => {
+        // Version 1 tables predate these columns; CREATE TABLE IF NOT EXISTS above left them as they were.
+        for (const [table, column, decl] of V2_COLUMNS) {
+          const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+          if (!cols.some((c) => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+        }
+        // Edits no longer keep a full copy of the original file; drop the copies already stored.
+        this.db.exec(
+          `UPDATE steps SET payload = json_remove(payload, '$.structured_patch.originalFile'), hash = NULL
+           WHERE type = 'edit' AND json_extract(payload, '$.structured_patch.originalFile') IS NOT NULL`,
+        );
+        const refresh = this.db.prepare(REFRESH_SUMMARY);
+        for (const { id } of this.db.prepare("SELECT id FROM sessions").all() as Array<{ id: string }>) refresh.run(id);
+        this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
+      })();
+    }
+    this.db.exec(DDL_V2_INDEXES);
   }
 
   close(): void {
@@ -223,7 +290,7 @@ export class PostrunStore {
   ingest(record: SessionRecord): IngestResult {
     const now = new Date().toISOString();
     const run = this.db.transaction((r: SessionRecord): IngestResult => {
-      const existing = this.db.prepare("SELECT ingested_at FROM sessions WHERE id = ?").get(r.id) as { ingested_at: string } | undefined;
+      const existing = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(r.id) as SessionRow | undefined;
       this.db
         .prepare(
           `INSERT INTO sessions (id, owner_id, captured_on, agent_kind, agent_version, agent_format_version, workspace_root, workspace_repo,
@@ -265,16 +332,32 @@ export class PostrunStore {
           verdict_note: r.verdict?.note ?? null,
           verdict_reviewer: r.verdict?.reviewer ?? null,
           ingested_at: existing?.ingested_at ?? now,
-          updated_at: now,
+          // Bumped below only if something changed, so re-reading an unchanged session wakes no live view.
+          updated_at: existing?.updated_at ?? now,
         });
 
-      this.writeChildren(r.id, r);
+      const written = this.writeChildren(r.id, r, now);
       // A capture record is the whole session, so anything it no longer contains goes. This matters
       // when a session was first read from hooks alone and its OTel data arrives later: the message
       // steps then get their OTel ids, and the hook-based ones must not linger as duplicates.
-      this.pruneChildren(r);
+      const pruned = this.pruneChildren(r, now);
+      const rowChanged =
+        !existing ||
+        existing.ended_at !== (r.ended_at ?? null) ||
+        existing.cost_usd !== r.metrics.cost_usd ||
+        existing.api_requests !== r.metrics.api_requests ||
+        existing.tokens_input !== r.metrics.tokens.input ||
+        existing.tokens_output !== r.metrics.tokens.output ||
+        existing.agent_version !== r.agent.version ||
+        existing.workspace_root !== r.workspace.root ||
+        existing.started_at !== r.started_at;
+      const changed = rowChanged || written > 0 || pruned > 0;
+      if (changed) {
+        this.db.prepare(REFRESH_SUMMARY).run(r.id);
+        this.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(now, r.id);
+      }
 
-      return { session_id: r.id, created: !existing, steps: r.steps.length, turns: r.turns.length, segments: r.segments.length, actors: r.actors.length };
+      return { session_id: r.id, created: !existing, changed, written, steps: r.steps.length, turns: r.turns.length, segments: r.segments.length, actors: r.actors.length };
     });
     return run(record);
   }
@@ -338,10 +421,13 @@ export class PostrunStore {
           tokens_cache_creation: m?.tokens.cache_creation ?? null,
           now,
         });
-      this.writeChildren(h.id, batch);
+      const written = this.writeChildren(h.id, batch, now);
+      this.db.prepare(REFRESH_SUMMARY).run(h.id);
       return {
         session_id: h.id,
         created: !existing,
+        changed: true,
+        written,
         steps: batch.steps.length,
         turns: batch.turns.length,
         segments: batch.segments.length,
@@ -365,16 +451,19 @@ export class PostrunStore {
     };
   }
 
-  /** Delete a session's children that are absent from a full record. Only ingest() calls this; pushed batches never delete. */
-  private pruneChildren(r: SessionRecord): void {
+  /** Delete a session's children that are absent from a full record. Only ingest() calls this; pushed batches never delete. Returns steps removed. */
+  private pruneChildren(r: SessionRecord, now: string): number {
     const keep = (ids: Array<string | number>) => JSON.stringify(ids);
-    this.db.prepare("DELETE FROM steps WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.steps.map((s) => s.id)));
+    const steps = this.db.prepare("DELETE FROM steps WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.steps.map((s) => s.id))).changes;
+    if (steps > 0) this.db.prepare("UPDATE sessions SET pruned_at = ? WHERE id = ?").run(now, r.id);
     this.db.prepare("DELETE FROM turns WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.turns.map((t) => t.id)));
     this.db.prepare("DELETE FROM actors WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.actors.map((a) => a.id)));
     this.db.prepare("DELETE FROM segments WHERE session_id = ? AND idx NOT IN (SELECT value FROM json_each(?))").run(r.id, keep(r.segments.map((s) => s.index)));
+    return steps;
   }
 
-  private writeChildren(sessionId: string, c: Pick<SessionRecord, "segments" | "actors" | "turns" | "steps">): void {
+  /** Upsert children. Steps whose content is unchanged (same hash) are skipped. Returns the number of steps written. */
+  private writeChildren(sessionId: string, c: Pick<SessionRecord, "segments" | "actors" | "turns" | "steps">, now: string): number {
     const seg = this.db.prepare(
       `INSERT INTO segments (session_id, idx, start_reason, started_at, ended_at, source_files)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -398,19 +487,31 @@ export class PostrunStore {
 
     const step = this.db.prepare(
       `INSERT INTO steps (session_id, id, segment_index, turn_id, actor_id, seq, at, type, decision, outcome, content_status,
-         error_type, error_message, channels, payload, flags)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         error_type, error_message, channels, payload, flags, hash, written_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(session_id, id) DO UPDATE SET segment_index = excluded.segment_index, turn_id = excluded.turn_id,
          actor_id = excluded.actor_id, seq = excluded.seq, at = excluded.at, type = excluded.type, decision = excluded.decision,
          outcome = excluded.outcome, content_status = excluded.content_status, error_type = excluded.error_type,
-         error_message = excluded.error_message, channels = excluded.channels, payload = excluded.payload, flags = excluded.flags`,
+         error_message = excluded.error_message, channels = excluded.channels, payload = excluded.payload, flags = excluded.flags,
+         hash = excluded.hash, written_at = excluded.written_at`,
     );
+    // One read of the stored fingerprints, then write only new or changed steps: a long session
+    // updated every turn writes that turn's steps, not the whole session again.
+    const stored = new Map(
+      (this.db.prepare("SELECT id, hash FROM steps WHERE session_id = ?").all(sessionId) as Array<{ id: string; hash: string | null }>).map((r) => [r.id, r.hash]),
+    );
+    let written = 0;
     for (const s of c.steps) {
+      const hash = stepHash(s);
+      if (stored.get(s.id) === hash) continue;
       step.run(
         sessionId, s.id, s.segment_index, s.turn_id, s.actor_id, s.seq, s.at, s.type, s.decision, s.outcome, s.content_status,
         s.error?.type ?? null, s.error?.message ?? null, JSON.stringify(s.channels), JSON.stringify(s.payload), JSON.stringify(s.flags),
+        hash, now,
       );
+      written++;
     }
+    return written;
   }
 
   // ---- query ----------------------------------------------------------------
@@ -432,6 +533,14 @@ export class PostrunStore {
   }
 
   getSession(id: string): StoredSession | undefined {
+    const shell = this.getSessionShell(id);
+    if (!shell) return undefined;
+    const steps = (this.db.prepare("SELECT * FROM steps WHERE session_id = ? ORDER BY seq").all(id) as StepRow[]).map(rowToStep);
+    return { ...shell, steps };
+  }
+
+  /** A session without its steps' contents: summary, segments, actors and turns (with step ids). Cheap at any size. */
+  getSessionShell(id: string): Omit<StoredSession, "steps"> | undefined {
     const row = this.db.prepare(`${SESSION_SELECT} WHERE s.id = ?`).get(id) as SessionRow | undefined;
     if (!row) return undefined;
     const summary = this.toSummary(row);
@@ -457,9 +566,8 @@ export class PostrunStore {
       if (a.label !== null) actor.label = a.label;
       return actor;
     });
-    const steps = (this.db.prepare("SELECT * FROM steps WHERE session_id = ? ORDER BY seq").all(id) as StepRow[]).map(rowToStep);
     const stepIdsByTurn = new Map<string, string[]>();
-    for (const s of steps) {
+    for (const s of this.db.prepare("SELECT id, turn_id FROM steps WHERE session_id = ? ORDER BY seq").all(id) as Array<{ id: string; turn_id: string }>) {
       const list = stepIdsByTurn.get(s.turn_id) ?? [];
       list.push(s.id);
       stepIdsByTurn.set(s.turn_id, list);
@@ -486,7 +594,7 @@ export class PostrunStore {
       if (t.mode !== null) turn.mode = t.mode;
       return turn;
     });
-    return { summary, segments, actors, turns, steps };
+    return { summary, segments, actors, turns };
   }
 
   /**
@@ -505,6 +613,47 @@ export class PostrunStore {
   lastUpdatedAt(): string | undefined {
     const row = this.db.prepare("SELECT max(updated_at) AS m FROM sessions").get() as { m: string | null };
     return row.m ?? undefined;
+  }
+
+  /**
+   * Steps of one session written after `since` (an ISO time from an earlier read), in seq order.
+   * `reload` is true when steps were removed since then, so the caller must refetch the whole session.
+   */
+  stepsChangedSince(id: string, since: string): { steps: Step[]; reload: boolean } {
+    const row = this.db.prepare("SELECT pruned_at FROM sessions WHERE id = ?").get(id) as { pruned_at: string | null } | undefined;
+    if (!row) return { steps: [], reload: true };
+    if (row.pruned_at !== null && row.pruned_at > since) return { steps: [], reload: true };
+    const steps = (this.db.prepare("SELECT * FROM steps WHERE session_id = ? AND written_at > ? ORDER BY seq").all(id, since) as StepRow[]).map(rowToStep);
+    return { steps, reload: false };
+  }
+
+  /**
+   * The fields the session report needs (type, outcome, content status, path, command, exit code),
+   * pulled out by SQLite without loading any output, so live views can refresh the report cheaply.
+   */
+  reportSteps(id: string): Step[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, seq, type, outcome, content_status,
+           json_extract(payload, '$.path') AS path, json_extract(payload, '$.is_full_write') AS full_write,
+           json_extract(payload, '$.command') AS command, json_extract(payload, '$.exit_code') AS exit_code
+         FROM steps WHERE session_id = ? ORDER BY seq`,
+      )
+      .all(id) as Array<{ id: string; seq: number; type: string; outcome: string; content_status: string; path: string | null; full_write: number | null; command: string | null; exit_code: number | null }>;
+    return rows.map((r) => {
+      const payload: Record<string, unknown> = {};
+      if (r.path !== null) payload["path"] = r.path;
+      if (r.full_write !== null) payload["is_full_write"] = r.full_write === 1;
+      if (r.command !== null) payload["command"] = r.command;
+      if (r.exit_code !== null) payload["exit_code"] = r.exit_code;
+      return { id: r.id, seq: r.seq, type: r.type, outcome: r.outcome, content_status: r.content_status, payload } as unknown as Step;
+    });
+  }
+
+  /** One step, in full. */
+  getStep(sessionId: string, stepId: string): Step | undefined {
+    const row = this.db.prepare("SELECT * FROM steps WHERE session_id = ? AND id = ?").get(sessionId, stepId) as StepRow | undefined;
+    return row ? rowToStep(row) : undefined;
   }
 
   /** Projected step counts by type for one session. */
@@ -541,7 +690,7 @@ export class PostrunStore {
       ingested_at: row.ingested_at,
       updated_at: row.updated_at,
       steps_total: row.steps_total,
-      step_counts: this.stepCounts(row.id),
+      step_counts: JSON.parse(row.step_counts || "{}") as Record<string, number>,
       failed_count: row.failed_count,
       reference_only_count: row.reference_only_count,
       flag_count: row.flag_count,

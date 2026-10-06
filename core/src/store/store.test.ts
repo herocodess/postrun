@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdtempSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { locateClineSession } from "../adapters/cline/index.js";
 import type { Step } from "../schema/index.js";
@@ -136,5 +137,151 @@ describe.skipIf(!hasCaptures || !hasCline)("store with both real sessions", () =
     expect(clFull.segments).toHaveLength(4);
     expect(clFull.summary.metrics.cost_usd).toBeCloseTo(2.3777, 3);
     store.close();
+  });
+});
+
+/** The version 1 schema, verbatim, to prove a store from the previous release upgrades in place. */
+const V1_DDL = `CREATE TABLE IF NOT EXISTS sessions (
+  id                   TEXT PRIMARY KEY,
+  owner_id             TEXT NOT NULL,
+  captured_on          TEXT NOT NULL,
+  agent_kind           TEXT NOT NULL,
+  agent_version        TEXT NOT NULL,
+  agent_format_version TEXT,
+  workspace_root       TEXT NOT NULL,
+  workspace_repo       TEXT,
+  started_at           TEXT NOT NULL,
+  ended_at             TEXT,
+  source               TEXT NOT NULL,
+  cost_usd             REAL NOT NULL DEFAULT 0,
+  api_requests         INTEGER NOT NULL DEFAULT 0,
+  tokens_input         INTEGER NOT NULL DEFAULT 0,
+  tokens_output        INTEGER NOT NULL DEFAULT 0,
+  tokens_cache_read    INTEGER NOT NULL DEFAULT 0,
+  tokens_cache_creation INTEGER NOT NULL DEFAULT 0,
+  verdict_state        TEXT,
+  verdict_note         TEXT,
+  verdict_reviewer     TEXT,
+  ingested_at          TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_started_at ON sessions(started_at DESC);
+CREATE INDEX IF NOT EXISTS sessions_owner ON sessions(owner_id);
+
+CREATE TABLE IF NOT EXISTS segments (
+  session_id   TEXT NOT NULL REFERENCES sessions(id),
+  idx          INTEGER NOT NULL,
+  start_reason TEXT NOT NULL,
+  started_at   TEXT NOT NULL,
+  ended_at     TEXT,
+  source_files TEXT NOT NULL,
+  PRIMARY KEY (session_id, idx)
+);
+
+CREATE TABLE IF NOT EXISTS actors (
+  session_id TEXT NOT NULL REFERENCES sessions(id),
+  id         TEXT NOT NULL,
+  parent_id  TEXT,
+  type       TEXT NOT NULL,
+  label      TEXT,
+  PRIMARY KEY (session_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS turns (
+  session_id    TEXT NOT NULL REFERENCES sessions(id),
+  id            TEXT NOT NULL,
+  segment_index INTEGER NOT NULL,
+  actor_id      TEXT NOT NULL,
+  idx           INTEGER NOT NULL,
+  prompt_id     TEXT,
+  mode          TEXT,
+  started_at    TEXT NOT NULL,
+  PRIMARY KEY (session_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS steps (
+  session_id     TEXT NOT NULL REFERENCES sessions(id),
+  id             TEXT NOT NULL,
+  segment_index  INTEGER NOT NULL,
+  turn_id        TEXT NOT NULL,
+  actor_id       TEXT NOT NULL,
+  seq            INTEGER NOT NULL,
+  at             TEXT NOT NULL,
+  type           TEXT NOT NULL,
+  decision       TEXT NOT NULL,
+  outcome        TEXT NOT NULL,
+  content_status TEXT NOT NULL,
+  error_type     TEXT,
+  error_message  TEXT,
+  channels       TEXT NOT NULL,
+  payload        TEXT NOT NULL,
+  flags          TEXT NOT NULL,
+  PRIMARY KEY (session_id, id)
+);
+CREATE INDEX IF NOT EXISTS steps_session_seq ON steps(session_id, seq);
+CREATE INDEX IF NOT EXISTS steps_session_turn ON steps(session_id, turn_id, seq);`;
+
+describe("store writes only what changed (schema v2)", () => {
+  it("skips unchanged steps, leaves updated_at alone when nothing changed, and writes only new or changed steps", async () => {
+    const store = new PostrunStore({ path: ":memory:" });
+    const r = tinyRecord("w1", "2026-10-06T10:00:00.000Z");
+    const first = store.ingest(r);
+    expect(first).toMatchObject({ created: true, changed: true, written: 2 });
+    const t1 = store.getSession("w1")!.summary.updated_at;
+    await new Promise((res) => setTimeout(res, 5));
+    const again = store.ingest(r);
+    expect(again).toMatchObject({ created: false, changed: false, written: 0 });
+    expect(store.getSession("w1")!.summary.updated_at).toBe(t1); // a re-read wakes no live view
+
+    const extra: Step = { ...r.steps[0]!, id: "s2", seq: 5, payload: { role: "assistant", text: "done" } } as Step;
+    const grown = { ...r, steps: [...r.steps, extra] };
+    const third = store.ingest(grown);
+    expect(third).toMatchObject({ changed: true, written: 1 });
+    const t3 = store.getSession("w1")!.summary.updated_at;
+    expect(t3 > t1).toBe(true);
+    // Only the new step is newer than the earlier read.
+    expect(store.stepsChangedSince("w1", t1)).toEqual({ steps: [expect.objectContaining({ id: "s2" })], reload: false });
+    expect(store.stepsChangedSince("w1", t3).steps).toEqual([]);
+    expect(store.getStep("w1", "s2")).toMatchObject({ id: "s2", payload: { text: "done" } });
+    expect(store.getSession("w1")!.summary).toMatchObject({ steps_total: 3, failed_count: 1, title: "fix it", step_counts: { message: 2, command: 1 } });
+
+    // Removing a step tells a delta reader to reload.
+    await new Promise((res) => setTimeout(res, 5));
+    store.ingest(r);
+    expect(store.stepsChangedSince("w1", t3)).toEqual({ steps: [], reload: true });
+    expect(store.getSession("w1")!.summary.steps_total).toBe(2);
+    store.close();
+  });
+
+  it("upgrades a version 1 store in place: new columns, counts filled in, stored copies of original files dropped", () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-v1-"));
+    const path = join(dir, "v1.db");
+    const v1 = new Database(path);
+    v1.exec(V1_DDL);
+    v1.pragma("user_version = 1");
+    v1.prepare(
+      `INSERT INTO sessions (id, owner_id, captured_on, agent_kind, agent_version, workspace_root, started_at, source, ingested_at, updated_at)
+       VALUES ('old', 'local', 'mac', 'claude-code', '2.1.0', '/w', '2026-09-01T10:00:00Z', 'x', '2026-09-01T10:00:00Z', '2026-09-01T10:00:00Z')`,
+    ).run();
+    v1.prepare("INSERT INTO turns (session_id, id, segment_index, actor_id, idx, started_at) VALUES ('old', 'turn:1', 0, 'root', 1, '2026-09-01T10:00:00Z')").run();
+    const ins = v1.prepare(
+      `INSERT INTO steps (session_id, id, segment_index, turn_id, actor_id, seq, at, type, decision, outcome, content_status, channels, payload, flags)
+       VALUES ('old', ?, 0, 'turn:1', 'root', ?, '2026-09-01T10:00:00Z', ?, 'auto', ?, 'inline', '["hook"]', ?, '[]')`,
+    );
+    ins.run("m", 1, "message", "ok", JSON.stringify({ role: "user", text: "old prompt" }));
+    ins.run("e", 2, "edit", "failed", JSON.stringify({ path: "/w/a.ts", is_full_write: false, old_string: "a", new_string: "b", structured_patch: { structuredPatch: [1], originalFile: "x".repeat(50_000) } }));
+    v1.close();
+
+    const store = new PostrunStore({ path });
+    const s = store.getSession("old")!;
+    expect(s.summary).toMatchObject({ title: "old prompt", steps_total: 2, failed_count: 1, turn_count: 1, step_counts: { message: 1, edit: 1 } });
+    const edit = s.steps.find((x) => x.id === "e")!;
+    expect(edit.type === "edit" && edit.payload.structured_patch).toEqual({ structuredPatch: [1] });
+    expect(store.listSessions()).toHaveLength(1);
+    store.close();
+    // Opening again is a no-op.
+    const again = new PostrunStore({ path });
+    expect(again.getSession("old")!.summary.steps_total).toBe(2);
+    again.close();
   });
 });
