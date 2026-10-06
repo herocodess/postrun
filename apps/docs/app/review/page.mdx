@@ -194,6 +194,14 @@ Both notifications and the update check are off until you turn them on. Once a d
 
 Settings is read-only when the review app runs from the development server (`pnpm dev:core`), because there is no background process to change.
 
+## Feedback and share links in the sidebar
+
+At the bottom of the sidebar, **Share links** opens your links at app.postrun.app, and **Feedback** opens a short form: a rating from 1 to 5, what Postrun should do next, an optional email, and an optional usage summary (counts only). **Exactly what will be sent** shows every field before you press **Send feedback**. The background process passes it to app.postrun.app; nothing about your sessions goes with it.
+
+After about a week of use, a banner asks once how Postrun is working for you. **Not now** hides it for two months.
+
+**Settings → Account** shows whether this computer is signed in for share links. **Connect account** does the same as `postrun login`, without a terminal: approve the computer in the tab that opens, and the card updates by itself.
+
 ## Live updates
 
 The app keeps one connection per browser tab to the [live events stream](/reference/events-api/). When a session is written, the dashboard, the list and the open session refetch in place, and new steps get a short highlight.

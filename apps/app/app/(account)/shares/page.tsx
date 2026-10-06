@@ -109,11 +109,19 @@ function Empty() {
       </div>
       <h2>No share links yet</h2>
       <p className="muted">Sharing happens from your own machine, one session at a time. Postrun redacts the report first and shows you what it masked.</p>
+      <div className="empty-actions">
+        <a className="btn btn-ghost btn-sm" href="http://127.0.0.1:1234/" target="_blank" rel="noreferrer">
+          Open your review app
+        </a>
+        <a className="btn btn-quiet btn-sm" href="https://docs.postrun.app/quickstart/">
+          Don&apos;t have Postrun yet?
+        </a>
+      </div>
       <ol className="steps">
         <li>
           <span className="step-n">1</span>
           <div>
-            Connect this account to your computer:
+            Connect this account to your computer: <strong className="t-plain">Connect account</strong> in the review app&apos;s Settings, or in a terminal:
             <code className="cmd">postrun login</code>
           </div>
         </li>

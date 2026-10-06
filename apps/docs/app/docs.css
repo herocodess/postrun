@@ -89,6 +89,18 @@ a:hover {
 .top-link:hover {
   color: var(--text);
 }
+.top-gh {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  color: var(--text-2);
+}
+.top-gh:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
 .btn {
   display: inline-flex;
   align-items: center;

@@ -28,7 +28,8 @@
     "demo:build": "node scripts/build-demo.mjs",
     "postrun": "pnpm --silent --filter @postrun/core postrun",
     "build:package": "pnpm --filter postrun build",
-    "test:install": "pnpm --filter postrun test:install"
+    "test:install": "pnpm --filter postrun test:install",
+    "release": "node scripts/release.mjs"
   },
   "keywords": [
     "postrun",

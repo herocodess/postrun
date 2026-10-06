@@ -139,3 +139,23 @@ describe("dates", () => {
     expect(relative(now, now)).toBe("just now");
   });
 });
+
+describe("feedback", () => {
+  it("takes a rating, a message or both, tidied, and refuses junk", async () => {
+    const { readFeedback } = await import("./feedback");
+    expect(readFeedback({ rating: 4, source: "cli", message: "  more agents\r\nplease\u0007 " })).toEqual({ rating: 4, source: "cli", message: "more agents\nplease" });
+    expect(readFeedback({ message: "hi", source: "nonsense" }).source).toBe("app");
+    expect(readFeedback({ message: "x".repeat(5000), source: "cli" }).message).toHaveLength(4000);
+    for (const bad of [{}, { rating: 0 }, { rating: 6 }, { rating: 2.5 }, { message: "  " }, { message: "hi", email: "not an email" }, null, "text"]) expect(() => readFeedback(bad)).toThrow();
+  });
+});
+
+describe("the shared signed-in marker", () => {
+  it("is set for the parent domain on https only", async () => {
+    process.env["BETTER_AUTH_URL"] ??= "http://localhost:3001";
+    const { markerDomain } = await import("./auth");
+    expect(markerDomain("https://app.postrun.app")).toBe("postrun.app");
+    expect(markerDomain("http://localhost:3001")).toBeUndefined();
+    expect(markerDomain("https://postrun-app.vercel.app")).toBeUndefined();
+  });
+});

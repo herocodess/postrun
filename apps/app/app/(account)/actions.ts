@@ -3,6 +3,10 @@
 /** What the account pages can change. Each action checks who is signed in and only touches their own rows. */
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { sendFeedbackAlert } from "@/lib/email";
+import { adminEmails, baseUrl, isAdmin } from "@/lib/env";
+import { readFeedback, saveFeedback, setFeedbackStatus } from "@/lib/feedback";
 import { enforce, LIMITS } from "@/lib/limit";
 import { createToken, deleteShare, revokeShare, revokeToken, ShareError } from "@/lib/shares";
 import { isShareId } from "@/lib/ids";
@@ -38,4 +42,26 @@ export async function makeToken(name: string): Promise<{ token?: string; error?:
     if (e instanceof ShareError) return { error: e.message };
     throw e;
   }
+}
+
+/** Feedback from the signed-in site. */
+export async function sendFeedback(input: { rating?: number; message?: string }): Promise<{ ok?: true; error?: string }> {
+  const v = await requireViewer("/feedback");
+  try {
+    await enforce(LIMITS.feedbackPerIp, `user:${v.id}`, "That's a lot of feedback in an hour. Thank you! Try again later.");
+    const row = await saveFeedback(readFeedback({ ...input, source: "app", email: v.email }), v.id);
+    after(() => sendFeedbackAlert(adminEmails(), row, `${baseUrl()}/admin#${row.id}`).catch((e: unknown) => console.error(e)));
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof ShareError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Admins only: mark a piece of feedback dealt with, or open again. */
+export async function markFeedback(id: string, status: "new" | "done"): Promise<void> {
+  const v = await requireViewer("/admin");
+  if (!isAdmin(v.email) || (status !== "new" && status !== "done") || typeof id !== "string" || id.length > 32) return;
+  await setFeedbackStatus(id, status);
+  revalidatePath("/admin");
 }

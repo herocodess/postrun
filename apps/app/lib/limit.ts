@@ -34,6 +34,8 @@ export const LIMITS = {
   connectPerUser: { name: "cli:connect", max: 10, seconds: 600 },
   /** Tokens made by hand in Settings, per account. */
   tokenPerUser: { name: "settings:token", max: 10, seconds: 3600 },
+  /** Feedback from one IP address. */
+  feedbackPerIp: { name: "feedback:ip", max: 10, seconds: 3600 },
   /** Shared reports opened from one IP address. */
   viewPerIp: { name: "view:ip", max: 120, seconds: 60 },
 } as const satisfies Record<string, Limit>;

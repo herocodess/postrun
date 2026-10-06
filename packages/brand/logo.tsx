@@ -76,3 +76,14 @@ export function Loader({ size = 28, label = "Loading", inline = false, fg = "cur
     </span>
   );
 }
+
+/**
+ * Whether this browser is signed in at app.postrun.app. app.postrun.app sets a
+ * "postrun_signed_in" marker on the whole postrun.app domain (it holds nothing
+ * secret; the session itself stays on app.postrun.app), so the website and docs
+ * can say Dashboard instead of Log in. Read after mount: the sites are static.
+ */
+export function signedInHere(): boolean {
+  if (typeof document === "undefined") return false;
+  return /(?:^|;\s*)postrun_signed_in=1(?:;|$)/.test(document.cookie);
+}

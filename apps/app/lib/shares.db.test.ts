@@ -131,9 +131,28 @@ describe.skipIf(!URL_)("share links in Postgres", () => {
     expect((await hit(limit, "victim@example.com")).ok).toBe(true);
   });
 
+  it("keeps feedback, linked to an account or not, with counts for the admin page", async () => {
+    const fb = await import("./feedback");
+    await fb.saveFeedback({ rating: 5, message: "love it", source: "review-app", version: "0.3.0" }, "ana");
+    await fb.saveFeedback({ rating: 2, source: "cli", email: "x@example.com" });
+    const all = await fb.listFeedback();
+    expect(all.map((r) => r.rating)).toEqual([2, 5]);
+    expect(all[1]?.account_email).toBe("ana@example.com");
+    expect((await fb.listFeedback({ source: "cli" })).length).toBe(1);
+    const s = await fb.feedbackStats();
+    expect(s.total).toBe(2);
+    expect(s.average).toBe(3.5);
+    expect(s.ratings[5]).toBe(1);
+    await fb.setFeedbackStatus(all[0]!.id, "done");
+    expect((await fb.listFeedback({ status: "new" })).length).toBe(1);
+  });
+
   it("deleting an account deletes its links and tokens", async () => {
     await db.query(`DELETE FROM "user" WHERE id = 'ana'`);
     expect(await mod.listShares("ana")).toEqual([]);
     expect(await mod.listTokens("ana")).toEqual([]);
+    // Feedback stays, without the account.
+    const [kept] = await db.query<{ user_id: string | null }>(`SELECT user_id FROM feedback WHERE message = 'love it'`);
+    expect(kept?.user_id).toBeNull();
   });
 });

@@ -1175,3 +1175,335 @@ input:focus {
 .viewer-report:hover {
   color: var(--text);
 }
+
+/* ---- footer of the signed-in pages -------------------------------------------- */
+.acct-foot {
+  border-top: 1px solid var(--line);
+}
+.acct-foot-in {
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 20px max(20px, env(safe-area-inset-left)) 28px;
+  font-size: 13px;
+}
+.acct-foot-in a {
+  color: var(--text-2);
+}
+.acct-foot-in a:hover {
+  color: var(--text);
+}
+
+/* ---- rating: five steps that light up like the logo's ------------------------ */
+.rating {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 10px 0 22px;
+}
+.rating-steps {
+  display: flex;
+  gap: 6px;
+}
+.rating-step {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--s2);
+  color: var(--text-2);
+  font: 600 15px var(--sans);
+  cursor: pointer;
+  transition:
+    background 0.25s var(--ease),
+    border-color 0.25s,
+    color 0.25s,
+    transform 0.25s var(--ease);
+  transition-delay: calc(var(--i) * 35ms);
+}
+.rating-step:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.rating-step.on {
+  background: rgba(255, 106, 26, 0.14);
+  border-color: rgba(255, 106, 26, 0.5);
+  color: var(--accent-ink);
+}
+.rating-step.picked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #160a03;
+  animation: rating-pop 0.35s var(--ease);
+}
+@keyframes rating-pop {
+  50% {
+    transform: scale(1.12);
+  }
+}
+.rating-label {
+  font-size: 14px;
+  color: var(--text-2);
+  min-width: 150px;
+}
+
+/* ---- feedback form ---------------------------------------------------------------- */
+.fb-form {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 16px;
+}
+.fb-q {
+  font-size: 14.5px;
+  color: #d4d8e1;
+  font-weight: 500;
+}
+.fb-q .muted {
+  font-weight: 400;
+}
+textarea {
+  margin: 10px 0 14px;
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  color: var(--text);
+  font: 15px/1.55 var(--sans);
+  resize: vertical;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+textarea:focus {
+  outline: none;
+  border-color: var(--accent-ink);
+  box-shadow: 0 0 0 4px rgba(255, 106, 26, 0.2);
+}
+.fb-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fb-thanks {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 28px 0 24px;
+  animation: rise 0.5s var(--ease) both;
+}
+.fb-thanks h2 {
+  font-size: 19px;
+}
+.fb-thanks p {
+  max-width: 420px;
+  font-size: 14px;
+}
+.fb-ring {
+  stroke-dasharray: 126;
+  stroke-dashoffset: 126;
+  animation: draw 0.7s var(--ease) forwards;
+}
+.fb-tick {
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: draw 0.4s var(--ease) 0.45s forwards;
+}
+
+/* ---- admin ---------------------------------------------------------------------------- */
+.figs-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.dist {
+  padding: 14px 18px;
+}
+.dist-row {
+  display: grid;
+  grid-template-columns: 18px 170px 1fr 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.dist-row:hover,
+.dist-row.on {
+  background: var(--s3);
+  color: var(--text);
+}
+.dist-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--s3);
+  overflow: hidden;
+}
+.dist-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transform-origin: left;
+  animation: grow 0.7s var(--ease) both;
+  animation-delay: calc(200ms + var(--i) * 60ms);
+}
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+.dist-c {
+  text-align: right;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 14px;
+}
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+}
+.seg a {
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.seg a:hover {
+  color: var(--text);
+}
+.seg a.on {
+  background: var(--s3);
+  color: var(--text);
+}
+.empty-line {
+  padding: 30px 0;
+  color: var(--muted);
+  text-align: center;
+}
+.fb-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.fb-item {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--s1);
+  animation: rise 0.5s var(--ease) both;
+  animation-delay: calc(120ms + var(--i) * 40ms);
+  scroll-margin-top: 80px;
+}
+.fb-item:target {
+  border-color: rgba(255, 106, 26, 0.5);
+}
+.fb-item.is-done {
+  opacity: 0.6;
+}
+.fb-item-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.fb-score {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  font: 700 18px var(--sans);
+  background: var(--s3);
+  color: var(--text-2);
+}
+.fb-score small {
+  font-size: 10px;
+  font-weight: 500;
+  margin-top: -6px;
+  opacity: 0.7;
+}
+.fb-score.s4,
+.fb-score.s5 {
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--ok);
+}
+.fb-score.s3 {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--warn);
+}
+.fb-score.s1,
+.fb-score.s2 {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--bad);
+}
+.fb-who {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fb-msg {
+  margin-top: 12px;
+  white-space: pre-wrap;
+  color: #d4d8e1;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.fb-usage {
+  margin-top: 10px;
+  font-size: 13px;
+}
+.fb-usage summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.fb-usage pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font: 12px/1.5 var(--mono);
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+@media (max-width: 760px) {
+  .figs-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .figs-4 .fig:last-child {
+    display: flex;
+  }
+  .dist-row {
+    grid-template-columns: 18px 1fr 70px 30px;
+  }
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}

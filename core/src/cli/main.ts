@@ -8,6 +8,7 @@
  *   postrun export <id>  write a redacted HTML report
  *   postrun share <id>   upload a redacted report and print its link (needs postrun login)
  *   postrun login | logout   connect this computer to a Postrun account, for share links
+ *   postrun feedback     tell the Postrun team what works and what's missing
  *   postrun delete <id>  delete one session for good
  *   postrun doctor       check everything, with a fix for each problem
  *   postrun autostart on|off
@@ -28,6 +29,7 @@ import {
   forgetAccount,
   readAccount,
   revokeOnServer,
+  sendFeedback,
   SHARE_EXPIRY_DAYS,
   ShareFailed,
   shareServer,
@@ -643,6 +645,72 @@ async function cmdShare(argv: string[]): Promise<number> {
   }
 }
 
+async function prompt(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(question)).trim();
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Feedback to the Postrun team, sent only after showing exactly what goes. Asks for a rating
+ * and a message at a terminal; --rating and --message skip the questions.
+ */
+async function cmdFeedback(argv: string[]): Promise<number> {
+  const a = parse(argv, ["rating", "message", "email"]);
+  onlyFlags(a, ["rating", "message", "email", "usage", "yes"]);
+  if (a.flags.has("help")) return help("feedback");
+  const p = paths();
+  const acct = readAccount(p.home);
+  const tty = interactive();
+  let rating: number | undefined;
+  const r = a.flags.get("rating");
+  if (typeof r === "string") rating = Number(r);
+  else if (tty) {
+    const answer = await prompt("How useful is Postrun to you, from 1 (not useful) to 5 (can't work without it)? Enter to skip: ");
+    if (answer) rating = Number(answer);
+  }
+  if (rating !== undefined && !(Number.isInteger(rating) && rating >= 1 && rating <= 5)) throw new UsageError("the rating is a whole number from 1 to 5");
+  let message = typeof a.flags.get("message") === "string" ? String(a.flags.get("message")) : "";
+  if (!message && tty) message = await prompt("What should Postrun do next? Anything missing, confusing or broken (Enter to skip):\n> ");
+  if (rating === undefined && !message) {
+    err("Nothing to send: give a rating or a few words (postrun feedback --rating 4 --message \"...\").");
+    return 1;
+  }
+  let email = typeof a.flags.get("email") === "string" ? String(a.flags.get("email")) : (acct?.email ?? "");
+  if (!a.flags.has("email") && !acct && tty) email = await prompt("Your email, if you'd like a reply (Enter to skip): ");
+  const version = VERSION;
+  const platform = `${process.platform} ${process.arch}`;
+  let usage: string | undefined;
+  const wantUsage = a.flags.has("usage") || (!a.flags.has("yes") && tty && existsSync(p.db) && (await ask("Attach your usage summary? Counts only, the same as postrun stats.", false)));
+  if (wantUsage && existsSync(p.db)) usage = withStore(p, (store) => formatUsage(store.usage({ version, platform })));
+  const payload = { source: "cli", version, platform, ...(rating ? { rating } : {}), ...(message ? { message } : {}), ...(email ? { email } : {}), ...(usage ? { usage } : {}) };
+  out("");
+  out("This is what will be sent to app.postrun.app:");
+  out(`  rating   ${rating ?? "(none)"}`);
+  out(`  message  ${message ? message.replace(/\n/g, "\n           ") : "(none)"}`);
+  out(`  email    ${email || "(none)"}`);
+  out(`  version  ${version} on ${platform}`);
+  out(`  usage    ${usage ? "attached (counts only)" : "not attached"}`);
+  if (!a.flags.has("yes") && !(await ask("Send it?", true))) {
+    out("Nothing was sent.");
+    return 1;
+  }
+  try {
+    await sendFeedback(acct?.server ?? shareServer(process.env), acct?.token, payload, USER_AGENT);
+  } catch (e) {
+    if (e instanceof ShareFailed) {
+      err(e.message);
+      return 1;
+    }
+    throw e;
+  }
+  out("Sent. Thank you: every piece of feedback is read.");
+  return 0;
+}
+
 const HELP: Record<string, string> = {
   main: `postrun ${VERSION}: the flight recorder for coding agents
 
@@ -667,6 +735,9 @@ Running
 Account (only for share links; recording never needs one)
   login                Connect this computer to your Postrun account
   logout               Disconnect it
+
+Tell us
+  feedback             What works, what's missing (you see it before it's sent)
 
 Help
   doctor               Check everything, with a fix for each problem
@@ -696,6 +767,12 @@ before uploading. Nothing else leaves this computer.
 
 See opens and turn links off at https://app.postrun.app/shares.
 Run postrun login once first.`,
+  feedback: `Usage: postrun feedback [--rating 1-5] [--message "..."] [--email you@x] [--usage] [--yes]
+
+Sends a rating and a message to the Postrun team. Shows exactly what will be
+sent and asks first. Nothing about your sessions is included. The usage
+summary (counts only, as in postrun stats) goes only with --usage or if you
+say yes when asked.`,
   login: `Usage: postrun login [--with-token] [--no-open]
 
 Connects this computer to your Postrun account so it can make share links.
@@ -750,6 +827,8 @@ export async function main(argv: string[]): Promise<number> {
         return await cmdShare(rest);
       case "login":
         return await cmdLogin(rest);
+      case "feedback":
+        return await cmdFeedback(rest);
       case "logout":
         return await cmdLogout(rest);
       case "delete":

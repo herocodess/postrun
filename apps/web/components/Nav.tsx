@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Wordmark } from "./Logo";
-import { LOGIN_URL } from "@/content/site";
+import { signedInHere } from "@postrun/brand/logo";
+import { APP_URL, GITHUB_URL, LOGIN_URL } from "@/content/site";
 
 /**
  * Translucent header with three states:
@@ -33,6 +34,9 @@ const LINKS: NavLink[] = [
 export function Nav() {
   const [state, setState] = useState<NavState>("top");
   const [menuOpen, setMenuOpen] = useState(false);
+  // Signed in at app.postrun.app: offer the dashboard instead of signing in again.
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => setSignedIn(signedInHere()), []);
   const lastY = useRef(0);
   const lastDir = useRef(0);
   const turnY = useRef(0); // where the scroll direction last changed
@@ -87,12 +91,25 @@ export function Nav() {
             ))}
           </div>
           <span className="grow"></span>
-          <a href={LOGIN_URL} className="nav-login" data-track="Log in" data-track-where="nav">
-            Log in
+          <a href={GITHUB_URL} className="nav-gh" target="_blank" rel="noopener" aria-label="Postrun on GitHub" title="Postrun on GitHub" data-track="GitHub" data-track-where="nav">
+            <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+            </svg>
           </a>
-          <a href={LOGIN_URL} className="btn btn-primary btn-sm nav-cta" data-track="Get started" data-track-where="nav">
-            Get started
-          </a>
+          {signedIn ? (
+            <a href={`${APP_URL}/shares`} className="btn btn-primary btn-sm nav-cta" data-track="Dashboard" data-track-where="nav">
+              Dashboard
+            </a>
+          ) : (
+            <>
+              <a href={LOGIN_URL} className="nav-login" data-track="Log in" data-track-where="nav">
+                Log in
+              </a>
+              <a href={LOGIN_URL} className="btn btn-primary btn-sm nav-cta" data-track="Get started" data-track-where="nav">
+                Get started
+              </a>
+            </>
+          )}
           <button
             type="button"
             className="menu-btn"
@@ -114,8 +131,13 @@ export function Nav() {
             {/* Links arrive like steps in a session timeline. */}
             {[
               ...LINKS.map((l) => ({ ...l, cta: false })),
-              { href: LOGIN_URL, label: "Log in", cta: false, external: false, offsite: true },
-              { href: `${LOGIN_URL}?new=1`, label: "Get started", cta: true, external: false, offsite: true },
+              { href: GITHUB_URL, label: "GitHub", cta: false, external: true, offsite: true },
+              ...(signedIn
+                ? [{ href: `${APP_URL}/shares`, label: "Dashboard", cta: true, external: false, offsite: true }]
+                : [
+                    { href: LOGIN_URL, label: "Log in", cta: false, external: false, offsite: true },
+                    { href: `${LOGIN_URL}?new=1`, label: "Get started", cta: true, external: false, offsite: true },
+                  ]),
             ].map((l, i) => (
               <a
                 key={l.href}

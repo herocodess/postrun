@@ -137,6 +137,30 @@ export async function uploadReport(server: string, token: string, html: string, 
   return (await r.json()) as ShareResult;
 }
 
+/** Feedback, with the computer's sign-in when it has one so a reply can reach the account. */
+export async function sendFeedback(server: string, token: string | undefined, body: Record<string, unknown>, userAgent: string): Promise<void> {
+  let r: Response;
+  try {
+    r = await fetch(`${server}/api/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "user-agent": userAgent, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    throw new ShareFailed(`Couldn't reach ${server}. Check your connection and try again. (${(e as Error).message})`, "offline");
+  }
+  if (r.status !== 201) {
+    let b: { error?: string; message?: string } = {};
+    try {
+      b = (await r.json()) as typeof b;
+    } catch {
+      // not JSON
+    }
+    throw new ShareFailed(b.message ?? `${r.status} ${r.statusText}`, b.error ?? "http_error", r.status);
+  }
+}
+
 export interface BrowserLogin {
   /** The page to open in a browser. */
   url: string;

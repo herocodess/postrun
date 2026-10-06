@@ -12,7 +12,7 @@ export function env(name: EnvName): string {
   return v;
 }
 
-export function optionalEnv(name: EnvName | "EMAIL_FROM"): string | undefined {
+export function optionalEnv(name: EnvName | "EMAIL_FROM" | "ADMIN_EMAILS"): string | undefined {
   return process.env[name]?.trim() || undefined;
 }
 
@@ -22,3 +22,15 @@ export function baseUrl(): string {
 }
 
 export const isProduction = () => process.env["NODE_ENV"] === "production";
+
+/** Who can open /admin and gets an email for each piece of feedback: ADMIN_EMAILS, comma separated. */
+export function adminEmails(): string[] {
+  return (optionalEnv("ADMIN_EMAILS") ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.includes("@"));
+}
+
+export function isAdmin(email: string | undefined): boolean {
+  return !!email && adminEmails().includes(email.toLowerCase());
+}
