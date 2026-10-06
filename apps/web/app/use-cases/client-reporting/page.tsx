@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { PageCta } from "@/components/PageCta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
 import { StepList } from "@/components/StepList";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/use-cases/client-reporting/", {
   title: "Show a client what the agent did · postrun",
   description:
     "For agencies and freelancers who build with coding agents: send a client one redacted HTML report of the session instead of a hand-written summary or raw logs.",
-};
+});
 
 const STEPS = [
   {

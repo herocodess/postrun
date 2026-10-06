@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { PageCta } from "@/components/PageCta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
 import { USE_CASES } from "@/content/use-cases";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/use-cases/", {
   title: "Use cases · postrun",
   description: "How teams use Postrun: review an agent's work before merging, show a client what the agent did, and run a post-mortem when an agent breaks something.",
-};
+});
 
 export default function UseCases() {
   return (

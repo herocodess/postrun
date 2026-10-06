@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { PageCta } from "@/components/PageCta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/security/", {
   title: "Security · postrun",
   description:
     "How Postrun keeps agent sessions on your machine: owner-only storage in ~/.postrun, loopback-only listeners, no telemetry, and redacted exports with every mask listed.",
-};
+});
 
 const TOC = [
   { id: "who", label: "Who this is for" },

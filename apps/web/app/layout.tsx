@@ -12,10 +12,11 @@ export const metadata: Metadata = {
   title: "postrun · the flight recorder for coding agents",
   description:
     "Postrun records every command, edit and file your coding agents touch, on your own machine. Review the whole session, then share a redacted report when someone else needs to see it.",
+  alternates: { canonical: "/" },
   openGraph: {
     title: "postrun · the flight recorder for coding agents",
     description: "Record agent sessions locally. Review every step. Share a redacted report on purpose.",
-    url: "https://postrun.app",
+    url: "/",
     siteName: "postrun",
     type: "website",
   },

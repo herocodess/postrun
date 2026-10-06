@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { PageCta } from "@/components/PageCta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
 import { StepList } from "@/components/StepList";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/use-cases/review-before-merge/", {
   title: "Review an agent's work before you merge · postrun",
   description:
     "The diff shows the end state. Postrun shows the whole agent session: every command, failure and edit, so you can review how the change was made before you merge it.",
-};
+});
 
 const STEPS = [
   {

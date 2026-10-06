@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { PageCta } from "@/components/PageCta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
 import { StepList } from "@/components/StepList";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/use-cases/agent-postmortems/", {
   title: "Post-mortem when an agent breaks something · postrun",
   description:
     "When a coding agent deletes the wrong file or breaks the build, Postrun's recorded session shows every step in order: what it ran, what failed, and exactly what it changed.",
-};
+});
 
 const STEPS = [
   {

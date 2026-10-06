@@ -24,6 +24,9 @@ export const POSTS: Post[] = [
   },
 ];
 
+/** Posts to list: everything in dev and previews, published posts only in production. */
+export const LISTED_POSTS: Post[] = POSTS.filter((p) => !p.draft || process.env["POSTRUN_SHOW_DRAFTS"] === "1");
+
 export function postBySlug(slug: string): Post {
   const post = POSTS.find((p) => p.slug === slug);
   if (!post) throw new Error(`No post with slug "${slug}" in content/posts.ts`);

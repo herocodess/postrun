@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { LegalPage } from "@/components/LegalPage";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/privacy/", {
   title: "Privacy policy · postrun",
   description: "How Postrun handles your data: the app sends us nothing, the website keeps an email only if you join the waitlist, and visits are counted without cookies.",
-};
+});
 
 const TOC = [
   { id: "who", label: "Who we are" },

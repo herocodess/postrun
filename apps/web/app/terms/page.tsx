@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { LegalPage } from "@/components/LegalPage";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/terms/", {
   title: "Terms · postrun",
   description: "The terms for using postrun.app and Postrun during early access.",
-};
+});
 
 const TOC = [
   { id: "agreement", label: "These terms" },

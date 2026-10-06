@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { PageCta } from "@/components/PageCta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
@@ -7,12 +8,12 @@ import { postBySlug } from "@/content/posts";
 
 const post = postBySlug("introducing-postrun");
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/blog/introducing-postrun/", {
   title: `${post.title} · postrun`,
   description: post.summary,
   // Drafts stay out of search results until they are published.
   ...(post.draft ? { robots: { index: false, follow: true } } : {}),
-};
+});
 
 export default function IntroducingPostrun() {
   return (

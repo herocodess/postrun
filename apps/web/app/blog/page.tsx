@@ -1,20 +1,22 @@
 import type { Metadata } from "next";
+import { pageMeta } from "@/content/meta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
 import { formatDate } from "@/content/format";
-import { POSTS } from "@/content/posts";
+import { LISTED_POSTS } from "@/content/posts";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta("/blog/", {
   title: "Blog · postrun",
   description: "Notes from building Postrun, the flight recorder for coding agents.",
-};
+});
 
 export default function Blog() {
   return (
     <PageShell kicker="BLOG" title="Notes from building Postrun." lede="What we are building, why, and what we learn from people reviewing their agents' work.">
       <Reveal>
+        {LISTED_POSTS.length === 0 ? <p className="muted">The first post arrives with the launch.</p> : null}
         <ul className="post-list">
-          {POSTS.map((p) => (
+          {LISTED_POSTS.map((p) => (
             <li key={p.slug}>
               <a href={`/blog/${p.slug}/`}>
                 <span className="page-meta">

@@ -19,7 +19,8 @@ export function Waitlist() {
     e.preventDefault();
     const email = String(new FormData(e.currentTarget).get("email") ?? "").trim();
     if (!ENDPOINT) {
-      setState({ kind: "error", message: "The waitlist isn't connected yet. Set NEXT_PUBLIC_WAITLIST_URL to turn it on." });
+      // Production builds refuse to ship without NEXT_PUBLIC_WAITLIST_URL (scripts/prod-check.mjs).
+      setState({ kind: "error", message: "Sign-ups aren't open yet. Check back soon." });
       return;
     }
     setState({ kind: "sending" });

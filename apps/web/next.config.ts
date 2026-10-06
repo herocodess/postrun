@@ -16,7 +16,11 @@ const base: NextConfig = {
   transpilePackages: ["@postrun/brand"],
   // Vercel sets VERCEL=1 during its builds. Analytics loads only there, so local
   // and non-Vercel builds ship with no tracking script at all.
-  env: { POSTRUN_ANALYTICS: process.env["VERCEL"] ? "1" : "" },
+  env: {
+    POSTRUN_ANALYTICS: process.env["VERCEL"] ? "1" : "",
+    // Draft blog posts show in dev and preview deployments, never in the production listing.
+    POSTRUN_SHOW_DRAFTS: process.env["VERCEL_ENV"] === "production" ? "" : "1",
+  },
 };
 
 /**
