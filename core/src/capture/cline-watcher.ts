@@ -1,11 +1,14 @@
 /**
  * Cline live capture: watch ~/.cline/data/sessions and ingest sessions into the store.
  *
- * - Startup: ingest every session directory found (idempotent).
+ * - Startup: ingest every session whose files changed since it was last
+ *   stored (new ones included). Unchanged history is not re-read.
  * - Change: when a <id>.messages.json or <id>.json changes, or a new session
- *   directory appears, ingest that session after a short debounce. Cline
- *   rewrites the messages file during the session, so a session is ingested
- *   repeatedly while open; every ingest is an upsert. ended_at stays unset
+ *   directory appears, ingest that session. Cline rewrites its whole messages
+ *   file on every message, so ingests are paced (pacer.ts): a short wait after
+ *   the latest change, and at most about 1% of a core per busy session, so a
+ *   very long session is refreshed less often instead of costing more. Every
+ *   ingest is an upsert that writes only changed steps. ended_at stays unset
  *   until the metadata file records it.
  * - Half-written JSON (Cline mid-write) fails to parse; the watcher logs it
  *   and waits for the next change instead of retrying in a loop.
@@ -16,6 +19,7 @@
 import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { clineRecord } from "../store/ingest.js";
+import { createPacer } from "./pacer.js";
 import type { PostrunStore } from "../store/store.js";
 import type { IngestResult } from "../store/types.js";
 
@@ -23,8 +27,10 @@ export interface ClineWatcherOptions {
   /** ~/.cline/data/sessions */
   sessionsDir: string;
   store: PostrunStore;
-  /** Debounce per session after a change (ms). */
+  /** Wait after the latest change before re-reading (ms). */
   debounceMs?: number;
+  /** Share of one core a busy session may use for re-reads (default 0.01). */
+  budget?: number;
   /** Fallback poll interval for mtime changes (ms); fs.watch is the fast path. */
   pollMs?: number;
   log?: (line: string) => void;
@@ -44,7 +50,6 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
   const pollMs = opts.pollMs ?? 3000;
   const log = opts.log ?? (() => undefined);
   const known = new Map<string, number>(); // session id -> last mtime ingested or seen
-  const timers = new Map<string, NodeJS.Timeout>();
   let watcher: FSWatcher | undefined;
   let poll: NodeJS.Timeout | undefined;
 
@@ -77,17 +82,8 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
     }
   };
 
-  const schedule = (sessionId: string, trigger: string) => {
-    const existing = timers.get(sessionId);
-    if (existing) clearTimeout(existing);
-    timers.set(
-      sessionId,
-      setTimeout(() => {
-        timers.delete(sessionId);
-        ingest(sessionId, trigger);
-      }, debounceMs),
-    );
-  };
+  const pacer = createPacer({ run: (id, why) => void ingest(id, why), minDelayMs: debounceMs, ...(opts.budget !== undefined ? { budget: opts.budget } : {}) });
+  const schedule = (sessionId: string, trigger: string) => pacer.trigger(sessionId, trigger);
 
   const listSessions = (): string[] => {
     if (!existsSync(opts.sessionsDir)) return [];
@@ -110,11 +106,21 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
   return {
     start() {
       const ids = listSessions();
-      log(`cline: watching ${opts.sessionsDir} (${ids.length} session(s) present)`);
+      // Skip sessions stored after their files last changed: unchanged history is never re-read.
+      const storedAt = new Map(opts.store.listSessions({ agent: "cline" }).map((s) => [s.id, Date.parse(s.updated_at)]));
+      let caughtUp = 0;
       for (const id of ids) {
+        const m = mtimeOf(id);
+        const at = storedAt.get(id);
+        if (at !== undefined && at >= m) {
+          known.set(id, m);
+          continue;
+        }
         known.set(id, 0);
         ingest(id, "startup");
+        caughtUp++;
       }
+      log(`cline: watching ${opts.sessionsDir} (${ids.length} session(s) present, ${caughtUp} new or changed)`);
       if (existsSync(opts.sessionsDir)) {
         try {
           watcher = watch(opts.sessionsDir, { recursive: true }, (_event, filename) => {
@@ -136,8 +142,7 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
     stop() {
       watcher?.close();
       if (poll) clearInterval(poll);
-      for (const t of timers.values()) clearTimeout(t);
-      timers.clear();
+      pacer.cancelAll();
     },
     ingest,
     sessions: () => new Map(known),
