@@ -214,3 +214,59 @@ export function signInHtml(url: string, to: string, d: RequestDetails = { at: ne
 </body>
 </html>`;
 }
+
+/** What a feedback alert needs to show. */
+export interface FeedbackAlert {
+  id: string;
+  rating: number | null;
+  message: string | null;
+  email: string | null;
+  account_email: string | null;
+  source: string;
+  version: string | null;
+  platform: string | null;
+  usage: string | null;
+}
+
+const SOURCE_LABEL: Record<string, string> = { "review-app": "the review app", cli: "postrun feedback", app: "app.postrun.app" };
+
+/** One email to the admins for each piece of feedback. Replying goes to the person, when they left an address. */
+export async function sendFeedbackAlert(to: string[], f: FeedbackAlert, adminUrl: string): Promise<void> {
+  const key = optionalEnv("RESEND_API_KEY");
+  if (!key || to.length === 0) {
+    if (!isProduction()) console.log(`\n[postrun] Feedback ${f.id}: ${f.rating ?? "-"}/5 ${f.message ?? ""}\n`);
+    return;
+  }
+  const from = f.email ?? f.account_email;
+  const stars = f.rating ? `${"★".repeat(f.rating)}${"☆".repeat(5 - f.rating)} (${f.rating}/5)` : "No rating";
+  const meta = [`From ${SOURCE_LABEL[f.source] ?? f.source}`, f.version ? `Postrun ${f.version}` : "", f.platform ?? "", from ?? "No email left"].filter(Boolean).join(" · ");
+  const subject = `Postrun feedback: ${f.rating ? `${f.rating}/5` : "no rating"}${f.message ? `, "${f.message.slice(0, 60)}${f.message.length > 60 ? "…" : ""}"` : ""}`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f4f4f2;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f2;"><tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+<tr><td style="padding:0 4px 18px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="vertical-align:middle;"><img src="cid:postrun-logo" width="28" height="28" alt="" style="display:block;border:0;border-radius:7px;"></td>
+<td style="vertical-align:middle;padding-left:10px;font:700 16px/28px ${FONT};color:#111317;">postrun <span style="font-weight:500;color:#6b6f76;">feedback</span></td>
+</tr></table></td></tr>
+<tr><td style="background:#ffffff;border:1px solid #e4e4e0;border-radius:12px;padding:28px;">
+<p style="margin:0 0 6px;font:600 20px/28px ${FONT};color:#c2410c;letter-spacing:1px;">${esc(stars)}</p>
+<p style="margin:0 0 18px;font:13px/20px ${FONT};color:#6b6f76;">${esc(meta)}</p>
+${f.message ? `<p style="margin:0 0 18px;padding:14px 16px;background:#f8f8f6;border:1px solid #ecece8;border-radius:8px;font:15px/24px ${FONT};color:#1f2328;white-space:pre-wrap;">${esc(f.message)}</p>` : ""}
+${f.usage ? `<p style="margin:0 0 6px;font:600 13px/20px ${FONT};color:#1f2328;">Usage summary they attached</p><pre style="margin:0 0 18px;padding:12px 14px;background:#f8f8f6;border:1px solid #ecece8;border-radius:8px;font:12px/18px ${MONO};color:#3d4148;white-space:pre-wrap;">${esc(f.usage)}</pre>` : ""}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-radius:8px;background:#111317;"><a href="${esc(adminUrl)}" style="display:inline-block;padding:10px 18px;font:600 14px/20px ${FONT};color:#ffffff;text-decoration:none;">Open in admin</a></td></tr></table>
+${from ? `<p style="margin:16px 0 0;font:13px/20px ${FONT};color:#6b6f76;">Reply to this email to answer ${esc(from)}.</p>` : ""}
+</td></tr></table></td></tr></table></body></html>`;
+  const text = [stars, meta, "", f.message ?? "(no message)", ...(f.usage ? ["", "Usage summary:", f.usage] : []), "", `Admin: ${adminUrl}`].join("\n");
+  const { error } = await new Resend(key).emails.send({
+    from: optionalEnv("EMAIL_FROM")?.replace(/<[^>]+>/, "<feedback@postrun.app>") ?? "Postrun <feedback@postrun.app>",
+    to,
+    subject,
+    html,
+    text,
+    ...(from ? { replyTo: from } : {}),
+    attachments: [{ filename: "postrun.png", content: Buffer.from(EMAIL_LOGO_PNG_BASE64, "base64"), contentId: "postrun-logo" }],
+    headers: { "X-Entity-Ref-ID": randomUUID() },
+  });
+  if (error) throw new Error(`Resend refused the feedback alert: ${error.message}`);
+}

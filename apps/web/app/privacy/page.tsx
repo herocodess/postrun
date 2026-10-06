@@ -60,6 +60,13 @@ export default function Privacy() {
           cookie to keep you signed in, and nothing for tracking.
         </p>
 
+        <h2 id="feedback">Feedback</h2>
+        <p>
+          Feedback is sent only when you send it, from the review app, <code>postrun feedback</code> or app.postrun.app, and you see every field first. It holds your rating,
+          your message, your email if you gave one, your Postrun version and system, and the usage counts only if you tick the box. It never includes your sessions. It is
+          stored with the accounts in London and emailed to me so I can read and answer it.
+        </p>
+
         <h2 id="website">This website</h2>
         <p>
           <b>Waitlist.</b> If you join the waitlist, your email address is sent to Formspree, which forwards it to me. I use it only to tell you when Postrun is ready for your
@@ -74,7 +81,8 @@ export default function Privacy() {
         <h2 id="cookies">Cookies</h2>
         <p>
           This website sets no cookies and stores nothing in your browser, which is why there is no cookie banner. <code>app.postrun.app</code> sets only the cookie that keeps
-          you signed in. If that ever changes, this page will say so first.
+          you signed in, plus a <code>postrun_signed_in</code> marker shared with this site and the docs so they can show Dashboard instead of Log in. The marker holds no
+          account details. If that ever changes, this page will say so first.
         </p>
 
         <h2 id="contact">Removing your email, or any question</h2>

@@ -80,6 +80,16 @@ export function authOptions(): BetterAuthOptions {
           if (!r.ok) throw new APIError("TOO_MANY_REQUESTS", { message: "Too many sign-in emails. Wait a while, then try again." });
         }
       }),
+      // A small "signed in" marker for all of postrun.app, so the website and docs can show
+      // Dashboard instead of Log in. It holds nothing secret; the real session cookie stays
+      // on app.postrun.app only.
+      after: createAuthMiddleware(async (ctx) => {
+        const domain = markerDomain(ctx.context.baseURL);
+        if (!domain) return;
+        const out = ctx.path === "/sign-out" || ctx.path === "/delete-user";
+        if (!out && !ctx.context.newSession) return;
+        ctx.setCookie(SIGNED_IN_MARKER, out ? "" : "1", { domain, path: "/", secure: true, sameSite: "lax", httpOnly: false, maxAge: out ? 0 : 60 * 60 * 24 * 30 });
+      }),
     },
     plugins: [
       magicLink({
@@ -97,6 +107,18 @@ export function authOptions(): BetterAuthOptions {
       nextCookies(),
     ],
   };
+}
+
+export const SIGNED_IN_MARKER = "postrun_signed_in";
+
+/** The domain to share the marker on: "postrun.app" when served from it over https; nowhere else (localhost, previews). */
+export function markerDomain(baseURL: string): string | undefined {
+  try {
+    const u = new URL(baseURL);
+    return u.protocol === "https:" && (u.hostname === "postrun.app" || u.hostname.endsWith(".postrun.app")) ? "postrun.app" : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

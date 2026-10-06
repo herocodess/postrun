@@ -131,6 +131,33 @@ export interface AccountResponse {
   email?: string;
   /** Where links are made and managed, e.g. https://app.postrun.app */
   server: string;
+  /** A sign-in started from the review app is waiting for the browser. */
+  connecting?: boolean;
+}
+
+/** POST /api/account/connect: the page to open to approve this computer (same flow as postrun login). */
+export interface ConnectResponse {
+  url: string;
+}
+
+/** POST /api/feedback: sent on purpose by the person, to app.postrun.app. */
+export interface FeedbackRequest {
+  rating?: number;
+  message?: string;
+  email?: string;
+  /** Attach the plain-text usage summary (counts only, the same as postrun stats). */
+  include_usage?: boolean;
+}
+
+/** What is sent to app.postrun.app for feedback, exactly. */
+export interface FeedbackPayload {
+  rating?: number;
+  message?: string;
+  email?: string;
+  source: "review-app" | "cli";
+  version: string;
+  platform: string;
+  usage?: string;
 }
 
 /** POST /api/sessions/:id/share with { expires_days }: the link, and what redaction masked first. */
@@ -154,6 +181,12 @@ export interface AppControl {
   account?(): Promise<AccountResponse>;
   /** Upload one already redacted report. Throws an Error with `code` "not_signed_in" when there is no account. */
   share?(html: string, days: number): Promise<{ url: string; title: string; expires_at: string }>;
+  /** Start connecting this computer to an account from the review app; resolves with the page to open. */
+  connect?(): Promise<ConnectResponse>;
+  /** Sign this computer out, here and on the server. */
+  disconnect?(): Promise<AccountResponse>;
+  /** Send feedback to app.postrun.app, signed in or not. */
+  feedback?(payload: FeedbackPayload): Promise<void>;
 }
 
 /**

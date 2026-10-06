@@ -138,6 +138,18 @@ export const api = {
   account(): string {
     return "/api/account";
   },
+  /** POST to start connecting this computer to an account; returns the page to open. */
+  connect(): string {
+    return "/api/account/connect";
+  },
+  /** POST to sign this computer out. */
+  disconnect(): string {
+    return "/api/account/disconnect";
+  },
+  /** POST { rating, message, email, include_usage }: sent to app.postrun.app by the background process. */
+  feedback(): string {
+    return "/api/feedback";
+  },
   /** POST { expires_days } to upload the redacted report and get its link. Not in the demo. */
   share(id: string): string {
     return `/api/sessions/${enc(id)}/share`;

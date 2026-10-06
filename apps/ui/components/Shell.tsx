@@ -15,6 +15,10 @@ import { CountUp } from "@/lib/motion";
 import { useSidebar } from "@/lib/sidebar";
 import { track } from "@/lib/usage";
 import { ago, useStatus } from "@/lib/status";
+import { FeedbackDialog, FeedbackPrompt } from "@/components/Feedback";
+
+/** The account app: share links, and where to sign in. */
+const APP_URL = "https://app.postrun.app";
 
 const NAV = [
   {
@@ -197,7 +201,11 @@ function UpdateBanner() {
   return (
     <aside className="update-banner" role="status">
       <span>
-        Postrun <b>{u.latest}</b> is out (you have {u.current}). Update with <code>npm install -g postrun@latest</code>, then <code>postrun restart</code>.
+        Postrun <b>{u.latest}</b> is out (you have {u.current}).{" "}
+        <a href="https://postrun.app/changelog/" target="_blank" rel="noreferrer">
+          What&apos;s new
+        </a>
+        . Update with <code>npm install -g postrun@latest</code>, then <code>postrun setup</code>.
       </span>
       <button
         type="button"
@@ -223,6 +231,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const count = state.kind === "ready" ? state.status.storage.sessions : undefined;
   const active = NAV.findIndex((n) => n.match(pathname));
   const [sidebar, setSidebar] = useSidebar();
+  const [feedback, setFeedback] = useState(false);
   // Not connected: no key at all, or the API refused the one we have (it was replaced).
   const [locked, setLocked] = useState(false);
   useEffect(() => {
@@ -272,6 +281,22 @@ export function Shell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
+        <nav className="side-nav side-nav-2" aria-label="More">
+          <a href={`${APP_URL}/shares`} target="_blank" rel="noreferrer" data-tip="Share links ↗">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            <span className="side-label">Share links</span>
+            <span className="side-ext side-label" aria-hidden="true">↗</span>
+          </a>
+          <button type="button" onClick={() => setFeedback(true)} data-tip="Feedback">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 4.2c0-.9.7-1.7 1.7-1.7h7.6c.9 0 1.7.8 1.7 1.7v5c0 .9-.8 1.7-1.7 1.7H7l-3 2.6v-2.6h0c-.8 0-1.5-.8-1.5-1.7Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              <path d="M5.5 6.7h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            <span className="side-label">Feedback</span>
+          </button>
+        </nav>
         <RecordingCard />
         <button
           type="button"
@@ -296,13 +321,15 @@ export function Shell({ children }: { children: ReactNode }) {
             <span>
               <b>Demo:</b> the real Postrun review app with three example sessions. In real use it runs on your machine and nothing leaves it.
             </span>
-            <a href="/login/?mode=signup">Get started →</a>
+            <a href={`${APP_URL}/login`}>Get started →</a>
           </aside>
         )}
         <UpdateBanner />
+        {!locked && state.kind !== "locked" && <FeedbackPrompt onOpen={() => setFeedback(true)} />}
         <div className="wrap page-in" key={locked ? "locked" : pathname}>
           {locked || state.kind === "locked" ? <Connect /> : children}
         </div>
+        {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
       </div>
     </div>
   );

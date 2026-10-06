@@ -13,6 +13,7 @@ import { ago, megabytes, useStatus } from "@/lib/status";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
 import { useSidebar } from "@/lib/sidebar";
 import { UsageCard } from "@/components/UsageCard";
+import { AccountCard } from "@/components/AccountCard";
 
 async function send<T>(url: string, method: "PUT" | "POST", body: unknown): Promise<T> {
   const res = await apiFetch(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -359,9 +360,7 @@ export function Settings() {
 
           <UsageCard />
 
-          <Section id="account" title="Account">
-            <Row title="Not signed in" note="Recording and review never need an account. Accounts arrive with sharing: a link to one session, for someone you choose." />
-          </Section>
+          <AccountCard />
 
           <Section id="about" title="About">
             <Row

@@ -40,7 +40,7 @@ export function Avatar({ name, email, image, size = 30 }: { name: string; email:
   );
 }
 
-export function AccountMenu({ name, email, image }: { name: string; email: string; image: string | null }) {
+export function AccountMenu({ name, email, image, admin = false }: { name: string; email: string; image: string | null; admin?: boolean }) {
   const [open, setOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -84,6 +84,14 @@ export function AccountMenu({ name, email, image }: { name: string; email: strin
           <a role="menuitem" href="/settings">
             Settings
           </a>
+          <a role="menuitem" href="/feedback">
+            Send feedback
+          </a>
+          {admin && (
+            <a role="menuitem" href="/admin">
+              Admin: feedback
+            </a>
+          )}
           <a role="menuitem" href="https://docs.postrun.app" target="_blank" rel="noreferrer">
             Docs
           </a>

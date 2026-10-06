@@ -12,6 +12,8 @@ export type ChangeKind = "new" | "improved" | "fixed" | "security";
 export interface Release {
   /** ISO date, YYYY-MM-DD. */
   date: string;
+  /** The npm version this shipped in, when it is a release (scripts/release.mjs checks it). */
+  version?: string;
   title: string;
   summary?: string;
   items: Array<{ kind: ChangeKind; text: string }>;
@@ -20,6 +22,21 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    version: "0.3.0",
+    title: "Tell us what you think, and one connected Postrun",
+    summary: "Send feedback from anywhere in Postrun, connect your account without a terminal, and Postrun is now open source.",
+    items: [
+      { kind: "new", text: "Feedback in the review app's sidebar: a rating from 1 to 5 and what Postrun should do next. You see exactly what will be sent before it goes, and nothing about your sessions is included." },
+      { kind: "new", text: "postrun feedback does the same from a terminal, and signed-in users can send feedback at app.postrun.app." },
+      { kind: "new", text: "Settings > Account connects this computer to your account with one click (the same as postrun login), and shows who you're signed in as." },
+      { kind: "new", text: "Share links in the review app's sidebar opens your links at app.postrun.app. Signed in, postrun.app and the docs show Dashboard instead of Log in." },
+      { kind: "improved", text: "Postrun is open source under the MIT license: github.com/herocodess/postrun." },
+      { kind: "improved", text: "The update notice links to what's new in each release." },
+    ],
+  },
+  {
+    date: "2026-10-06",
+    version: "0.2.0",
     title: "Share links and accounts",
     summary: "Send a redacted session report as a link instead of a file. Recording still never needs an account.",
     items: [

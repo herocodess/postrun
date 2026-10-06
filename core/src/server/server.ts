@@ -51,6 +51,7 @@ import type {
   SessionDetailResponse,
   SessionListResponse,
   ShareResponse,
+  FeedbackPayload,
   StepResponse,
   UsageResponse,
 } from "./api.js";
@@ -676,7 +677,7 @@ const noControl = (res: ServerResponse) =>
 async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: URL, method: string, ctx: Ctx): Promise<boolean> {
   const verdict = /^\/api\/sessions\/([^/]+)\/verdict$/.exec(url.pathname);
   const share = /^\/api\/sessions\/([^/]+)\/share$/.exec(url.pathname);
-  const routes = ["/api/settings", "/api/recording", "/api/setup", "/api/data/delete", "/api/usage"];
+  const routes = ["/api/settings", "/api/recording", "/api/setup", "/api/data/delete", "/api/usage", "/api/feedback", "/api/account/connect", "/api/account/disconnect"];
   if (!verdict && !share && !routes.includes(url.pathname)) return false;
   const want = verdict || url.pathname === "/api/settings" ? "PUT" : "POST";
   if (method !== want) {
@@ -738,6 +739,23 @@ async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: UR
   }
   if (share) {
     await handleShare(res, decodeURIComponent(share[1] as string), body, ctx);
+    return true;
+  }
+  if (url.pathname === "/api/feedback") {
+    await handleFeedback(res, body, ctx);
+    return true;
+  }
+  if (url.pathname === "/api/account/connect" || url.pathname === "/api/account/disconnect") {
+    const connect = url.pathname.endsWith("/connect");
+    if (!(connect ? control.connect : control.disconnect)) {
+      json(res, 501, { error: "accounts aren't available in this build" } satisfies ApiError);
+      return true;
+    }
+    try {
+      json(res, 200, connect ? await control.connect!() : await control.disconnect!());
+    } catch (err) {
+      json(res, 502, { error: (err as Error).message } satisfies ApiError);
+    }
     return true;
   }
   try {
@@ -807,6 +825,42 @@ async function handleShare(res: ServerResponse, id: string, body: Record<string,
     const code = (err as { code?: string }).code;
     // 409, not 401: a 401 here would read as "this browser lost its key" and lock the review app.
     json(res, code === "not_signed_in" ? 409 : 502, { error: (err as Error).message, ...(code ? { code } : {}) } satisfies ApiError);
+  }
+}
+
+/**
+ * Feedback the person chose to send. The usage summary goes only when they ticked the box,
+ * and it is the same counts-only text Settings and postrun stats show.
+ */
+async function handleFeedback(res: ServerResponse, body: Record<string, unknown>, ctx: Ctx): Promise<void> {
+  const control = ctx.control;
+  if (!control?.feedback) {
+    json(res, 501, { error: "feedback isn't available in this build" } satisfies ApiError);
+    return;
+  }
+  const rating = body["rating"];
+  if (rating !== undefined && rating !== null && !(typeof rating === "number" && Number.isInteger(rating) && rating >= 1 && rating <= 5)) {
+    json(res, 400, { error: "rating must be a whole number from 1 to 5" } satisfies ApiError);
+    return;
+  }
+  const message = typeof body["message"] === "string" ? body["message"].trim().slice(0, 4000) : "";
+  const email = typeof body["email"] === "string" ? body["email"].trim().slice(0, 254) : "";
+  if (typeof rating !== "number" && !message) {
+    json(res, 400, { error: "add a rating or a few words" } satisfies ApiError);
+    return;
+  }
+  const version = String(ctx.health["version"] ?? "dev");
+  const platform = `${process.platform} ${process.arch}`;
+  const payload: FeedbackPayload = { source: "review-app", version, platform };
+  if (typeof rating === "number") payload.rating = rating;
+  if (message) payload.message = message;
+  if (email) payload.email = email;
+  if (body["include_usage"] === true) payload.usage = formatUsage(ctx.store.usage({ version, platform }));
+  try {
+    await control.feedback(payload);
+    res.writeHead(204, BASE_HEADERS).end();
+  } catch (err) {
+    json(res, 502, { error: (err as Error).message } satisfies ApiError);
   }
 }
 

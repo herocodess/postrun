@@ -54,3 +54,21 @@ CREATE TABLE IF NOT EXISTS rate_limit (
   window_start timestamptz NOT NULL,
   count        integer NOT NULL
 );
+
+-- Feedback sent on purpose from the review app, `postrun feedback` or this
+-- site. No IP address is kept. `usage` is the plain-text usage summary the
+-- person chose to attach (counts only).
+CREATE TABLE IF NOT EXISTS feedback (
+  id         text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  user_id    text REFERENCES "user"(id) ON DELETE SET NULL,
+  email      text,
+  rating     smallint CHECK (rating BETWEEN 1 AND 5),
+  message    text,
+  source     text NOT NULL,
+  version    text,
+  platform   text,
+  usage      text,
+  status     text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'done'))
+);
+CREATE INDEX IF NOT EXISTS feedback_created ON feedback (created_at DESC);

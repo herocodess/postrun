@@ -12,14 +12,14 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { dirname, join, resolve } from "node:path";
 import { INBOX_FILE, ROTATING_SUFFIX, ROUTER_STATE_FILE, sessionsDir, spoolDir } from "../capture/layout.js";
 import { configureClaudeCode, describeConfigure, foreignTelemetry, isClaudeCodeConfigured, readSettingsEnv } from "../capture/setup.js";
-import type { AppControl, AppSettings, AppStatus } from "../server/api.js";
+import type { AppControl, AppSettings, AppStatus, FeedbackPayload } from "../server/api.js";
 import { LOCALHOST } from "../server/server.js";
 import type { PostrunStore } from "../store/store.js";
 import { VERSION } from "./assets.js";
 import { installHook } from "./hook.js";
 import { loadOrCreateToken } from "../server/token.js";
 import { readConfig, writeConfig, type Paths } from "./paths.js";
-import { readAccount, ShareFailed, shareServer, uploadReport } from "../share/client.js";
+import { forgetAccount, readAccount, revokeOnServer, sendFeedback, ShareFailed, shareServer, startBrowserLogin, uploadReport, whoAmI, writeAccount, type BrowserLogin } from "../share/client.js";
 import { installService, removeService, serviceState } from "./service.js";
 
 export interface Recorder {
@@ -153,6 +153,9 @@ export function createControl(d: ControlDeps): AppControl & { startUpdateChecks(
   let update: AppStatus["update"];
   let timer: ReturnType<typeof setInterval> | undefined;
   const notified = new Map<string, number>(); // session -> step seq already notified about
+  // A sign-in started from the review app, waiting for the person to approve it in the browser.
+  let pendingLogin: BrowserLogin | undefined;
+  const UA = `postrun/${VERSION} (${process.platform}; review app)`;
 
   const checkUpdate = async () => {
     try {
@@ -272,7 +275,41 @@ export function createControl(d: ControlDeps): AppControl & { startUpdateChecks(
     async account() {
       const a = readAccount(p.home);
       // Signed in: the server that sign-in belongs to, which is where share() uploads.
-      return { signed_in: !!a, server: a?.server ?? shareServer(process.env), ...(a?.email ? { email: a.email } : {}) };
+      return { signed_in: !!a, server: a?.server ?? shareServer(process.env), ...(a?.email ? { email: a.email } : {}), ...(pendingLogin ? { connecting: true } : {}) };
+    },
+    async connect() {
+      // The same flow as postrun login: this process listens on 127.0.0.1 for the browser's answer.
+      pendingLogin?.close();
+      const server = shareServer(process.env, readAccount(p.home));
+      const login = await startBrowserLogin(server, { userAgent: UA });
+      pendingLogin = login;
+      login.token.then(
+        async (token) => {
+          const previous = readAccount(p.home);
+          const me = await whoAmI(server, token, UA);
+          writeAccount(p.home, { server, token, email: me.email, saved_at: new Date().toISOString() });
+          if (previous && previous.token !== token) await revokeOnServer(previous.server, previous.token, UA);
+          d.log(`signed in to ${server} as ${me.email} from the review app`);
+        },
+        (e: unknown) => d.log(`sign-in from the review app did not finish: ${(e as Error).message}`),
+      ).finally(() => {
+        if (pendingLogin === login) pendingLogin = undefined;
+      });
+      return { url: login.url };
+    },
+    async disconnect() {
+      const a = readAccount(p.home);
+      if (a) {
+        await revokeOnServer(a.server, a.token, UA);
+        forgetAccount(p.home);
+        d.log(`signed out of ${a.server} from the review app`);
+      }
+      return { signed_in: false, server: shareServer(process.env) };
+    },
+    async feedback(payload: FeedbackPayload) {
+      const a = readAccount(p.home);
+      await sendFeedback(a?.server ?? shareServer(process.env), a?.token, { ...payload }, UA);
+      d.log("sent feedback to Postrun");
     },
     async share(html: string, days: number) {
       const a = readAccount(p.home);

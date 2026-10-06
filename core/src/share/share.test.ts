@@ -181,3 +181,42 @@ describe("the review app's share route", () => {
     await s.stop();
   });
 });
+
+describe("the review app's feedback and account routes", () => {
+  async function start(control: Partial<AppControl>) {
+    const store = new PostrunStore({ path: ":memory:" });
+    store.countUsage("search");
+    const ui = mkdtempSync(join(tmpdir(), "postrun-ui-fb-"));
+    writeFileSync(join(ui, "index.html"), "x");
+    const app = createPostrunServer({ port: 0, store, uiDir: ui, ingestToken: "t".repeat(32), control: control as AppControl, health: { version: "0.3.0" } });
+    const { url } = await app.start();
+    const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+      fetch(new URL(path, url), { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+    return { post, stop: async () => (await app.stop(), store.close()) };
+  }
+
+  it("sends what the person wrote, and the usage summary only when they ticked it", async () => {
+    const sent: unknown[] = [];
+    const s = await start({ feedback: async (p) => void sent.push(p) });
+    expect((await s.post("/api/feedback", { rating: 4, message: "more agents" })).status).toBe(204);
+    expect(sent[0]).toEqual({ source: "review-app", version: "0.3.0", platform: `${process.platform} ${process.arch}`, rating: 4, message: "more agents" });
+    expect((await s.post("/api/feedback", { message: "with counts", include_usage: true })).status).toBe(204);
+    expect((sent[1] as { usage?: string }).usage).toContain("Searched sessions");
+    expect((await s.post("/api/feedback", {})).status).toBe(400);
+    expect((await s.post("/api/feedback", { rating: 9 })).status).toBe(400);
+    expect((await s.post("/api/feedback", { rating: 5 }, { origin: "https://evil.example" })).status).toBe(403);
+    expect(sent).toHaveLength(2);
+    await s.stop();
+  });
+
+  it("starts and ends a sign-in for this computer", async () => {
+    const s = await start({
+      connect: async () => ({ url: "https://app.postrun.app/cli?port=1&state=s&challenge=c&name=n" }),
+      disconnect: async () => ({ signed_in: false, server: "https://app.postrun.app" }),
+    });
+    expect(await (await s.post("/api/account/connect", {})).json()).toMatchObject({ url: expect.stringContaining("/cli?") });
+    expect(await (await s.post("/api/account/disconnect", {})).json()).toMatchObject({ signed_in: false });
+    expect((await s.post("/api/account/connect", {}, { origin: "https://evil.example" })).status).toBe(403);
+    await s.stop();
+  });
+});

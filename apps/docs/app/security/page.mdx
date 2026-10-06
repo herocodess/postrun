@@ -114,6 +114,10 @@ The file has no scripts, makes no network requests, and carries a Content-Securi
 
 The full rules are on [Exporting and redaction](/export/).
 
+### Feedback
+
+Feedback leaves your computer only when you send it: from the review app's **Feedback** form, `postrun feedback`, or app.postrun.app. You see every field before it goes. It holds your rating, your message, your email if you gave one, your Postrun version and system, and, only if you tick the box, the usage summary (counts only). It never includes sessions, paths or anything an agent did.
+
 ### Share links
 
 A [share link](/share/) uploads that same redacted file, and nothing else, to `app.postrun.app`. It only happens when you click **Create link** or run `postrun share`. Links are unlisted, expire after 1 to 90 days, and turning one off deletes the report. The sign-in that uploads them (`~/.postrun/account.json`, owner only) can make links and nothing else, and you can sign any computer out from Settings. On `app.postrun.app` the report is shown in a sandbox with no scripts, forms or network access, with an opaque origin, so it cannot reach your account. The sign-in a computer gets from `postrun login` is handed over with a one-time code and PKCE, never in a URL, and is stored on the server only as a hash.

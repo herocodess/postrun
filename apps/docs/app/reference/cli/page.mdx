@@ -100,6 +100,23 @@ Uploads the redacted report `postrun export` would write to `app.postrun.app` an
 | `--expires <days>` | How long the link works: 1, 7, 30 or 90. Default 30. |
 | `--yes` | Upload without asking. |
 
+## postrun feedback
+
+```bash
+postrun feedback
+postrun feedback --rating 4 --message "Support Cursor next" --yes
+```
+
+Sends a rating from 1 to 5 and a message to the Postrun team. At a terminal it asks for each, shows exactly what will be sent, and asks before sending. Nothing about your sessions is included. Your email goes along when you give one (or when this computer is signed in), so a reply can reach you.
+
+| Flag | Effect |
+| --- | --- |
+| `--rating <1-5>` | How useful Postrun is to you. |
+| `--message "<text>"` | What Postrun should do next. |
+| `--email <address>` | Where a reply should go. |
+| `--usage` | Attach your usage summary (counts only, the same text as `postrun stats`). |
+| `--yes` | Send without asking. |
+
 ## postrun login and logout
 
 ```bash

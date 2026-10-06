@@ -26,5 +26,6 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "typescript": "^5.3.3"
-  }
+  },
+  "license": "MIT"
 }

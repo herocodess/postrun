@@ -294,6 +294,23 @@ html.js .reveal[data-in] {
 .nav-login:hover {
   color: var(--text);
 }
+.nav-gh {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-right: 8px;
+  border-radius: 9px;
+  color: var(--text-2);
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+.nav-gh:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
 .nav[data-state="folded"] .nav-cta {
   border-radius: 999px;
 }
@@ -2001,6 +2018,15 @@ html.js .reveal[data-in] {
   font: 500 14px var(--mono);
   color: var(--text);
 }
+.release-version {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent-ink);
+  background: rgba(255, 106, 26, 0.12);
+  border: 1px solid rgba(255, 138, 76, 0.3);
+}
 .release h2 {
   font-size: 22px;
   letter-spacing: -0.02em;
@@ -2165,7 +2191,8 @@ html.js .reveal[data-in] {
 
 /* ---- small screens --------------------------------------------------------- */
 @media (max-width: 1000px) {
-  .nav-login {
+  .nav-login,
+  .nav-gh {
     display: none;
   }
   .nav-links {
