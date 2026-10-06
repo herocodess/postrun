@@ -1,5 +1,5 @@
 /**
- * Local SQLite store for normalized sessions (better-sqlite3).
+ * Local SQLite store for normalized sessions (Node's built-in node:sqlite, via ./sqlite.ts).
  *
  * - Tables follow the v1.2 shape: sessions, segments, actors, turns, steps.
  * - ingest() takes a whole session from a capture: it upserts by
@@ -17,7 +17,7 @@
  */
 
 import { createHash } from "node:crypto";
-import Database from "better-sqlite3";
+import { Database } from "./sqlite.js";
 import { ensurePrivateDir, ensurePrivateFile } from "../util/files.js";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -273,7 +273,7 @@ export class PostrunStore {
   readonly path: string;
   readonly ownerId: string;
   readonly capturedOn: string;
-  private readonly db: Database.Database;
+  private readonly db: Database;
 
   constructor(opts: StoreOptions = {}) {
     this.path = opts.path ?? defaultDbPath();

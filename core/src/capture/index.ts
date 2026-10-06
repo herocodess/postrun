@@ -14,10 +14,13 @@ export {
   mergeCaptureSettings,
   isClaudeCodeConfigured,
   configureClaudeCode,
+  unconfigureClaudeCode,
+  foreignTelemetry,
+  readSettingsEnv,
   describeConfigure,
   shellQuote,
   shellUnquote,
   HOOK_EVENTS,
   BACKUP_SUFFIX,
 } from "./setup.js";
-export type { ConfigureOptions, ConfigureResult, MergeReport, HookCommand } from "./setup.js";
+export type { ConfigureOptions, ConfigureResult, MergeReport, HookCommand, UnconfigureResult } from "./setup.js";

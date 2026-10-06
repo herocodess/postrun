@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.13.0"
   },
   "exports": {
     ".": {
@@ -66,18 +66,15 @@
     "export": "tsx src/export/cli.ts",
     "demo:data": "tsx src/demo/build.ts",
     "bench:heavy": "node --expose-gc --import tsx src/bench/heavy-day.ts",
-    "delete": "tsx src/store/cli.ts delete"
+    "delete": "tsx src/store/cli.ts delete",
+    "postrun": "tsx src/cli/postrun.ts"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "^20.10.0",
+    "@types/node": "^22.13.0",
     "@vitest/ui": "^5.0.3",
     "tsx": "^4.23.13",
     "typescript": "^5.3.3",
     "vite": "^8.3.2",
     "vitest": "^5.0.3"
-  },
-  "dependencies": {
-    "better-sqlite3": "^13.0.3"
   }
 }

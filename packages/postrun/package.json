@@ -1,0 +1,38 @@
+{
+  "name": "postrun",
+  "version": "0.1.0",
+  "description": "The flight recorder for coding agents: record Claude Code and Cline sessions on your machine and review everything they did.",
+  "type": "module",
+  "bin": {
+    "postrun": "dist/postrun.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "keywords": [
+    "claude-code",
+    "cline",
+    "coding-agents",
+    "ai-agents",
+    "session-review",
+    "observability"
+  ],
+  "homepage": "https://postrun.app",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs",
+    "test:install": "node scripts/install-test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

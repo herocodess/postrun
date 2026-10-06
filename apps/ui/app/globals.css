@@ -9,6 +9,7 @@
 
 html {
   font-feature-settings: "tnum" 1, "cv05" 1; /* tabular figures */
+  background: var(--bg);
 }
 
 body {
@@ -21,6 +22,8 @@ body {
   background-image:
     radial-gradient(1100px 500px at 12% -8%, rgba(255, 106, 26, 0.10), transparent 60%),
     radial-gradient(900px 500px at 100% 0%, rgba(94, 234, 212, 0.05), transparent 55%);
+  background-repeat: no-repeat;
+  min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   padding-bottom: 80px;
 }
@@ -1352,4 +1355,92 @@ h1.title {
 }
 .muted-block a {
   color: var(--accent-2);
+}
+
+/* First run: no sessions yet. Centred, with a small animated recorder. */
+.empty {
+  max-width: 520px;
+  margin: 56px auto 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.empty-art {
+  display: block;
+  margin: 0 auto 22px;
+  max-width: 100%;
+  height: auto;
+}
+.empty-track {
+  fill: var(--surface-1);
+  stroke: var(--border);
+}
+.empty-rec {
+  fill: var(--accent);
+  animation: empty-rec 1.6s ease-in-out infinite;
+}
+.empty-label {
+  font: 600 10px var(--mono);
+  letter-spacing: 0.12em;
+  fill: var(--text-muted);
+}
+.empty-slot {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-dasharray: 3 3;
+  animation: empty-slot 2.5s ease-in-out infinite;
+}
+.empty-head {
+  animation: empty-sweep 2.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.empty-head-line {
+  fill: var(--accent);
+}
+.empty h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.empty-lede {
+  margin: 0 auto 20px;
+  font-size: 14px;
+}
+.empty-hints {
+  list-style: none;
+  margin: 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.empty-hints b {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+@keyframes empty-rec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@keyframes empty-slot {
+  0%, 100% { stroke-opacity: 0.55; }
+  20% { stroke-opacity: 1; }
+}
+@keyframes empty-sweep {
+  0% { transform: translateX(36px); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(204px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .empty-rec,
+  .empty-slot,
+  .empty-head {
+    animation: none;
+  }
+  .empty-head {
+    transform: translateX(120px);
+  }
 }

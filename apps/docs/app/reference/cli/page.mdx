@@ -1,201 +1,190 @@
 export const metadata = {
   title: "CLI",
-  description: "Every Postrun command and flag, run with pnpm from the repository root.",
+  description: "Every postrun command and flag.",
 };
 
 # CLI
 
-In early access, Postrun's commands are pnpm scripts run from the root of a checkout. Each one forwards its flags to a script in the `core` package. This page lists every command, its flags, and the environment variables it reads.
+Install with `npm install -g postrun`. Every command is `postrun <command>`; `postrun help` lists them.
 
 | Command | What it does |
 | --- | --- |
-| [`pnpm capture`](#pnpm-capture) | Record Claude Code and Cline sessions as they happen. |
-| [`pnpm capture:cc:setup`](#pnpm-captureccsetup) | Configure Claude Code for recording, and nothing else. |
-| [`pnpm ingest`](#pnpm-ingest) | Build sessions from capture files and write them to the store. |
-| [`pnpm sessions`](#pnpm-sessions) | List stored sessions. |
-| [`pnpm delete`](#pnpm-delete) | Delete one session for good. |
-| [`pnpm serve`](#pnpm-serve) | Build the review app and serve it with the store. |
-| [`pnpm export`](#pnpm-export) | Write one session as a redacted HTML report. |
-| [`pnpm adapter:cc`, `pnpm adapter:cline`](#pnpm-adaptercc-and-pnpm-adaptercline) | Print a session's steps as JSON, without storing them. |
-| [`pnpm dev:core`, `pnpm dev:ui`](#pnpm-devcore-and-pnpm-devui) | Run the server and the review app for development. |
+| [`postrun setup`](#postrun-setup) | Set up Claude Code, start recording, open the review app. |
+| [`postrun status`](#postrun-status) | Whether it is recording, and where the review app is. |
+| [`postrun open`](#postrun-open) | Open the review app in your browser. |
+| [`postrun sessions`](#postrun-sessions) | List recorded sessions. |
+| [`postrun export`](#postrun-export) | Write one session as a redacted HTML report. |
+| [`postrun delete`](#postrun-delete) | Delete one session for good. |
+| [`postrun start`, `stop`, `restart`](#postrun-start-stop-and-restart) | Run or stop the background process. |
+| [`postrun autostart`](#postrun-autostart) | Start Postrun when you log in, or not. |
+| [`postrun doctor`](#postrun-doctor) | Check everything, with a fix for each problem. |
+| [`postrun uninstall`](#postrun-uninstall) | Take Postrun out of Claude Code and stop it. |
+| `postrun version` | Print the version. |
 
-<Callout type="warn" title="Relative paths">
-  Every command runs inside the `core/` folder of the checkout, so a relative path you pass (to `--db`, `-o`, or a capture folder) is resolved from `core/`, not from where you typed the command. Use absolute paths or `~` paths.
-</Callout>
-
-## pnpm capture
+## postrun setup
 
 ```bash
-pnpm capture
-pnpm capture --once
+postrun setup [--port <n>] [--autostart | --no-autostart] [--no-open] [--yes]
 ```
 
-Without flags, it runs until you press ctrl-c:
+Safe to run any number of times: after installing, after updating Postrun, or after installing Claude Code or Cline. It:
 
-1. Checks `~/.claude/settings.json` and applies Postrun's Claude Code configuration if it is missing or out of date (see [`pnpm capture:cc:setup`](#pnpm-captureccsetup)). If it is already present, it logs `claude-code config: already present in <path>`.
-2. Starts the OTLP receiver on `127.0.0.1:4318`.
-3. Sorts Claude Code's hook log into one folder per session and writes each session to the store on every `Stop` and `SessionEnd`, after a 4 second pause. On start it catches up on every session it missed, and removes a session's raw files 24 hours after the session goes quiet (the store keeps everything).
-4. Watches `~/.cline/data/sessions`, writes new or changed Cline sessions on start, and rewrites a session at least 2 seconds after its files change.
-
-Both are paced so a busy session costs about 1% of one CPU core at most: a very long session is refreshed less often rather than costing more.
+1. Copies the hook script to `~/.postrun/bin/capture-hook.sh`, so updating or moving Postrun never breaks recording.
+2. Merges Postrun's hooks and telemetry settings into `~/.claude/settings.json`, backing the file up once first. If your settings already send Claude Code telemetry to another endpoint, it leaves that alone and records from hooks only (no cost or token counts). If Claude Code is not installed, it says so and skips this step.
+3. Checks for Cline's sessions folder.
+4. Picks free ports: if 1234 or 4318 is used by another program, it moves to the next free one and remembers it.
+5. Starts the background process, or restarts it when a different version or different ports are running.
+6. Asks whether to start at login (default yes), and opens the review app.
 
 | Flag | Effect |
 | --- | --- |
-| `--once` | Skip the configuration step and the receiver. Catch up on every Claude Code and Cline session not yet stored, then exit. |
+| `--port <n>` | Port for the review app. Default 1234. Remembered for next time. |
+| `--autostart` | Start at login without asking. |
+| `--no-autostart` | Do not start at login. Turns it off if it was on. |
+| `--no-open` | Do not open the browser. |
+| `--yes`, `-y` | Accept the defaults without asking. |
 
-| Variable | Default |
-| --- | --- |
-| `POSTRUN_CAPTURE_DIR` | `~/.postrun/captures` |
-| `POSTRUN_CLINE_DIR` | `~/.cline/data/sessions` |
-| `POSTRUN_OTLP_PORT` | `4318` |
-| `POSTRUN_DB` | `~/.postrun/postrun.db` |
-| `POSTRUN_CLAUDE_SETTINGS` | `~/.claude/settings.json` |
-| `POSTRUN_KEEP_CAPTURES` | unset. Set to `1` to keep each session's raw files instead of removing them 24 hours after it goes quiet. |
+Without a terminal (for example in a script), setup asks nothing and takes the defaults.
 
-Every log line starts with the time, for example `[22:14:03] otlp receiver on http://127.0.0.1:4318 (127.0.0.1 only) -> ...`.
-
-## pnpm capture:cc:setup
+## postrun status
 
 ```bash
-pnpm capture:cc:setup
+postrun status
 ```
 
-Merges Postrun's env vars and six hooks into `~/.claude/settings.json` and prints a one-line summary of what changed. Backs the file up once to `settings.json.postrun-backup`, keeps every other setting, and never duplicates its own entries, so it is safe to run again. Reads `POSTRUN_CAPTURE_DIR`, `POSTRUN_OTLP_PORT` and `POSTRUN_CLAUDE_SETTINGS`. See [Claude Code](/capture/claude-code/) for exactly what it writes.
+Prints whether Postrun is recording, its pid, the review app address and how many sessions are stored. Exits `0` when running, `3` when not running.
 
-## pnpm ingest
+## postrun open
+
+Opens the review app in your default browser, or prints its address if it cannot.
+
+## postrun sessions
 
 ```bash
-pnpm ingest --agent claude-code [<captures-dir>] [--session <id>] [--db <path>]
-pnpm ingest --agent cline <session-id | session-dir | messages.json> [--db <path>]
+postrun sessions [--agent claude-code|cline]
 ```
 
-Builds sessions from an agent's files and writes them to the store. Every write is an upsert, so re-ingesting is safe.
+Lists stored sessions, newest first: start time, agent and id, then the first line of the first prompt, then steps, turns, failures, cost and working folder.
+
+## postrun export
+
+```bash
+postrun export <session-id> [-o <file>] [--force]
+```
+
+Writes one redacted, self-contained HTML report to the current folder and lists every value it masked. Redaction cannot be switched off. The file is written with mode 0600. See [Exporting and redaction](/export/).
 
 | Flag | Effect |
 | --- | --- |
-| `--agent <kind>` | `claude-code` (the default) or `cline`. Any other value is an error. |
-| `--session <id>` | Claude Code only: ingest this one session. Without it, every session in the folder is ingested (each `sessions/<id>/` folder, or every session in a folder of shared log files). |
-| `--db <path>` | Write to this store instead of `POSTRUN_DB` or `~/.postrun/postrun.db`. |
+| `-o <file>`, `--out <file>` | Output path. Default `postrun-<agent>-<date>-<short id>.html`. |
+| `--force` | Overwrite an existing file. |
 
-The positional argument:
-
-- For `claude-code`, a captures folder. Defaults to `~/.postrun/captures`.
-- For `cline`, required: a session id (looked up in `~/.cline/data/sessions`), a session folder, or a `<id>.messages.json` file.
-
-Output, one line per session and a total:
-
-```text
-ingested claude-code session 3ac04cde-...: 112 steps, 9 turns, 1 segments, 1 actors -> /home/you/.postrun/postrun.db
-store totals: sessions=4 segments=4 actors=4 turns=31 steps=402
-```
-
-The first word is `updated` when the session was already in the store.
-
-## pnpm sessions
+## postrun delete
 
 ```bash
-pnpm sessions [--agent <kind>] [--db <path>]
+postrun delete <session-id>
+postrun delete <session-id> --yes
 ```
 
-Lists stored sessions, newest first. For each: start time, agent, id and workspace; then step counts by type, turns, failed, reference-only and flag counts, and cost; then the first line of the first prompt.
-
-| Flag | Effect |
-| --- | --- |
-| `--agent <kind>` | Only sessions from this agent kind. |
-| `--db <path>` | Read this store. |
-
-Prints `no sessions in <path>` when the store is empty.
-
-## pnpm delete
-
-```bash
-pnpm delete <session-id>
-pnpm delete <session-id> --yes
-```
-
-Without `--yes`, prints what would be deleted (agent, title, step count, and the raw capture folder if there is one) and changes nothing. With `--yes`, deletes the session from the store with secure delete on, removes its raw capture files, and keeps its id so the recorder never records it again. Get the id from [`pnpm sessions`](#pnpm-sessions).
-
-It does not touch the agent's own copy under `~/.claude/projects` or `~/.cline/data/sessions`, and says so. If the id is unknown it exits with an error, or says the session was already deleted.
-
-| Flag | Effect |
-| --- | --- |
-| `--yes` | Delete, instead of only showing what would go. |
-| `--db <path>` | Use this store. |
+Without `--yes`, prints what would be deleted and changes nothing. With `--yes`, deletes the session from the store with secure delete on, removes its raw capture files, and keeps its id so Postrun never records it again. It does not touch the agent's own copy under `~/.claude/projects` or `~/.cline/data/sessions`, and says so.
 
 The review app's Delete button does the same. See [Deleting a session](/review/#deleting-a-session).
 
-## pnpm serve
+## postrun start, stop and restart
 
 ```bash
-pnpm serve [--port <n>] [--db <path>] [--ui <dir>]
+postrun start
+postrun stop
+postrun restart
 ```
 
-Builds the review app, then serves it and the API on `127.0.0.1`. Runs until ctrl-c. The host is always `127.0.0.1` and cannot be changed.
+`start` runs Postrun in the background and waits until the review app answers. If it is already running, it says so. If it cannot start, it prints the last lines of `~/.postrun/postrun.log`.
+
+`stop` stops it; nothing is recorded until you start it again. Claude Code keeps writing its hook log while Postrun is stopped, and the next start catches up on every session it missed.
+
+The background process runs the telemetry receiver, both recorders and the review app together, and logs to `~/.postrun/postrun.log` (rotated at 5 MB).
+
+## postrun autostart
+
+```bash
+postrun autostart          # show whether it is on
+postrun autostart on
+postrun autostart off
+```
+
+On macOS this is a launch agent, `~/Library/LaunchAgents/app.postrun.recorder.plist`. On Linux it is a systemd user service, `~/.config/systemd/user/postrun.service`. Either one starts Postrun at login and restarts it a minute after a crash; `postrun stop` is respected until the next login. If you change Node version (for example with nvm), run `postrun autostart on` again.
+
+## postrun doctor
+
+```bash
+postrun doctor
+```
+
+Checks, without changing anything:
+
+- your Node version;
+- the data folder and its permissions;
+- whether the background process is running and answering;
+- whether Claude Code is set up and the hook script is in place and current;
+- whether telemetry is reaching Postrun;
+- when Claude Code was last recorded;
+- whether Cline is found;
+- whether the store opens;
+- start at login.
+
+Each problem comes with one fix. Exits `1` when there is a problem. If you report an issue, include what `postrun doctor` prints.
+
+## postrun uninstall
+
+```bash
+postrun uninstall [--yes] [--keep-data | --delete-data]
+```
+
+Stops Postrun, turns off start at login, and takes Postrun's hooks and settings out of `~/.claude/settings.json`. A setting you had before Postrun is kept, and everything else in the file is left as it is. Then it asks whether to delete `~/.postrun`, defaulting to no.
 
 | Flag | Effect |
 | --- | --- |
-| `--port <n>`, `-p <n>` | Port, 1 to 65535. The flag wins over the `PORT` variable, which wins over the default, 1234. |
-| `--db <path>` | Store to serve. The flag wins over `POSTRUN_DB`, which wins over `~/.postrun/postrun.db`. |
-| `--ui <dir>` | Folder holding the built review app. Default `apps/ui/out` in the checkout. |
-| `--help`, `-h` | Print usage. |
+| `--yes`, `-y` | Do not ask before starting. |
+| `--keep-data` | Keep your recorded sessions without asking. |
+| `--delete-data` | Delete `~/.postrun` without asking. |
 
-| Variable | Effect |
+To remove the command itself afterwards: `npm uninstall -g postrun`.
+
+## Environment variables
+
+You should not need these. They exist for tests and unusual setups.
+
+| Variable | Default |
 | --- | --- |
-| `PORT` | Port, when `--port` is not given. |
-| `POSTRUN_DB` | Store path, when `--db` is not given. |
-| `POSTRUN_INGEST_TOKEN_FILE` | Path of the ingest token file. Default `~/.postrun/ingest-token`. Created on first start. |
+| `POSTRUN_HOME` | `~/.postrun`, the folder for everything Postrun stores |
+| `POSTRUN_DB` | `~/.postrun/postrun.db` |
+| `POSTRUN_CAPTURE_DIR` | `~/.postrun/captures` |
+| `POSTRUN_CLAUDE_SETTINGS` | `~/.claude/settings.json` |
+| `POSTRUN_CLINE_DIR` | `~/.cline/data/sessions` |
+| `POSTRUN_KEEP_CAPTURES` | Unset. `1` keeps raw capture files instead of removing them 24 hours after a session goes quiet. |
 
-## pnpm export
-
-```bash
-pnpm export <session-id> [-o <file>] [--force] [--db <path>]
-```
-
-Writes one redacted, self-contained HTML report and lists every value it masked. Redaction cannot be switched off.
-
-| Flag | Effect |
-| --- | --- |
-| `-o <file>`, `--out <file>` | Output path. Default `postrun-<agent>-<date>-<short id>.html`, resolved from `core/`. |
-| `--force`, `-f` | Overwrite an existing file. |
-| `--db <path>` | Read this store. |
-| `--help`, `-h` | Print usage. |
-
-The file is written with mode 0600. See [Exporting and redaction](/export/).
-
-## pnpm adapter:cc and pnpm adapter:cline
-
-```bash
-pnpm adapter:cc <captures-dir> [session-id] > steps.json
-pnpm adapter:cline <session-id | session-dir | messages.json> > steps.json
-```
-
-Run an adapter on its own: the session's steps go to stdout as a JSON array, and a one-line summary goes to stderr. Nothing is written to the store. Useful for checking how an agent's files are read.
-
-Point `adapter:cc` at one session's folder, `~/.postrun/captures/sessions/<id>`. Given a folder of shared log files that holds several sessions, it needs the session id; the error lists the ids it found.
-
-## pnpm dev:core and pnpm dev:ui
-
-```bash
-pnpm dev:core     # the server on 127.0.0.1:1234, serving the last built UI (no build step)
-pnpm dev:ui       # Next dev server on 127.0.0.1:3000, with /api proxied to 127.0.0.1:1234
-```
-
-`dev:core` takes the same flags as `pnpm serve`. `dev:ui` reads `UI_PORT` for its own port and `POSTRUN_CORE_URL` for the server it proxies to.
-
-## Workspace commands
-
-```bash
-pnpm typecheck    # every package
-pnpm test         # every package
-pnpm build        # every package
-```
+Ports are kept in `~/.postrun/config.json` and changed with `postrun setup --port`.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | Success. |
-| `1` | The command failed: for example, the port is in use, the session was not found, the output file exists, or setup could not write `settings.json`. |
-| `2` | Bad usage: an unknown flag, a missing value, an invalid port, or an unknown `--agent`. |
+| `1` | The command failed, or `doctor` found a problem. The message says why. |
+| `2` | Bad usage: an unknown command or flag, or a missing value. |
+| `3` | `status` only: Postrun is not running. |
 
-Errors go to stderr, prefixed with the command, such as `postrun serve:`, `postrun store:`, `postrun capture:` or `postrun export:`.
+## Working on Postrun
+
+From a checkout of the repository, `pnpm postrun <command>` runs the command from source. The older scripts are still there for development:
+
+```bash
+pnpm dev:core       # the server on 127.0.0.1:1234, serving the last built UI
+pnpm dev:ui         # Next dev server on 127.0.0.1:3000, with /api proxied to 127.0.0.1:1234
+pnpm capture        # the recorder in the foreground
+pnpm ingest --agent claude-code|cline <source>
+pnpm adapter:cc <session-folder> > steps.json
+pnpm adapter:cline <session-id> > steps.json
+pnpm test           # every package
+pnpm test:install   # pack, install into a throwaway home, and check everything end to end
+```

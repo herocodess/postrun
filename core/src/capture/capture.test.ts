@@ -205,7 +205,7 @@ describe("claude code self-configuration", () => {
     expect(r1.backed_up).toBe(true);
     expect(readFileSync(r1.backup_path, "utf8")).toBe(original);
     expect(r1.hook_script_chmod).toBe(true);
-    expect(statSync(script).mode & 0o111).toBe(0o111);
+    expect(statSync(script).mode & 0o100).toBe(0o100);
     expect(r1.hooks_added.sort()).toEqual(["PostToolUse", "PostToolUseFailure", "SessionEnd", "SessionStart", "UserPromptSubmit"]);
     expect(r1.hooks_updated).toEqual(["Stop"]);
     expect(r1.env_changed).toEqual([{ key: "OTEL_LOG_USER_PROMPTS", from: "0" }]);

@@ -17,7 +17,7 @@ Postrun records full prompts, assistant responses, tool input and tool output fr
 
 Capture files can hold anything a session printed, including the output of commands such as `env`. Treat `~/.postrun` as sensitive.
 
-Postrun does not ask Claude Code to dump raw API request bodies to disk. If an earlier Postrun setup turned that on, `pnpm capture:cc:setup` turns it off again.
+Postrun does not ask Claude Code to dump raw API request bodies to disk. If an earlier Postrun setup turned that on, `postrun setup` turns it off again.
 
 ## Where it lives
 
@@ -26,12 +26,14 @@ Postrun does not ask Claude Code to dump raw API request bodies to disk. If an e
 | `~/.postrun/postrun.db` | The SQLite store and its WAL files |
 | `~/.postrun/captures/` | Claude Code hook and telemetry logs |
 | `~/.postrun/ingest-token` | The ingest API's bearer token |
+| `~/.postrun/bin/capture-hook.sh` | The hook script Claude Code runs |
+| `~/.postrun/postrun.log`, `config.json`, `postrun.pid` | The background process's log, ports and process id |
 
 Everything Postrun writes under `~/.postrun` is created owner-only: directories 0700, files 0600. Older files with wider permissions are tightened when they are opened. The hook script sets `umask 077` for the same reason.
 
-There is no account and no copy anywhere else. Delete `~/.postrun` and the recorded data is gone.
+There is no account and no copy anywhere else. `postrun uninstall` offers to delete `~/.postrun`; once it is gone, so is the recorded data.
 
-To remove one session, use the review app's Delete button or [`pnpm delete`](/reference/cli/#pnpm-delete). The store runs with SQLite's `secure_delete` on, so deleted content is overwritten rather than left in free pages, and the write-ahead log is checkpointed and truncated straight after. The raw capture files are removed too. Only the session id is kept, so the recorder does not record it again. The agent's own copy under `~/.claude` or `~/.cline` is not touched.
+To remove one session, use the review app's Delete button or [`postrun delete`](/reference/cli/#postrun-delete). The store runs with SQLite's `secure_delete` on, so deleted content is overwritten rather than left in free pages, and the write-ahead log is checkpointed and truncated straight after. The raw capture files are removed too. Only the session id is kept, so the recorder does not record it again. The agent's own copy under `~/.claude` or `~/.cline` is not touched.
 
 ## What Postrun reads and writes outside ~/.postrun
 
@@ -45,8 +47,8 @@ Postrun opens two listeners:
 
 | Listener | Address | Purpose |
 | --- | --- | --- |
-| API server and review app | `127.0.0.1:1234` | Started by `pnpm serve` |
-| OTLP receiver | `127.0.0.1:4318` | Started by `pnpm capture`, for Claude Code telemetry |
+| API server and review app | `127.0.0.1:1234` | Postrun's background process |
+| OTLP receiver | `127.0.0.1:4318` | Postrun's background process, for Claude Code telemetry |
 
 Both bind to `127.0.0.1` only. The host cannot be configured, so other machines cannot connect.
 
@@ -75,7 +77,7 @@ Postrun has no telemetry and never phones home. The recorder, the store and the 
 
 ## Sharing on purpose
 
-`pnpm export` and the **Export report** button write one session to a single HTML file. Before it is written:
+`postrun export` and the **Export report** button write one session to a single HTML file. Before it is written:
 
 - **Secrets are masked.** Known formats (private keys; AWS, GitHub, Anthropic, OpenAI, Stripe, Slack and Google keys; JWTs), passwords in URLs, `Authorization` header values, and values assigned to credential names such as `API_KEY`, `token` or `password` become `[REDACTED:<kind>]`.
 - **Home paths are shortened.** `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` become `~`.

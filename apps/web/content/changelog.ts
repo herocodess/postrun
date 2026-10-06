@@ -20,10 +20,23 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "Postrun 0.1: one command to install",
+    summary: "Postrun is now an installable command for early access: npm install -g postrun, then postrun setup.",
+    items: [
+      { kind: "new", text: "postrun setup sets up Claude Code, finds Cline, starts recording in the background and opens the review app. It can start Postrun at login on macOS and Linux." },
+      { kind: "new", text: "postrun doctor checks everything that could stop a session being recorded, and gives one fix for each problem." },
+      { kind: "new", text: "postrun uninstall takes Postrun back out of Claude Code, leaving your own settings exactly as they were, and asks before deleting any data." },
+      { kind: "improved", text: "Recording and the review app now run as one quiet background process, so there is nothing to keep open in a terminal." },
+      { kind: "improved", text: "If you already send Claude Code telemetry somewhere else, Postrun leaves it alone and records from hooks only. If a port is taken, setup picks a free one." },
+      { kind: "improved", text: "No native dependencies: Postrun uses the SQLite built into Node 22.13 and later, so installing never needs a compiler." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "Delete a session",
     summary: "Remove one session from Postrun for good, without deleting everything else.",
     items: [
-      { kind: "new", text: "A Delete button on every session, with a confirmation that says exactly what goes and what stays. Also available as pnpm delete." },
+      { kind: "new", text: "A Delete button on every session, with a confirmation that says exactly what goes and what stays. Also available as postrun delete." },
       { kind: "security", text: "Deleted sessions are overwritten on disk, not just unlinked, and their raw capture files are removed. Postrun will not record a deleted session again, even if the agent keeps going." },
     ],
   },

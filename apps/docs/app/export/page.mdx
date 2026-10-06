@@ -17,15 +17,15 @@ Export turns one recorded session into a single HTML file you can email, attach 
 ## Export from the terminal
 
 ```bash
-pnpm sessions               # find the session id
-pnpm export <session-id>
+postrun sessions               # find the session id
+postrun export <session-id>
 ```
 
 The command writes the file and lists what it masked:
 
 ```text
-wrote /path/to/postrun/core/postrun-claude-code-2026-10-05-3ac04cde.html (84 KB, 112 steps)
-redaction: masked 2 value(s) and 14 home path(s). Check them before sharing:
+Wrote /Users/you/postrun-claude-code-2026-10-05-3ac04cde.html (112 steps)
+Redaction: masked 2 value(s) and 14 home path(s). Check them before sharing:
   anthropic-key   step 41 · command · stdout
       …export ANTHROPIC_API_KEY=[REDACTED:anthropic-key]…
   ...
@@ -35,14 +35,11 @@ Redaction is automatic, not a guarantee. Skim the report before you send it.
 | Option | Effect |
 | --- | --- |
 | `-o <file>`, `--out <file>` | Write to this path instead of the default name. |
-| `--force`, `-f` | Overwrite the file if it exists. Without it, an existing file is an error. |
-| `--db <path>` | Read from another store. |
+| `--force` | Overwrite the file if it exists. Without it, an existing file is an error. |
 
 The default file name is `postrun-<agent>-<date>-<first 8 characters of the session id>.html`. The file is written readable only by you (0600).
 
-<Callout type="warn" title="Where the file lands">
-  `pnpm export` runs inside the `core` package, so a default or relative output path is resolved from the `core/` folder of your checkout, not from where you typed the command. The first line of output always shows the full path. Pass an absolute path with `-o` to choose the location, for example `pnpm export <session-id> -o ~/Desktop/report.html`.
-</Callout>
+The file is written to the folder you run the command in. The first line of output shows the full path. Pass `-o` to choose another location, for example `postrun export <session-id> -o ~/Desktop/report.html`.
 
 ## What the report contains
 

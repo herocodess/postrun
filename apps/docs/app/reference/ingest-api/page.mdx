@@ -13,7 +13,7 @@ export const metadata = {
 POST http://127.0.0.1:1234/api/ingest
 ```
 
-The server listens on `127.0.0.1` only. The port is 1234 unless `pnpm serve` was started with `--port` or `PORT`. Any method other than `POST` returns `405` with `allow: POST`.
+The server listens on `127.0.0.1` only. The port is 1234 unless it was changed with `postrun setup --port`; `postrun status` shows it. Any method other than `POST` returns `405` with `allow: POST`.
 
 ## Authentication
 
@@ -27,7 +27,7 @@ authorization: Bearer <token>
 | --- | --- |
 | Token file | `~/.postrun/ingest-token` |
 | Override | `POSTRUN_INGEST_TOKEN_FILE` (the path to the file) |
-| Created | On first `pnpm serve`, owner-only (0600), if the file does not exist |
+| Created | When Postrun first starts, owner-only (0600), if the file does not exist |
 | Format | 43 characters (32 random bytes, base64url). A file holding fewer than 32 characters is refused. |
 | Rotate | Delete the file and restart the server |
 

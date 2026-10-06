@@ -10,27 +10,12 @@ The review app is a local web page served by the Postrun server. It reads the st
 ## Open it
 
 ```bash
-pnpm serve
+postrun open
 ```
 
-`pnpm serve` builds the review app, then serves it with the store at `http://127.0.0.1:1234/`. On start it prints the store path, the sessions in it, and the address:
+The review app runs at `http://127.0.0.1:1234/` whenever Postrun is running, so you can also bookmark that address. `postrun status` shows the address if you changed the port with `postrun setup --port`.
 
-```text
-postrun store /home/you/.postrun/postrun.db: 3 session(s)
-  ...
-serving UI from /path/to/postrun/apps/ui/out
-ingest: POST http://127.0.0.1:1234/api/ingest  (bearer token in /home/you/.postrun/ingest-token)
-listening on http://127.0.0.1:1234/  (127.0.0.1 only; ctrl-c to stop)
-```
-
-Options:
-
-```bash
-pnpm serve --port 4321              # or PORT=4321; the flag wins, then PORT, then 1234
-pnpm serve --db /some/other/postrun.db
-```
-
-The server only reads the store; it never runs adapters. Sessions arrive from `pnpm capture`, `pnpm ingest` or the [ingest API](/reference/ingest-api/), and appear without a restart. All of these can run at the same time: they share the SQLite file.
+Sessions arrive from the recorders and from the [ingest API](/reference/ingest-api/), and appear without a reload.
 
 ## The session list
 
@@ -99,7 +84,7 @@ Long sessions stay quick to open and to watch:
 - The session arrives with each step's first 2 KB of output; opening a step loads the rest.
 - A live update fetches only the steps that changed since the last one, at most once every two seconds, and redraws only the turns that changed.
 
-A Claude Code session recorded while `pnpm capture` was stopped shows `not recorded` for cost: see [Troubleshooting](/troubleshooting/).
+A Claude Code session recorded while Postrun was stopped shows `not recorded` for cost: see [Troubleshooting](/troubleshooting/).
 
 ## Live updates
 
@@ -130,7 +115,7 @@ Postrun then remembers only the session id, so the recorder will not record that
 
 Deleting does not touch the agent's own copy. Claude Code keeps its transcripts under `~/.claude/projects` and Cline keeps tasks in `~/.cline/data/sessions`; delete them there if you want them gone everywhere.
 
-The same works from a terminal with [`pnpm delete`](/reference/cli/#pnpm-delete). The button is not shown in the demo.
+The same works from a terminal with [`postrun delete`](/reference/cli/#postrun-delete). The button is not shown in the demo.
 
 ## Read routes
 

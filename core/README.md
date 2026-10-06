@@ -1,13 +1,13 @@
 # @postrun/core
 
-The logic package. Node 20+, ESM, strict TypeScript.
+The logic package. Node 22.13+, ESM, strict TypeScript.
 
 ```
 src/
   schema/               v1.2 types and runtime validator (Session, Segment, Actor, Turn, Step, payloads, Flag, Verdict)
   adapters/claude-code/ otlp-logs.ndjson + hooks.ndjson -> Step[] (read only)
   adapters/cline/       ~/.cline/data/sessions/<id> -> Step[], Turn[] with plan/act mode, one root actor (read only)
-  store/                SQLite store (better-sqlite3): ingest adapter output idempotently, list and load sessions
+  store/                SQLite store (built-in node:sqlite): ingest adapter output idempotently, list and load sessions
   report/               read projections: files touched, commands run
   server/               localhost-only HTTP server over the store: GET /api/sessions, GET /api/sessions/:id, GET / (apps/ui/out)
   capture/              later

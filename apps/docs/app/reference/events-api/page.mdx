@@ -61,7 +61,7 @@ Changes made while you were disconnected are not sent again. `ready` arrives on 
 
 ## Where changes come from
 
-Sessions are written by three kinds of writer: `POST /api/ingest` in the server process, and the capture watchers and `pnpm ingest`, which are separate processes sharing the same SQLite file. To see all of them, the server checks the store's `updated_at` column every 500 ms, only while at least one client is connected. A successful `POST /api/ingest` triggers a check straight away.
+Sessions are written by `POST /api/ingest` and the recorders in Postrun's background process, and by commands such as `postrun delete`, which open the same SQLite file from another process. To see all of them, the server checks the store's `updated_at` column every 500 ms, only while at least one client is connected. A successful `POST /api/ingest` triggers a check straight away.
 
 A deleted session also sends a `change` event. Fetching it then returns `404`, which is how a client learns it is gone.
 

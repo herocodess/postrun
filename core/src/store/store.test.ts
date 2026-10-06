@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdtempSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
+import { Database } from "./sqlite.js";
 import { describe, expect, it } from "vitest";
 import { locateClineSession } from "../adapters/cline/index.js";
 import type { Step } from "../schema/index.js";

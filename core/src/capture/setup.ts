@@ -116,6 +116,53 @@ const RETIRED_ENV: Array<{ key: string; ours: (value: unknown, env: Json) => boo
   { key: "OTEL_TRACES_EXPORT_INTERVAL", ours: (v, env) => v === "2000" && postrunEndpoint(env) },
 ];
 
+/** Telemetry keys Postrun sets, other than POSTRUN_CAPTURE_DIR. */
+const TELEMETRY_KEYS = Object.keys(captureEnv("")).filter((k) => k !== "POSTRUN_CAPTURE_DIR");
+
+/**
+ * Remove the telemetry keys Postrun set, in place. A key is Postrun's only while
+ * the endpoint is Postrun's receiver and the value is the one Postrun writes;
+ * a key the user had before Postrun (same value in the backup) is kept.
+ */
+function removeOwnTelemetry(env: Json, judgeBy: Json, before?: Json): string[] {
+  if (!postrunEndpoint(judgeBy)) return [];
+  const ours = captureEnv(String(judgeBy["POSTRUN_CAPTURE_DIR"]), Number(String(judgeBy["OTEL_EXPORTER_OTLP_ENDPOINT"]).split(":").pop()));
+  const removed: string[] = [];
+  for (const k of TELEMETRY_KEYS) {
+    if (!(k in env) || env[k] !== ours[k]) continue;
+    if (before && k !== "OTEL_EXPORTER_OTLP_ENDPOINT" && before[k] === env[k]) continue;
+    delete env[k];
+    removed.push(k);
+  }
+  return removed;
+}
+
+/**
+ * Telemetry the user already sends somewhere else. Postrun would have to
+ * replace their endpoint to receive it, so setup records from hooks only
+ * instead. Returns a short description, or undefined when there is none.
+ */
+export function foreignTelemetry(env: Json): string | undefined {
+  if (postrunEndpoint(env)) return undefined;
+  for (const k of ["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"]) {
+    const v = env[k];
+    if (typeof v === "string" && v.trim() !== "") return `${k}=${v}`;
+  }
+  const exporter = env["OTEL_LOGS_EXPORTER"];
+  if (typeof exporter === "string" && exporter !== "" && exporter !== "otlp") return `OTEL_LOGS_EXPORTER=${exporter}`;
+  return undefined;
+}
+
+/** The env block of a settings file, or {} when the file or block is missing or unreadable. */
+export function readSettingsEnv(path = defaultSettingsPath()): Json {
+  try {
+    const env = readSettings(path)?.["env"];
+    return isObject(env) ? env : {};
+  } catch {
+    return {};
+  }
+}
+
 function postrunEndpoint(env: Json): boolean {
   const e = env["OTEL_EXPORTER_OTLP_ENDPOINT"];
   return typeof e === "string" && e.startsWith(`http://${OTLP_HOST}:`) && typeof env["POSTRUN_CAPTURE_DIR"] === "string";
@@ -141,7 +188,13 @@ export interface MergeReport {
  * their order. Malformed `env` or `hooks` values are left as they are and
  * reported as unmergeable by throwing.
  */
-export function mergeCaptureSettings(existing: Json, captureDir: string, otlpPort = DEFAULT_OTLP_PORT, script = hookScriptPath()): { settings: Json; report: MergeReport } {
+export function mergeCaptureSettings(
+  existing: Json,
+  captureDir: string,
+  otlpPort = DEFAULT_OTLP_PORT,
+  script = hookScriptPath(),
+  telemetry = true,
+): { settings: Json; report: MergeReport } {
   const report: MergeReport = { env_added: [], env_changed: [], env_removed: [], hooks_added: [], hooks_updated: [], hooks_deduplicated: [], changed: false };
   const out: Json = { ...existing };
 
@@ -149,7 +202,12 @@ export function mergeCaptureSettings(existing: Json, captureDir: string, otlpPor
   const currentEnv = existing["env"];
   if (currentEnv !== undefined && !isObject(currentEnv)) throw new Error(`settings "env" is not an object; refusing to merge`);
   const env: Json = { ...(currentEnv ?? {}) };
-  for (const [k, v] of Object.entries(captureEnv(captureDir, otlpPort))) {
+  const wanted = telemetry ? captureEnv(captureDir, otlpPort) : { POSTRUN_CAPTURE_DIR: captureDir };
+  if (!telemetry) {
+    // Hooks only: take back any telemetry keys Postrun set earlier, never the user's own.
+    for (const k of removeOwnTelemetry(env, currentEnv ?? {})) report.env_removed.push(k);
+  }
+  for (const [k, v] of Object.entries(wanted)) {
     if (!(k in env)) {
       env[k] = v;
       report.env_added.push(k);
@@ -237,6 +295,8 @@ export interface ConfigureOptions {
   /** Defaults to `${settingsPath}${BACKUP_SUFFIX}`. */
   backupPath?: string;
   script?: string;
+  /** Ask Claude Code for telemetry (cost, tokens). False records from hooks only. Default true. */
+  telemetry?: boolean;
 }
 
 export interface ConfigureResult extends MergeReport {
@@ -262,11 +322,21 @@ function readSettings(path: string): Json | undefined {
   return parsed;
 }
 
+function writeSettings(path: string, settings: Json, created: boolean): void {
+  // Keep the file's existing permissions; a new file gets the usual 0644.
+  const mode = created ? 0o644 : statSync(path).mode & 0o777;
+  const tmp = `${path}.postrun-tmp-${process.pid}`;
+  writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n", { mode });
+  chmodSync(tmp, mode);
+  renameSync(tmp, path);
+}
+
 function ensureExecutable(script: string): boolean {
   if (!existsSync(script)) throw new Error(`hook script missing: ${script}`);
   const mode = statSync(script).mode & 0o777;
-  if ((mode & 0o111) === 0o111) return false;
-  chmodSync(script, mode | 0o111);
+  if ((mode & 0o100) === 0o100) return false;
+  // Owner execute is all Claude Code needs; the script stays private if it was.
+  chmodSync(script, mode | 0o100);
   return true;
 }
 
@@ -281,7 +351,7 @@ export function isClaudeCodeConfigured(opts: ConfigureOptions): boolean {
   }
   if (!existing) return false;
   try {
-    return !mergeCaptureSettings(existing, opts.captureDir, opts.otlpPort ?? DEFAULT_OTLP_PORT, opts.script ?? hookScriptPath()).report.changed;
+    return !mergeCaptureSettings(existing, opts.captureDir, opts.otlpPort ?? DEFAULT_OTLP_PORT, opts.script ?? hookScriptPath(), opts.telemetry ?? true).report.changed;
   } catch {
     return false;
   }
@@ -300,7 +370,7 @@ export function configureClaudeCode(opts: ConfigureOptions): ConfigureResult {
 
   const existing = readSettings(settingsPath);
   const created = existing === undefined;
-  const { settings, report } = mergeCaptureSettings(existing ?? {}, opts.captureDir, otlpPort, script);
+  const { settings, report } = mergeCaptureSettings(existing ?? {}, opts.captureDir, otlpPort, script, opts.telemetry ?? true);
 
   let backedUp = false;
   if (report.changed || created) {
@@ -309,12 +379,7 @@ export function configureClaudeCode(opts: ConfigureOptions): ConfigureResult {
       copyFileSync(settingsPath, backupPath);
       backedUp = true;
     }
-    // Keep the file's existing permissions; a new file gets the usual 0644.
-    const mode = created ? 0o644 : statSync(settingsPath).mode & 0o777;
-    const tmp = `${settingsPath}.postrun-tmp-${process.pid}`;
-    writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n", { mode });
-    chmodSync(tmp, mode);
-    renameSync(tmp, settingsPath);
+    writeSettings(settingsPath, settings, created);
   }
   const chmodded = ensureExecutable(script);
 
@@ -335,4 +400,79 @@ export function describeConfigure(r: ConfigureResult): string {
   const what = parts.length > 0 ? parts.join("; ") : "already configured, nothing changed";
   const backup = r.backed_up ? `; original backed up to ${r.backup_path}` : "";
   return `Postrun is configured for Claude Code in ${r.settings_path} (${what}${backup}). Any Claude Code session that is already running must be restarted once to start capturing.`;
+}
+
+export interface UnconfigureResult {
+  settings_path: string;
+  env_removed: string[];
+  hooks_removed: string[];
+  changed: boolean;
+}
+
+/**
+ * Take Postrun out of settings.json: every Postrun hook, POSTRUN_CAPTURE_DIR,
+ * and the telemetry keys Postrun set (a key that already had the same value
+ * before Postrun, per the backup, is kept). Everything else is left exactly as
+ * it is. The backup file is left in place.
+ */
+export function unconfigureClaudeCode(opts: { settingsPath?: string; backupPath?: string } = {}): UnconfigureResult {
+  const settingsPath = opts.settingsPath ?? defaultSettingsPath();
+  const backupPath = opts.backupPath ?? `${settingsPath}${BACKUP_SUFFIX}`;
+  const result: UnconfigureResult = { settings_path: settingsPath, env_removed: [], hooks_removed: [], changed: false };
+  const existing = readSettings(settingsPath);
+  if (!existing) return result;
+  let before: Json | undefined;
+  try {
+    const b = readSettings(backupPath)?.["env"];
+    before = isObject(b) ? b : {};
+  } catch {
+    before = undefined;
+  }
+  const out: Json = { ...existing };
+
+  const env = existing["env"];
+  if (isObject(env)) {
+    const next: Json = { ...env };
+    result.env_removed.push(...removeOwnTelemetry(next, env, before));
+    if (typeof next["POSTRUN_CAPTURE_DIR"] === "string") {
+      delete next["POSTRUN_CAPTURE_DIR"];
+      result.env_removed.push("POSTRUN_CAPTURE_DIR");
+    }
+    if (Object.keys(next).length === 0) delete out["env"];
+    else out["env"] = next;
+  }
+
+  const hooks = existing["hooks"];
+  if (isObject(hooks)) {
+    const next: Json = {};
+    for (const [event, groupsRaw] of Object.entries(hooks)) {
+      if (!Array.isArray(groupsRaw)) {
+        next[event] = groupsRaw;
+        continue;
+      }
+      const groups: unknown[] = [];
+      let removed = false;
+      for (const group of groupsRaw) {
+        if (!isObject(group) || !Array.isArray(group["hooks"])) {
+          groups.push(group);
+          continue;
+        }
+        const inner = (group["hooks"] as unknown[]).filter((h) => !isPostrunHook(h));
+        if (inner.length === group["hooks"].length) {
+          groups.push(group);
+          continue;
+        }
+        removed = true;
+        if (inner.length > 0) groups.push({ ...group, hooks: inner });
+      }
+      if (removed) result.hooks_removed.push(event);
+      if (groups.length > 0) next[event] = groups;
+    }
+    if (Object.keys(next).length === 0) delete out["hooks"];
+    else out["hooks"] = next;
+  }
+
+  result.changed = result.env_removed.length > 0 || result.hooks_removed.length > 0;
+  if (result.changed) writeSettings(settingsPath, out, false);
+  return result;
 }

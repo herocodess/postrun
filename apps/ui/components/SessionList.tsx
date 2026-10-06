@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { EmptySessions } from "@/components/EmptySessions";
 import { useLiveVersion } from "@/lib/live";
 import { api, DEMO } from "@/lib/api";
 import type { SessionListResponse } from "@postrun/core/server/api";
@@ -104,7 +105,7 @@ export function SessionList() {
 
   if (state.kind === "loading") return <p>Loading…</p>;
   if (state.kind === "error")
-    return <p className="error">Could not load sessions: {state.message}. Is the server running on 127.0.0.1:1234?</p>;
+    return <p className="error">Could not load sessions: {state.message}. Is Postrun running? Check with postrun status in a terminal.</p>;
 
   const { sessions, agents } = state.data;
   const totalCost = sessions.reduce((sum, s) => sum + s.metrics.cost_usd, 0);
@@ -132,7 +133,7 @@ export function SessionList() {
       </div>
 
       {sessions.length === 0 ? (
-        <p style={{ color: "var(--text-muted)" }}>No sessions in the store. Run: pnpm ingest --agent claude-code|cline &lt;source&gt;</p>
+        <EmptySessions {...(agent ? { agent } : {})} />
       ) : (
         <div className="list">
           {sessions.map((s) => (

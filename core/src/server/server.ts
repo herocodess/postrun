@@ -70,6 +70,8 @@ export interface ServerOptions {
   live?: LiveFeedOptions;
   /** Capture folder whose per-session raw files a delete also removes. Default POSTRUN_CAPTURE_DIR or ~/.postrun/captures. */
   captureDir?: string;
+  /** Extra fields for GET /api/health, such as the version and pid of the background process. */
+  health?: Record<string, unknown>;
 }
 
 export interface PostrunServer {
@@ -113,7 +115,7 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
 
   const server = createServer((req, res) => {
     Promise.resolve()
-      .then(() => handle(req, res, { store, uiRoot, ingestToken, live, captureDir }))
+      .then(() => handle(req, res, { store, uiRoot, ingestToken, live, captureDir, health: opts.health ?? {} }))
       .catch((err: unknown) => {
         // Never echo internal error text (paths, SQL) to the client.
         process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
@@ -174,6 +176,7 @@ interface Ctx {
   ingestToken: string;
   live: LiveFeed;
   captureDir: string;
+  health: Record<string, unknown>;
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
@@ -192,6 +195,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
     decodeURIComponent(url.pathname); // malformed percent-encoding is a client error, not a 500
   } catch {
     text(res, 400, "bad request\n");
+    return;
+  }
+
+  if (url.pathname === "/api/health" && (method === "GET" || method === "HEAD")) {
+    json(res, 200, { ok: true, ...ctx.health });
     return;
   }
 

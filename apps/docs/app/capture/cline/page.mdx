@@ -5,32 +5,18 @@ export const metadata = {
 
 # Cline
 
-Postrun records Cline by reading the sessions Cline already saves on your machine. There is nothing to configure in Cline: keep `pnpm capture` running and every Cline session is written to the store as it changes. Postrun only reads Cline's files and never writes them.
+Postrun records Cline by reading the sessions Cline already saves on your machine. There is nothing to configure in Cline: once `postrun setup` has run, every Cline session is written to the store as it changes. Postrun only reads Cline's files and never writes them.
 
 ## Record sessions
 
-```bash
-pnpm capture
-```
+Postrun's background process watches `~/.cline/data/sessions`:
 
-The Cline watcher in `pnpm capture` watches `~/.cline/data/sessions`:
-
-- On start, it ingests every session present.
+- On start, it ingests every session that is new or changed since it last ran.
 - When a session's messages or metadata file changes, or a new session folder appears, it re-ingests that session after a 2 second pause. File system events are the fast path, with a 3 second poll as a fallback.
 - Cline rewrites its messages file during a session, so an open session is ingested many times. Every ingest is an upsert, and the session's end time stays unset until Cline's metadata records one.
 - If the messages file is caught half written, parsing fails and the watcher logs `messages file not parseable yet (mid-write?); will retry on next change`.
 
 To watch a different folder, set `POSTRUN_CLINE_DIR`.
-
-## Ingest by hand
-
-```bash
-pnpm ingest --agent cline <session-id>
-pnpm ingest --agent cline ~/.cline/data/sessions/<session-id>
-pnpm ingest --agent cline path/to/<session-id>.messages.json
-```
-
-A bare session id is looked up in `~/.cline/data/sessions`. `POSTRUN_CLINE_DIR` applies only to the watcher, so if your sessions live elsewhere, pass the folder or the messages file instead of the id.
 
 ## What is read
 

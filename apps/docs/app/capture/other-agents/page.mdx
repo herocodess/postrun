@@ -9,19 +9,15 @@ Postrun records Claude Code and Cline today. Cursor and Codex are next. For any 
 
 This page walks through a first push. The [ingest API reference](/reference/ingest-api/) has every rule and status code.
 
-## 1. Start the server and get the token
+## 1. Make sure Postrun is running, and get the token
 
 ```bash
-pnpm serve
+postrun status
 ```
 
-On first start, the server creates a random bearer token at `~/.postrun/ingest-token`, readable only by your user. It prints where the token is:
+On first start, Postrun creates a random bearer token at `~/.postrun/ingest-token`, readable only by your user. Your adapter reads it from there.
 
-```text
-ingest: POST http://127.0.0.1:1234/api/ingest  (bearer token in /home/you/.postrun/ingest-token)
-```
-
-Set `POSTRUN_INGEST_TOKEN_FILE` to keep the token somewhere else. Delete the file to rotate it; a new one is created on the next start.
+Delete the file and run `postrun restart` to rotate it; a new one is created on start.
 
 ## 2. Write a batch
 

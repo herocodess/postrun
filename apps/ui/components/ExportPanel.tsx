@@ -2,7 +2,7 @@
 
 /**
  * Export flow: show what redaction will mask, then download. The download is
- * the same file `pnpm export` writes; redaction cannot be switched off.
+ * the same file `postrun export` writes; redaction cannot be switched off.
  */
 
 import { useEffect, useState } from "react";

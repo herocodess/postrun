@@ -1,6 +1,6 @@
 # Store
 
-Local SQLite store (better-sqlite3) for normalized sessions. Default file `~/.postrun/postrun.db`, override with `--db` or `POSTRUN_DB`.
+Local SQLite store (Node's built-in node:sqlite, through store/sqlite.ts) for normalized sessions. Default file `~/.postrun/postrun.db`, override with `--db` or `POSTRUN_DB`.
 
 Tables follow v1.2: `sessions`, `segments`, `actors`, `turns`, `steps`. Steps hold `payload`, `channels`, and `flags` as JSON text, unchanged. Ingest takes a whole session from a capture: it upserts by `(session_id, id)` and removes steps, turns, actors and segments the record no longer contains, so re-ingesting is idempotent and never leaves duplicates. Pushed batches (`appendBatch`, the ingest API) are incremental and never delete.
 

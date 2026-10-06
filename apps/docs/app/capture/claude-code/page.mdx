@@ -5,15 +5,15 @@ export const metadata = {
 
 # Claude Code
 
-Postrun records Claude Code through two local channels: Claude Code's own OpenTelemetry export, sent to a receiver on `127.0.0.1:4318`, and a hook script that Claude Code runs on each session event. You turn both on with one command, then keep `pnpm capture` running while you work.
+Postrun records Claude Code through two local channels: Claude Code's own OpenTelemetry export, sent to a receiver on `127.0.0.1:4318`, and a hook script that Claude Code runs on each session event. `postrun setup` turns both on, and Postrun's background process records from then on.
 
 ## Set it up
 
 ```bash
-pnpm capture:cc:setup
+postrun setup
 ```
 
-This merges Postrun's settings into `~/.claude/settings.json` and prints what it changed. `pnpm capture` runs the same step on start, so you only need this command on its own if you want to configure without recording yet.
+This merges Postrun's settings into `~/.claude/settings.json`, copies the hook script to `~/.postrun/bin/capture-hook.sh`, and starts recording. Run it again whenever you like: it only changes what is missing or out of date.
 
 Then restart any Claude Code session that is already running. Claude Code reads `settings.json` only at launch, so a session started before the change keeps its old settings: it is still recorded from its hooks, but without cost and token counts.
 
@@ -27,14 +27,18 @@ The setup adds these keys under `env`:
 | `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA` | `1` |
 | `OTEL_LOGS_EXPORTER` | `otlp` |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/json` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://127.0.0.1:4318` (or the port in `POSTRUN_OTLP_PORT`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://127.0.0.1:4318`, or the free port setup picked if 4318 was taken |
 | `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_ASSISTANT_RESPONSES`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT` | `1` |
 | `OTEL_LOGS_EXPORT_INTERVAL` | `2000` |
 | `POSTRUN_CAPTURE_DIR` | The capture folder, `~/.postrun/captures` by default |
 
 Postrun reads only telemetry logs, so it does not ask Claude Code for metrics or traces. If an earlier setup added the metrics and traces exporters pointing at Postrun's receiver, the setup removes them; the same settings pointing anywhere else are yours and are left alone.
 
-It also adds one hook, with a 10 second timeout, for each of these events: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `Stop` and `SessionEnd`. The hook runs `core/scripts/capture-hook.sh` from your checkout.
+It also adds one hook, with a 10 second timeout, for each of these events: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `Stop` and `SessionEnd`. The hook runs `~/.postrun/bin/capture-hook.sh`, a copy setup keeps current, so updating or moving Postrun never breaks it.
+
+### If you already send telemetry elsewhere
+
+If your settings already set `OTEL_EXPORTER_OTLP_ENDPOINT` (or a logs endpoint or exporter) to something that is not Postrun, setup does not replace it. It adds only the hooks and `POSTRUN_CAPTURE_DIR`, and records from hooks only. Every prompt, command, edit, read and final reply is still recorded; cost, token counts and permission decisions are not, and `postrun doctor` says so.
 
 ### How the merge behaves
 
@@ -49,19 +53,14 @@ It also adds one hook, with a 10 second timeout, for each of these events: `Sess
 To use a settings file other than `~/.claude/settings.json`, set `POSTRUN_CLAUDE_SETTINGS`.
 
 <Callout type="tip" title="Undoing the setup">
-  Your original settings are in `~/.claude/settings.json.postrun-backup`. Copying it back over `settings.json` restores them, and also discards any other changes you made to the file since.
+  `postrun uninstall` removes Postrun's hooks and the settings it added, and leaves everything else in `settings.json`, including changes you made since, exactly as it is. A setting you already had before Postrun, with the same value, is kept. Your original file also stays in `~/.claude/settings.json.postrun-backup`.
 </Callout>
 
 ## Record sessions
 
-```bash
-pnpm capture
-```
+Postrun's background process (`postrun start`, started by setup and at login) does the recording. It:
 
-`pnpm capture` keeps running until you press ctrl-c. It:
-
-- Checks the Claude Code configuration and applies it if it is missing or out of date. If it cannot (for example, the file is not valid JSON), it logs `claude-code config: NOT applied (...)` and still starts recording.
-- Starts the OTLP receiver on `127.0.0.1:4318`, which writes each session's telemetry to `sessions/<id>/otlp-logs.ndjson` in the capture folder.
+- Runs the OTLP receiver on `127.0.0.1:4318`, which writes each session's telemetry to `sessions/<id>/otlp-logs.ndjson` in the capture folder.
 - Reads `hooks.ndjson`, which the hook script appends to, and moves each event into `sessions/<id>/hooks.ndjson`. It reads only what is new each second and remembers its place, so the cost does not grow with history.
 - Watches Cline sessions too. See [Cline](/capture/cline/).
 
@@ -69,18 +68,9 @@ When a session reaches `Stop` (the end of an assistant turn) or `SessionEnd`, th
 
 On start, the watcher catches up on every session not yet complete in the store, so sessions that ran while it was stopped are recovered. A session's folder is removed 24 hours after the session goes quiet, once it is safely in the store; set `POSTRUN_KEEP_CAPTURES=1` to keep the folders.
 
-## Ingest by hand
+## Sessions recorded while Postrun was stopped
 
-You can also build sessions from the capture folder without the watcher:
-
-```bash
-pnpm ingest --agent claude-code ~/.postrun/captures                 # every session in the folder
-pnpm ingest --agent claude-code ~/.postrun/captures --session <id>  # one session
-```
-
-Re-ingesting is safe: every write is an upsert keyed by session and step id.
-
-`pnpm capture --once` is another option. It skips the configuration step, writes every ended Claude Code session and every Cline session that is on disk now, and exits.
+Claude Code's hooks write to `~/.postrun/captures/hooks.ndjson` whether Postrun is running or not. When Postrun starts, it catches up on every session it missed. They are built from the hooks alone, so they have no cost or token counts, and the review app says so.
 
 ## How a session is built
 
@@ -105,16 +95,9 @@ A step with no matching hook record has no inline content. It is stored with `co
 
 Command output is capped at 30,000 characters. Exit codes are usually present only on failure, parsed from the failure text.
 
-## Change the port or folder
+## Change the port
 
-| Variable | Default | Used by |
-| --- | --- | --- |
-| `POSTRUN_OTLP_PORT` | `4318` | The receiver, and the endpoint setup writes into `settings.json` |
-| `POSTRUN_CAPTURE_DIR` | `~/.postrun/captures` | The receiver, the watcher, and the hook script (through `settings.json`) |
-| `POSTRUN_CLAUDE_SETTINGS` | `~/.claude/settings.json` | Setup |
-| `POSTRUN_DB` | `~/.postrun/postrun.db` | The store |
-
-Set the same `POSTRUN_OTLP_PORT` and `POSTRUN_CAPTURE_DIR` for `pnpm capture:cc:setup` and `pnpm capture`, so Claude Code sends to the port the receiver listens on. Restart Claude Code after any change.
+If port 4318 is taken by another program (often an OpenTelemetry collector), `postrun setup` picks the next free port, writes it into `settings.json`, and remembers it in `~/.postrun/config.json`. Restart Claude Code afterwards so it sends to the new port. Other paths can be changed with the [environment variables](/reference/cli/#environment-variables), which you should not normally need.
 
 ## What Postrun does not do
 

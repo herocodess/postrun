@@ -1,106 +1,118 @@
 export const metadata = {
   title: "Quickstart",
-  description: "Record a Claude Code or Cline session on your machine and review it in the browser.",
+  description: "Install Postrun, record a Claude Code or Cline session on your machine, and review it in the browser.",
 };
 
 # Quickstart
 
-This page takes you from a fresh checkout to a recorded session open in the review app. You run two long-lived commands: `pnpm capture`, which records your agents, and `pnpm serve`, which shows what was recorded at `http://127.0.0.1:1234/`.
-
-<Callout type="note" title="Early access">
-  A packaged install is coming with early access. Until then, Postrun runs from a checkout of the repository with pnpm, and every command on this page is run from the repository root.
-</Callout>
+Two commands take you from nothing to recording. Postrun then runs quietly in the background, and every Claude Code and Cline session you work in shows up in the review app at `http://127.0.0.1:1234/`.
 
 ## Requirements
 
-- Node.js 20 or later.
-- pnpm 9 or later.
-- Claude Code or Cline installed, if you want to record one of them. Any other agent can push sessions through the [ingest API](/capture/other-agents/).
+- macOS or Linux. Windows is not supported yet.
+- Node.js 22.13 or newer. Check with `node --version`.
+- Claude Code or Cline, if you want to record one of them. Any other agent can push sessions through the [ingest API](/capture/other-agents/).
 
 ## 1. Install
 
-The repository is private during early access, and early access members are invited to it. Once you have access:
-
 ```bash
-git clone https://github.com/herocodess/postrun.git
-cd postrun
-pnpm install
+npm install -g postrun
 ```
 
-`pnpm install` also builds `better-sqlite3`, the SQLite driver the store uses.
+The package has no dependencies and nothing to compile.
 
-## 2. Start recording
+## 2. Set up
 
 ```bash
-pnpm capture
+postrun setup
 ```
 
-This keeps running. On start it:
+This:
 
-1. Checks `~/.claude/settings.json` and, if Postrun's telemetry settings and hooks are missing, merges them in (the original file is backed up once to `~/.claude/settings.json.postrun-backup`). If they are already there, it prints `claude-code config: already present` and writes nothing.
-2. Starts a telemetry receiver on `127.0.0.1:4318` for Claude Code.
-3. Watches Claude Code's hook log and Cline's session folder (`~/.cline/data/sessions`), and writes each session into the store at `~/.postrun/postrun.db`.
+1. Adds Postrun's hooks and telemetry settings to `~/.claude/settings.json`. Your original file is saved once to `~/.claude/settings.json.postrun-backup`, and everything else in it is kept as it is. See [Claude Code](/capture/claude-code/).
+2. Finds Cline, if you have it. Nothing in Cline needs to change.
+3. Starts Postrun in the background.
+4. Asks whether Postrun should start when you log in. The answer defaults to yes.
+5. Opens the review app in your browser.
 
-If you only want the Claude Code configuration step, without starting the recorder, run `pnpm capture:cc:setup`. Details are on the [Claude Code](/capture/claude-code/) page.
-
-<Callout type="warn" title="Restart Claude Code once">
-  Claude Code reads `settings.json` only at launch. A Claude Code session that was already running when the settings were written is not recorded. Quit it and start `claude` again.
-</Callout>
-
-## 3. Run your agent
-
-Use Claude Code or Cline as you normally would. Postrun writes a Claude Code session to the store at the end of each assistant turn, and a Cline session shortly after Cline saves its messages file. You can review a session while the agent is still working.
-
-The recorder logs each write:
+It finishes with:
 
 ```text
-[22:14:03] claude-code ingested 3ac04cde-... (12 steps) on Stop
+Postrun is recording. Review your sessions at http://127.0.0.1:1234/
 ```
 
-## 4. Open the review app
+<Callout type="warn" title="Restart Claude Code once">
+  Claude Code reads `settings.json` only when it starts. A Claude Code session that was already open during setup is not recorded until you quit it and start `claude` again.
+</Callout>
 
-In a second terminal:
+If you already send Claude Code telemetry somewhere else, setup leaves that alone and records from hooks only: every prompt, command, edit and reply is still recorded, but cost and token counts are not.
+
+## 3. Work as usual
+
+Use Claude Code or Cline as you normally would. Postrun writes a Claude Code session at the end of each turn, and a Cline session shortly after Cline saves it. You can review a session while the agent is still working.
+
+## 4. Review
 
 ```bash
-pnpm serve
+postrun open
 ```
 
-This builds the review app and serves it with the store at `http://127.0.0.1:1234/`. Open that address. The session list shows every recorded session, newest first. Click one to see the files it touched, the commands it ran and the full timeline. See [Reviewing sessions](/review/).
-
-To use another port:
-
-```bash
-pnpm serve --port 4321
-```
+The session list shows every recorded session, newest first. Click one to see the files it touched, the commands it ran and the full timeline. See [Reviewing sessions](/review/).
 
 ## 5. Share one session
 
-When someone else needs to see what happened, export a single session as one redacted HTML file. Either click **Export report** on the session page, or from the terminal:
+When someone else needs to see what happened, export a single session as one redacted HTML file. Click **Export report** on the session page, or from the terminal:
 
 ```bash
-pnpm sessions                 # find the session id
-pnpm export <session-id>      # writes postrun-<agent>-<date>-<id>.html
+postrun sessions              # find the session id
+postrun export <session-id>   # writes postrun-<agent>-<date>-<id>.html here
 ```
 
-The command prints the full path it wrote and every value it masked. Check them before you send the file. See [Exporting and redaction](/export/).
+The command prints every value it masked. Check them before you send the file. See [Exporting and redaction](/export/).
+
+## Is it working?
+
+```bash
+postrun status    # running or not, and where the review app is
+postrun doctor    # every check, with a fix for each problem
+```
+
+## Updating
+
+```bash
+npm install -g postrun@latest
+postrun setup
+```
+
+Setup restarts the background process on the new version. Your sessions are kept.
+
+## Removing Postrun
+
+```bash
+postrun uninstall
+npm uninstall -g postrun
+```
+
+`postrun uninstall` takes Postrun's hooks and settings out of Claude Code, stops it, turns off start at login, and asks whether to delete your recorded sessions. Your own Claude Code settings are left exactly as they were.
 
 ## Where things live
 
 | Path | What it is |
 | --- | --- |
-| `~/.postrun/postrun.db` | The SQLite store (override with `POSTRUN_DB` or `--db`). |
-| `~/.postrun/captures/` | Raw Claude Code hook and telemetry logs, one folder per session, removed 24 hours after a session goes quiet (override with `POSTRUN_CAPTURE_DIR`). |
-| `~/.postrun/ingest-token` | Bearer token for the ingest API, created on first `pnpm serve`. |
+| `~/.postrun/postrun.db` | The session store. |
+| `~/.postrun/captures/` | Raw Claude Code hook and telemetry logs, one folder per session, removed 24 hours after a session goes quiet. |
+| `~/.postrun/bin/capture-hook.sh` | The hook script Claude Code runs. |
+| `~/.postrun/postrun.log` | What the background process did, for troubleshooting. |
 | `~/.claude/settings.json.postrun-backup` | Your original Claude Code settings, saved before the first change. |
 
-Everything under `~/.postrun` is readable only by your user account. Delete that folder and the recorded data is gone.
+Everything under `~/.postrun` is readable only by your user account. Nothing is sent anywhere.
 
 ## Next steps
 
 <div className="cards">
   <a href="/capture/claude-code/">
     Claude Code
-    <span>What the setup changes and how sessions are built.</span>
+    <span>What setup changes and how sessions are built.</span>
   </a>
   <a href="/capture/cline/">
     Cline

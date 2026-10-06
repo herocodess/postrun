@@ -1,50 +1,61 @@
 export const metadata = {
   title: "Troubleshooting",
-  description: "Fixes for the problems Postrun reports: ports in use, missing sessions, rejected requests and more.",
+  description: "Fixes for the problems Postrun reports: not recording, ports in use, missing sessions, rejected requests and more.",
 };
 
 # Troubleshooting
 
-Each section below starts with the message Postrun prints or returns, then the cause and the fix. Messages that include a path or id show it as `<...>`.
-
-## Ports
-
-### Port 1234 is already in use
-
-```text
-postrun serve: Port 1234 is already in use on 127.0.0.1. Pick another port with --port <n> or PORT=<n> (default 1234).
-```
-
-Another process, often another `pnpm serve`, is using the port. Stop it, or pick another port:
+## Start with postrun doctor
 
 ```bash
-pnpm serve --port 4321
+postrun doctor
 ```
 
-If you change the server port, adapters that push to the [ingest API](/reference/ingest-api/) must use the new port too.
+It checks everything below in a few seconds, without changing anything, and gives one fix for each problem. Most of this page explains what those checks mean. If you report a problem, send what `postrun doctor` prints, and the end of `~/.postrun/postrun.log` if it asks for it.
 
-### OTLP receiver port 4318 is already in use
+## Installing
+
+### npm says EBADPLATFORM
+
+Postrun runs on macOS and Linux. Windows is not supported yet; on Windows, install it inside WSL.
+
+### Postrun needs Node 22.13 or newer
 
 ```text
-postrun capture: OTLP receiver port 4318 is already in use on 127.0.0.1. Set POSTRUN_OTLP_PORT to another port (and OTEL_EXPORTER_OTLP_ENDPOINT to match).
+Postrun needs Node 22.13 or newer; this is Node 20.18.0.
 ```
 
-Another `pnpm capture`, or another OpenTelemetry collector, is listening on 4318. Stop it, or move Postrun's receiver:
+Postrun uses the SQLite built into Node 22.13 and later, so it has nothing to compile. Install a newer Node from [nodejs.org](https://nodejs.org), or with nvm: `nvm install 22`. Then run `postrun setup` again.
 
-```bash
-POSTRUN_OTLP_PORT=4319 pnpm capture
-```
+If you switch Node versions with nvm, start at login keeps pointing at the old one. `postrun doctor` notices; run `postrun autostart on` to fix it.
 
-With a new port, `pnpm capture` sees that Claude Code's `OTEL_EXPORTER_OTLP_ENDPOINT` no longer matches and updates `settings.json`. Restart Claude Code so it sends to the new port. Use the same `POSTRUN_OTLP_PORT` whenever you run `pnpm capture:cc:setup`.
+## Not recording
 
-### invalid port
+### Postrun is not running
 
 ```text
-postrun serve: invalid port "abc" (from --port); expected an integer between 1 and 65535
-postrun capture: invalid POSTRUN_OTLP_PORT "abc"
+Postrun is not running, so nothing is being recorded. Start it with: postrun start
 ```
 
-The port must be a whole number from 1 to 65535.
+Run `postrun start`. Claude Code's hooks keep writing while Postrun is stopped, and on start it catches up on every session it missed. To have it start whenever you log in: `postrun autostart on`.
+
+### Postrun could not start
+
+`postrun start` and `postrun setup` print the last lines of `~/.postrun/postrun.log` when the background process does not come up. The usual cause:
+
+```text
+could not start the review app: port 1234 is in use by another program
+```
+
+Run `postrun setup`: it moves to the next free port and remembers it. Or choose one with `postrun setup --port 4321`.
+
+### Telemetry receiver not running
+
+```text
+warn  Telemetry receiver not running (port 4318 in use): cost and token counts are missing
+```
+
+Another program, often an OpenTelemetry collector, holds port 4318. Postrun keeps recording from hooks, so every prompt, command, edit and reply is still there. To get cost and token counts back, run `postrun setup`: it picks a free port and points Claude Code at it. Restart Claude Code afterwards.
 
 ## Sessions do not appear
 
@@ -52,102 +63,60 @@ The port must be a whole number from 1 to 65535.
 
 Check these in order:
 
-1. **Is `pnpm capture` running?** Claude Code's hooks keep writing to `hooks.ndjson` while it is stopped, and the next time `pnpm capture` starts it catches up on every session it missed. Start it and the session appears.
-2. **Has the session finished a turn?** A Claude Code session is written at the end of each assistant turn (`Stop`) and at `SessionEnd`, after a 4 second pause. It does not appear while the first turn is still running.
-3. **Is the configuration in place?** Run `pnpm capture:cc:setup` and read its summary.
+1. **Is Postrun running?** `postrun status`.
+2. **Was Claude Code restarted after setup?** Claude Code reads `settings.json` only when it starts. Quit any session that was open during setup and start `claude` again.
+3. **Has the session finished a turn?** A Claude Code session is written at the end of each assistant turn and when it ends, after a 4 second pause. It does not appear while its first turn is still running.
+4. **Is Claude Code still set up?** `postrun doctor` checks the hooks in `settings.json`. If something removed them, run `postrun setup`.
 
 ### A Claude Code session shows "cost not recorded"
 
-The session was recorded from Claude Code's hooks alone, because no telemetry arrived for it. The recorder logs this once per session:
+The session was recorded from Claude Code's hooks alone, because no telemetry arrived for it. The log says, once per session:
 
 ```text
 claude-code <id>: recorded from hooks only (no OTel data: the receiver was not running, or this claude started before setup), so its cost and token counts are missing
 ```
 
-Every prompt, command, edit, read and final reply is still there. Only cost, token counts and permission decisions need telemetry. To get them for future sessions, keep `pnpm capture` running while you work, and restart any `claude` that was started before setup, since Claude Code reads `settings.json` only at launch.
-
-To rebuild every session in the capture folder by hand:
-
-```bash
-pnpm ingest --agent claude-code ~/.postrun/captures
-```
-
-Sessions whose raw files were already removed (24 hours after they went quiet) are skipped; they are in the store already. If the folder holds no sessions at all, this fails with `no sessions in <dir>`.
+Every prompt, command, edit, read and final reply is still there. Only cost, token counts and permission decisions need telemetry. It happens when Postrun was stopped, when Claude Code was started before setup, or when your Claude Code telemetry goes to another endpoint (setup leaves that alone, and `postrun doctor` says so).
 
 ### Telemetry arrives in the wrong format
 
-The recorder logs:
+The log says:
 
 ```text
-otlp: /v1/logs: got application/x-protobuf, expected application/json. Set OTEL_EXPORTER_OTLP_PROTOCOL=http/json before launching claude.
+telemetry: /v1/logs: got application/x-protobuf, expected application/json. Set OTEL_EXPORTER_OTLP_PROTOCOL=http/json before launching claude.
 ```
 
-The receiver accepts OTLP over HTTP with JSON bodies only, and answers anything else with `415`. `pnpm capture:cc:setup` sets `OTEL_EXPORTER_OTLP_PROTOCOL` to `http/json` in `settings.json`. If you see this, something else (often a shell variable) is overriding it. Unset the override and restart Claude Code.
+The receiver accepts OTLP over HTTP with JSON bodies only. Setup sets `OTEL_EXPORTER_OTLP_PROTOCOL` to `http/json` in `settings.json`, so something else, often a variable exported in your shell profile, is overriding it. Remove the override and restart Claude Code.
 
 ### A Cline session is missing
 
 - Postrun reads Cline 4.1.x sessions from `~/.cline/data/sessions`. The older VS Code task folders are not read.
-- If Cline stores sessions elsewhere, set `POSTRUN_CLINE_DIR` for `pnpm capture`.
-- A session caught mid-write is retried on its next change:
-
-  ```text
-  cline <id>: messages file not parseable yet (mid-write?); will retry on next change
-  ```
-
-- `pnpm ingest --agent cline <id>` looks only in `~/.cline/data/sessions`:
-
-  ```text
-  postrun store: Cline session <id> not found (looked for <path>)
-  ```
-
-  Pass the session folder or the `<id>.messages.json` file instead.
-
-### The review app shows no sessions
-
-The review app reads the store given to `pnpm serve`. If you recorded with a different `POSTRUN_DB` or `--db`, serve that same store. `pnpm sessions` prints `no sessions in <path>` with the path it read.
+- A session caught mid-write is retried on its next change. The log says `messages file not parseable yet (mid-write?); will retry on next change`.
 
 ## Claude Code setup
 
 ### settings.json is not valid JSON
 
 ```text
-postrun capture setup: <path> is not valid JSON (<reason>); fix it by hand, nothing was changed
+postrun setup: <path> is not valid JSON (<reason>); fix it by hand, nothing was changed
 ```
 
-`pnpm capture` logs the same problem as `claude-code config: NOT applied (...)` and keeps recording. Fix the file by hand, then run `pnpm capture:cc:setup`.
-
-Setup also refuses to merge, and writes nothing, when `env` or `hooks` is not an object, or a hook event's value is not an array:
+Fix the file by hand, then run `postrun setup` again. Setup also refuses to merge, and writes nothing, when `env` or `hooks` is not an object, or a hook event's value is not an array:
 
 ```text
 settings "env" is not an object; refusing to merge
 settings hooks.Stop is not an array; refusing to merge
 ```
 
-### hook script missing
+### The hook script is missing or from another version
 
-```text
-postrun capture setup: hook script missing: <path>/core/scripts/capture-hook.sh
-```
-
-Setup makes the hook script executable after merging the settings, and the script is missing from your checkout. Restore `core/scripts/capture-hook.sh` and run `pnpm capture:cc:setup` again.
-
-The hooks in `settings.json` point at the script by its full path. If you move the checkout, run `pnpm capture:cc:setup` from the new location. An old hook is recognised as Postrun's, and updated in place, when its folder path contains `postrun`. Otherwise setup adds a new hook next to it, and you should remove the old entry from `settings.json` by hand.
+`postrun doctor` reports it; `postrun setup` puts the current script back in `~/.postrun/bin`. The hooks in `settings.json` point there, so updating or moving Postrun does not break them. An older hook that pointed into a checkout of the repository is recognised as Postrun's and updated in place.
 
 ## The review app
 
-### UI not built
-
-Opening `http://127.0.0.1:1234/` returns `503`:
-
-```text
-UI not built: <repo>/apps/ui/out/index.html is missing. Run "pnpm --filter @postrun/ui build" (or "pnpm serve" from the repo root, which builds first).
-```
-
-`pnpm dev:core` serves the last built review app and does not build it. Use `pnpm serve`, which builds first, or build once with `pnpm --filter @postrun/ui build`.
-
 ### server offline
 
-The top bar pill says `server offline`, or the list shows `Could not load sessions: ... Is the server running on 127.0.0.1:1234?`. Start `pnpm serve`. The page catches up on its own when the server is back.
+The top bar says `server offline`, or the list shows `Could not load sessions`. Postrun is not running: `postrun start`. The page catches up on its own when it is back.
 
 ### misdirected request (421)
 
@@ -155,7 +124,7 @@ The top bar pill says `server offline`, or the list shows `Could not load sessio
 misdirected request: this server only answers to 127.0.0.1 or localhost
 ```
 
-The request's `Host` header was not `127.0.0.1`, `localhost` or `[::1]`. This guard stops DNS rebinding attacks. It also blocks custom hostnames, `/etc/hosts` aliases, and tunnels or proxies that pass their own hostname. Open `http://127.0.0.1:1234/` or `http://localhost:1234/` directly. The OTLP receiver applies the same rule, with an empty `421` response.
+The request's `Host` header was not `127.0.0.1`, `localhost` or `[::1]`. This guard stops DNS rebinding attacks. It also blocks custom hostnames, `/etc/hosts` aliases, and tunnels or proxies that pass their own hostname. Open `http://127.0.0.1:1234/` or `http://localhost:1234/` directly. The telemetry receiver applies the same rule.
 
 ### too many live connections
 
@@ -165,7 +134,8 @@ The request's `Host` header was not `127.0.0.1`, `localhost` or `[::1]`. This gu
 
 | Status | Message | Fix |
 | --- | --- | --- |
-| `401` | `missing or invalid bearer token (see ~/.postrun/ingest-token)` | Send `authorization: Bearer <token>` with the current contents of the token file. If the file was deleted or replaced, the server keeps the token it loaded at start: restart `pnpm serve`. |
+| `401` | `missing or invalid bearer token (see ~/.postrun/ingest-token)` | Send `authorization: Bearer <token>` with the current contents of the token file. If the file was deleted or replaced, Postrun keeps the token it loaded at start: `postrun restart`. |
+| `410` | `session ... was deleted; it is not recorded again` | The session was deleted in Postrun. Push it under a new id if you need it again. |
 | `413` | `body larger than 8388608 bytes` | Split the session into several smaller batches. The 8 MB limit also applies after gzip decompression. |
 | `413` | `too many steps in one batch: ...` | At most 5000 items of each kind per batch. Split it. |
 | `415` | `content-type must be application/json, got ...` | Send `content-type: application/json`. |
@@ -175,32 +145,26 @@ The request's `Host` header was not `127.0.0.1`, `localhost` or `[::1]`. This gu
 | `400` | `batch references unknown or mismatched records` | A turn or step names a segment, actor or turn that is neither in the batch nor already stored, or its `session_id` does not match `session.id`. Send parents before or with their children. |
 | `405` | `method not allowed` | Use `POST`. |
 
-### token shorter than 32 characters
-
-```text
-postrun serve: ingest token: <path> holds a token shorter than 32 characters; delete it to generate a new one
-```
-
-The token file was edited or truncated. Delete it and start `pnpm serve` again to create a new one. Update any adapter that reads the old token.
+If the token file was edited or truncated, Postrun refuses it. Delete `~/.postrun/ingest-token` and run `postrun restart` to create a new one, then update any adapter that reads the old token.
 
 ## Export
 
 ### file exists
 
 ```text
-postrun export: <path> exists; pass --force to overwrite
+<path> exists; add --force to overwrite it
 ```
 
-Pass `--force`, or choose another name with `-o`.
+Add `--force`, or choose another name with `-o`.
 
 ### no session
 
 ```text
-postrun export: no session <id> in <db>. List them with: pnpm sessions
+No session <id>. List them with: postrun sessions
 ```
 
-Check the id with `pnpm sessions`, and that you are reading the same store (`--db` or `POSTRUN_DB`).
+Check the id with `postrun sessions`.
 
-### Where did the file go?
+## Removing Postrun
 
-`pnpm export` runs inside the `core/` folder, so a default or relative output path lands in `core/` of your checkout. The first line of output, `wrote <path>`, shows the full path. Pass an absolute path with `-o` to choose the location.
+`postrun uninstall` takes Postrun out of Claude Code and stops it. If you already ran `npm uninstall -g postrun` without it, Claude Code still calls the hook script in `~/.postrun/bin`, which keeps writing to `~/.postrun/captures` but nothing reads it. Install Postrun again and run `postrun uninstall`, or remove the hooks whose command ends in `.postrun/bin/capture-hook.sh` from `~/.claude/settings.json` by hand.
