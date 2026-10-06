@@ -13,7 +13,7 @@ export function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
     let raf = 0;
     const t0 = performance.now();
     const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / ms);
+      const p = Math.max(0, Math.min(1, (t - t0) / ms));
       setN(Math.round(value * (1 - Math.pow(1 - p, 3))));
       if (p < 1) raf = requestAnimationFrame(tick);
     };
