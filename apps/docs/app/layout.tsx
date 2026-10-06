@@ -38,7 +38,7 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
             <span className="grow"></span>
             <Search />
             <a href={SITE} className="top-link">
-              postrun.app
+              <span aria-hidden="true">←</span> Back to site
             </a>
             <a href={`${SITE}/#waitlist`} className="btn btn-primary btn-sm">
               <span className="cta-long">Get early access</span>
