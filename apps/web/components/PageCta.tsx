@@ -1,10 +1,10 @@
 import { Reveal } from "./Reveal";
 import { LOGIN_URL } from "@/content/site";
 
-/** Closing call to action for content pages: the waitlist and the example report. */
+/** Closing call to action for content pages: get started, and the example report. */
 export function PageCta({
   title = "See it on a real session.",
-  body = "Postrun is in early access for Claude Code and Cline. Open the example report to see exactly what an export looks like, or get started with the install.",
+  body = "Postrun records Claude Code and Cline on your machine, free and open source. Open the example report to see exactly what an export looks like, or install it in a minute.",
   where,
 }: {
   title?: string;

@@ -41,10 +41,10 @@ export const FAQS: Faq[] = [
   },
   {
     q: "Where is my data, and how do I delete it?",
-    a: "Everything Postrun stores lives in `~/.postrun` on your computer. To remove one session, open it and press Delete: it is removed from the store along with its raw files, overwritten on disk, and never recorded again. To remove everything, delete the `~/.postrun` folder. There's no account and no copy anywhere else.",
+    a: "Everything Postrun stores lives in `~/.postrun` on your computer. To remove one session, open it and press Delete: it is removed from the store along with its raw files, overwritten on disk, and never recorded again. To remove everything, delete the `~/.postrun` folder. Nothing is copied anywhere else, unless you choose to make a share link.",
   },
   {
     q: "How do I get it?",
-    a: "Postrun is in early access. Join the waitlist and we'll email you the install when your agent is supported.",
+    a: "Install it with `npm install -g postrun`, then run `postrun setup`. It needs Node 22.13 or newer on macOS or Linux, and it's free and open source under the MIT license. Using an agent Postrun doesn't support yet? Leave your email at the bottom of the home page and we'll tell you when it does.",
   },
 ];

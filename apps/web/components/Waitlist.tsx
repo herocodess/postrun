@@ -4,7 +4,7 @@ import { track } from "@vercel/analytics";
 import { useState, type FormEvent } from "react";
 
 /**
- * Early-access form. Posts the email as JSON to NEXT_PUBLIC_WAITLIST_URL, a
+ * "Tell me when my agent is supported" form. Posts the email as JSON to NEXT_PUBLIC_WAITLIST_URL, a
  * Formspree form endpoint (https://formspree.io/f/<form id>), which emails each
  * sign-up to the owner. vercel.json's CSP allows connections to formspree.io.
  * `_gotcha` is Formspree's honeypot: people never see it, bots fill it in.
@@ -41,7 +41,7 @@ export function Waitlist() {
   if (state.kind === "done") {
     return (
       <p className="wl-done" role="status">
-        You're on the list. We'll email you when your agent is supported.
+        Thanks. We'll email you when your agent is supported.
       </p>
     );
   }
@@ -54,7 +54,7 @@ export function Waitlist() {
       <input id="wl-email" name="email" type="email" required placeholder="you@company.com" autoComplete="email" />
       <input type="text" name="_gotcha" tabIndex={-1} autoComplete="off" aria-hidden="true" className="wl-trap" />
       <button type="submit" className="btn btn-primary" disabled={state.kind === "sending"}>
-        {state.kind === "sending" ? "Sending…" : "Get early access"}
+        {state.kind === "sending" ? "Sending…" : "Notify me"}
       </button>
       {state.kind === "error" && (
         <p className="wl-error" role="alert">
