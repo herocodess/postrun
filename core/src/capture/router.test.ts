@@ -3,7 +3,8 @@
  * migration from shared files, and clean-up of finished sessions. Synthetic.
  */
 
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, renameSync, utimesSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -19,6 +20,72 @@ const turn = (sid: string, n: number) => [
   hook(sid, `2026-10-06T10:${String(n).padStart(2, "0")}:02Z`, "Stop", { prompt_id: `${sid}-p${n}`, last_assistant_message: `done ${n}` }),
 ];
 const lines = (p: string) => readFileSync(p, "utf8").trim().split("\n").filter(Boolean);
+
+const HOOK = join(__dirname, "..", "..", "scripts", "capture-hook.sh");
+/** Run the real hook script with one payload on stdin, as Claude Code does. */
+const runHook = (captureDir: string, payload: string) =>
+  new Promise<void>((resolve, reject) => {
+    const child = spawn("bash", [HOOK], { env: { ...process.env, POSTRUN_CAPTURE_DIR: captureDir }, stdio: ["pipe", "ignore", "ignore"] });
+    child.on("error", reject);
+    child.on("exit", () => resolve());
+    child.stdin.end(payload);
+  });
+
+describe("the hook script and the spool", () => {
+  it("keeps large events written at the same moment intact (parallel tool calls)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-spool-"));
+    const big = "y".repeat(3_000_000);
+    const payloads = Array.from({ length: 12 }, (_, i) =>
+      JSON.stringify({ session_id: "s-par", hook_event_name: "PostToolUse", tool_use_id: `t${i}`, tool_name: "Bash", tool_input: { command: `cat big${i}` }, tool_response: { stdout: big } }),
+    );
+    await Promise.all(payloads.map((p) => runHook(dir, p)));
+    const spooled = readdirSync(join(dir, "spool"));
+    expect(spooled.filter((n) => !n.startsWith("."))).toHaveLength(12);
+    expect(existsSync(join(dir, "hooks.ndjson"))).toBe(false);
+
+    const store = new PostrunStore({ path: ":memory:" });
+    const w = createClaudeCodeWatcher({ captureDir: dir, store, pollMs: 20, debounceMs: 30 });
+    w.start();
+    w.stop();
+    const routed = lines(join(dir, "sessions", "s-par", "hooks.ndjson"));
+    expect(routed).toHaveLength(12);
+    for (const l of routed) expect(() => JSON.parse(l)).not.toThrow();
+    expect(new Set(routed.map((l) => (JSON.parse(l) as { payload: { tool_use_id: string } }).payload.tool_use_id)).size).toBe(12);
+    expect(readdirSync(join(dir, "spool"))).toHaveLength(0);
+    store.close();
+  }, 30_000);
+
+  it("drops events while recording is paused", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-paused-"));
+    writeFileSync(join(dir, ".paused"), "");
+    await runHook(dir, JSON.stringify({ session_id: "s-p", hook_event_name: "UserPromptSubmit", prompt: "secret plan" }));
+    expect(existsSync(join(dir, "spool")) ? readdirSync(join(dir, "spool")) : []).toHaveLength(0);
+  });
+
+  it("routes spool files oldest first and clears abandoned temporary files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-order-"));
+    const spool = join(dir, "spool");
+    const [a, b, c] = turn("s-o", 1);
+    // Written out of name order on purpose: the modification time decides.
+    for (const [name, line, t] of [["z.ndjson", a!, 100], ["a.ndjson", b!, 200], ["m.ndjson", c!, 300]] as const) {
+      const f = join(spool, name);
+      if (!existsSync(spool)) (await import("node:fs")).mkdirSync(spool);
+      writeFileSync(f, line + "\n");
+      utimesSync(f, t, t);
+    }
+    const stale = join(spool, ".in.abandoned");
+    writeFileSync(stale, "half");
+    utimesSync(stale, 1, 1);
+    const store = new PostrunStore({ path: ":memory:" });
+    const w = createClaudeCodeWatcher({ captureDir: dir, store, pollMs: 20, debounceMs: 30 });
+    w.start();
+    w.stop();
+    const events = lines(join(dir, "sessions", "s-o", "hooks.ndjson")).map((l) => (JSON.parse(l) as { payload: { hook_event_name: string } }).payload.hook_event_name);
+    expect(events).toEqual(["UserPromptSubmit", "PostToolUse", "Stop"]);
+    expect(readdirSync(spool)).toHaveLength(0);
+    store.close();
+  });
+});
 
 describe("capture routing into per-session folders", () => {
   it("routes interleaved sessions, rotates the inbox without losing late appends, and never duplicates on restart", async () => {

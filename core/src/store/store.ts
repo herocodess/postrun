@@ -529,6 +529,8 @@ export class PostrunStore {
     if (this.isDeleted(record.id)) throw new DeletedSessionError(record.id);
     const now = new Date().toISOString();
     const run = this.db.transaction((r: SessionRecord): IngestResult => {
+      // Checked again under the write lock: a delete that landed after the check above wins.
+      if (this.isDeleted(r.id)) throw new DeletedSessionError(r.id);
       const existing = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(r.id) as SessionRow | undefined;
       this.db
         .prepare(
@@ -626,6 +628,7 @@ export class PostrunStore {
     if (this.isDeleted(b.session.id)) throw new DeletedSessionError(b.session.id);
     const now = new Date().toISOString();
     const run = this.db.transaction((batch: SessionBatch): IngestResult => {
+      if (this.isDeleted(batch.session.id)) throw new DeletedSessionError(batch.session.id);
       const h = batch.session;
       const existing = this.db.prepare("SELECT ingested_at FROM sessions WHERE id = ?").get(h.id) as { ingested_at: string } | undefined;
       const m = h.metrics;

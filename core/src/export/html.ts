@@ -126,9 +126,18 @@ const KIND_LABEL: Record<SecretKind, string> = {
   "slack-token": "Slack token",
   "google-api-key": "Google API key",
   jwt: "JWT",
+  "gitlab-token": "GitLab token",
+  "npm-token": "npm token",
+  "huggingface-token": "Hugging Face token",
+  "sendgrid-key": "SendGrid key",
+  "google-oauth-secret": "Google OAuth secret",
+  "webhook-url": "webhook URL",
   "url-password": "URL password",
   "auth-header": "auth header",
+  cookie: "cookie",
   credential: "credential",
+  "high-entropy": "random-looking value",
+  email: "email address",
 };
 
 function redactionNote(r: RedactionReport): string {

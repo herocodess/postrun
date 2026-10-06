@@ -10,7 +10,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { INBOX_FILE, sessionsDir } from "../capture/layout.js";
+import { INBOX_FILE, ROTATING_SUFFIX, ROUTER_STATE_FILE, sessionsDir, spoolDir } from "../capture/layout.js";
 import { configureClaudeCode, describeConfigure, foreignTelemetry, isClaudeCodeConfigured, readSettingsEnv } from "../capture/setup.js";
 import type { AppControl, AppSettings, AppStatus } from "../server/api.js";
 import { LOCALHOST } from "../server/server.js";
@@ -128,7 +128,7 @@ export function createControl(d: ControlDeps): AppControl & { startUpdateChecks(
     const c = readConfig(p);
     const svc = serviceState();
     const claudeDir = join(p.claudeSettings, "..");
-    const ccLast = Math.max(newest(join(p.captures, INBOX_FILE)) ?? 0, newest(sessionsDir(p.captures)) ?? 0);
+    const ccLast = Math.max(newest(join(p.captures, INBOX_FILE)) ?? 0, newest(spoolDir(p.captures)) ?? 0, newest(sessionsDir(p.captures)) ?? 0);
     const storeBytes = bytes(p.db) + bytes(`${p.db}-wal`) + bytes(`${p.db}-shm`);
     const rawBytes = bytes(p.captures);
     const counts = store.counts();
@@ -214,8 +214,9 @@ export function createControl(d: ControlDeps): AppControl & { startUpdateChecks(
       const deleted = store.deleteAll();
       // The raw logs too, so nothing is rebuilt from them.
       rmSync(sessionsDir(p.captures), { recursive: true, force: true });
-      for (const f of [INBOX_FILE, ".router-state.json"]) rmSync(join(p.captures, f), { force: true });
-      for (const f of existsSync(p.captures) ? readdirSync(p.captures) : []) if (f.startsWith("otlp-") || f.endsWith(".rotating")) rmSync(join(p.captures, f), { force: true });
+      rmSync(spoolDir(p.captures), { recursive: true, force: true });
+      for (const f of [INBOX_FILE, INBOX_FILE + ROTATING_SUFFIX, ROUTER_STATE_FILE]) rmSync(join(p.captures, f), { force: true });
+      for (const f of existsSync(p.captures) ? readdirSync(p.captures) : []) if (f.startsWith("otlp-") || f.startsWith(INBOX_FILE)) rmSync(join(p.captures, f), { force: true });
       d.log(`deleted everything from the review app: ${deleted} session(s)`);
       if (!wasPaused) d.recorder.resume();
       return { deleted };

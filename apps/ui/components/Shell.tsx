@@ -93,7 +93,7 @@ function RecordingCard() {
     if (s.recording.paused) {
       tone = "paused";
       label = "Paused";
-      note = "Nothing is recorded until you resume.";
+      note = "Claude Code sessions are not recorded until you resume.";
     } else {
       note = `${agents || "No agents set up yet"}. ${s.recording.last_activity ? `Last activity ${ago(s.recording.last_activity)}` : "Nothing recorded yet"}.`;
     }

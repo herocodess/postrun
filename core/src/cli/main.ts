@@ -212,7 +212,7 @@ async function cmdStart(): Promise<number> {
 
 async function cmdStop(): Promise<number> {
   const stopped = await stop(paths());
-  out(stopped ? "Postrun stopped. Nothing is recorded until you run postrun start." : "Postrun was not running.");
+  out(stopped ? "Postrun stopped. Claude Code sessions are still saved to disk, and are added (without cost data) when you run postrun start. To stop recording altogether, pause it in Settings." : "Postrun was not running.");
   return 0;
 }
 

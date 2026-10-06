@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import { INBOX_FILE, sessionsDir } from "../capture/layout.js";
+import { INBOX_FILE, sessionsDir, spoolDir } from "../capture/layout.js";
 import { foreignTelemetry, isClaudeCodeConfigured, readSettingsEnv } from "../capture/setup.js";
 import { LOCALHOST } from "../server/server.js";
 import { PostrunStore } from "../store/store.js";
@@ -53,6 +53,8 @@ function lastClaudeCodeEvent(p: Paths): number | undefined {
   const times: number[] = [];
   const inbox = join(p.captures, INBOX_FILE);
   if (existsSync(inbox)) times.push(statSync(inbox).mtimeMs);
+  const spool = spoolDir(p.captures);
+  if (existsSync(spool)) times.push(statSync(spool).mtimeMs);
   const dir = sessionsDir(p.captures);
   if (existsSync(dir)) {
     for (const name of readdirSync(dir)) {

@@ -12,6 +12,9 @@ import { appendFileSync, closeSync, existsSync, openSync, readFileSync, renameSy
 import { createClaudeCodeWatcher } from "../capture/claude-code-watcher.js";
 import { createClineWatcher } from "../capture/cline-watcher.js";
 import { createOtlpReceiver, OtlpPortInUseError } from "../capture/receiver.js";
+import { PAUSED_FILE } from "../capture/layout.js";
+import { installHook } from "./hook.js";
+import { join } from "node:path";
 import { createPostrunServer, LOCALHOST, PortInUseError } from "../server/server.js";
 import { loadOrCreateToken } from "../server/token.js";
 import { PostrunStore } from "../store/store.js";
@@ -122,6 +125,18 @@ export async function run(p: Paths): Promise<number> {
     return 0;
   }
 
+  // Starting always records: a pause does not outlive the process (Settings says so).
+  const pausedMarker = join(p.captures, PAUSED_FILE);
+  rmSync(pausedMarker, { force: true });
+  // After an upgrade, the installed hook script is refreshed to the version this process expects.
+  if (existsSync(p.hook)) {
+    try {
+      installHook(p);
+    } catch (err) {
+      log(`could not refresh the hook script: ${(err as Error).message}`);
+    }
+  }
+
   const store = new PostrunStore({ path: p.db });
   const healthInfo: Record<string, unknown> = { version: VERSION, pid: process.pid, telemetry: config.telemetry ? "starting" : "off (hooks only)", catching_up: true, paused: false };
 
@@ -158,15 +173,19 @@ export async function run(p: Paths): Promise<number> {
     pause() {
       paused = true;
       healthInfo["paused"] = true;
+      // The hook script checks this file and drops events; telemetry is dropped in the receiver.
+      ensurePrivateDir(p.captures);
+      writeFileSync(pausedMarker, "", { mode: PRIVATE_FILE_MODE });
       stopWatchers();
       log("recording paused from the review app");
     },
     resume() {
       paused = false;
       healthInfo["paused"] = false;
+      rmSync(pausedMarker, { force: true });
       startWatchers();
       recorder.since = new Date().toISOString();
-      log("recording resumed; caught up on anything written while paused");
+      log("recording resumed");
     },
     restart() {
       stopWatchers();
@@ -197,7 +216,7 @@ export async function run(p: Paths): Promise<number> {
   ensurePrivateFile(p.pid);
   log(`postrun ${VERSION} started (pid ${process.pid}); review app on http://${LOCALHOST}:${config.port}/`);
 
-  const receiver = config.telemetry ? createOtlpReceiver({ captureDir: p.captures, port: config.otlpPort, log: (l) => log(`telemetry: ${l}`) }) : undefined;
+  const receiver = config.telemetry ? createOtlpReceiver({ captureDir: p.captures, port: config.otlpPort, log: (l) => log(`telemetry: ${l}`), paused: () => paused }) : undefined;
   if (receiver) {
     try {
       await receiver.start();

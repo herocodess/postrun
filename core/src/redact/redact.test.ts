@@ -127,3 +127,71 @@ describe("behaviour", () => {
     expect(r.report().findings.map((f) => f.location)).toEqual(["step 3 · command · command", "step 3 · command · raw · headers"]);
   });
 });
+
+// ---- 2026-10-06 audit: formats that used to leak ------------------------------------------------
+// Built from parts so this file never contains a string a secret scanner would flag as real.
+const leaked = {
+  lowerBearer: "authorization: bearer " + "abcdefghijklmnop1234",
+  keyNoEnd: "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAE\nbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt",
+  pgp: "-----BEGIN PGP " + "PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP " + "PRIVATE KEY BLOCK-----",
+  redisNoUser: "redis://:" + "s3cretPassw0rd@cache.internal:6379",
+  quotedSpaces: 'DB_PASSWORD="' + 'correct horse battery staple"',
+  semicolon: "API_KEY=" + "abc;defghijklmnop123456",
+  joined: "PGPASSWORD=" + "hunter2hunter2",
+  curlUser: "curl -u admin:" + "Sup3rS3cret https://x",
+  passwordFlag: "mysql --password " + "Sup3rS3cret -h db",
+  cookie: "Cookie: session=" + "abc123def456; theme=dark",
+  npm: "npm_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+  gitlab: "glpat-" + "x".repeat(20),
+  hf: "hf_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6",
+  whsec: "whsec_" + "A1b2C3d4E5f6G7h8I9j0K1l2",
+  xapp: "xapp-" + "1-A0123456789-0123456789-abcdef",
+  slackHook: "https://hooks.slack.com/services/" + "T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX",
+  sendgrid: "SG." + "abcdefghijklmnop" + "." + "qrstuvwxyz012345",
+  gocspx: "GOCSPX-" + "abcdefghijklmnopqrstuv",
+  bareAwsSecret: "aws secret is " + "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzq8Kx3PbQZ",
+  email: "Author: Ada <" + "ada.lovelace@acme.io>",
+};
+
+describe("formats found leaking in the audit", () => {
+  it.each(Object.entries(leaked))("masks %s", (_name, text) => {
+    const secretPart = text.split(/[ =:<]/).pop()!.replace(/[>"]/g, "");
+    const { out, report } = red(text);
+    expect(report.findings.length, out).toBeGreaterThan(0);
+    expect(out).toContain("[REDACTED:");
+    expect(out.includes(secretPart) && secretPart.length > 5, out).toBe(false);
+  });
+
+  it("masks the end of a private key that was cut off, through to the end of the text", () => {
+    const { out } = red(leaked.keyNoEnd);
+    expect(out).toBe("[REDACTED:private-key]");
+  });
+
+  it("replaces /root and JSON-escaped Windows home paths", () => {
+    const { out, report } = red('/root/.ssh/config and {"cwd":"C:\\\\Users\\\\hero\\\\code"} but not https://x.dev/root/docs');
+    expect(out).toBe('~/.ssh/config and {"cwd":"~\\\\code"} but not https://x.dev/root/docs');
+    expect(report.home_paths).toBe(2);
+  });
+
+  it("redacts object keys as well as values", () => {
+    const r = createRedactor();
+    const out = redactDeep({ [fake.github]: true }, r, "step 1 · other");
+    expect(JSON.stringify(out)).not.toContain(fake.github);
+  });
+});
+
+describe("leaves ordinary text alone", () => {
+  it.each([
+    ["a git commit hash", "commit 3c8bbc8a1f0e9d7c6b5a4f3e2d1c0b9a8f7e6d5c"],
+    ["an npm integrity hash", "integrity sha512-" + "Qk9PbGVhbjpCYXNlNjRFbmNvZGVkSW50ZWdyaXR5SGFzaDEyMzQ1Njc4OTA="],
+    ["a long CamelCase identifier", "class ReviewPanelVerdictChoiceButtonComponent extends X"],
+    ["a UUID", "session 8f3c2a71-4b2e-4c1d-9e8f-123456789abc"],
+    ["a package path", "node_modules/@postrun/core/dist/server/server.js"],
+    ["git's noreply address", "Author: dev <12345+dev@users.noreply.github.com>"],
+    ["a word token", "the token count is 42 and the password field is required"],
+  ])("%s", (_name, text) => {
+    const { out, report } = red(text);
+    expect(out).toBe(text);
+    expect(report.findings).toEqual([]);
+  });
+});

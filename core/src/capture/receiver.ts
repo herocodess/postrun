@@ -68,6 +68,8 @@ export interface ReceiverOptions {
   captureDir: string;
   port?: number;
   log?: (line: string) => void;
+  /** True while recording is paused: exports are acknowledged and dropped, never written. */
+  paused?: () => boolean;
 }
 
 export interface OtlpReceiver {
@@ -136,7 +138,7 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
           return;
         }
         const payload: unknown = JSON.parse(body.toString("utf8"));
-        if (SIGNALS[path] === "keep") {
+        if (SIGNALS[path] === "keep" && !opts.paused?.()) {
           const received_at = new Date().toISOString();
           // Synchronous appends: the line is on disk before Claude Code gets its 200, and a stop()
           // right after never loses an export. Exports are small and arrive every few seconds.

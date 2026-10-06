@@ -131,7 +131,7 @@ export function Settings() {
               title={status?.recording.paused ? "Recording is paused" : "Recording"}
               note={
                 status?.recording.paused
-                  ? "Claude Code keeps its own log while paused; Postrun catches up on everything when you resume. Restarting Postrun also resumes."
+                  ? "Claude Code sessions are not recorded while paused. Cline keeps its own history, which Postrun reads when you resume. Restarting Postrun also resumes."
                   : status
                     ? `Since ${new Date(status.recording.since).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}. ${status.recording.last_activity ? `Last activity ${ago(status.recording.last_activity)}` : "Nothing recorded yet"}.`
                     : "Postrun records in the background."

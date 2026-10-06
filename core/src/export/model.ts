@@ -43,16 +43,24 @@ export function buildExport(session: StoredSession, opts: { now?: Date } = {}): 
     const where = `step ${s.seq} · ${s.type}`;
     const before = r.report().findings.length;
     const payload = redactDeep(s.payload, r, where);
-    const out = { ...s, payload } as Step;
+    // Every string that reaches the report goes through the redactor, including the ones adapters
+    // fill (channels, decision, outcome), so a field added later cannot slip through unmasked.
+    const out = {
+      ...s,
+      payload,
+      channels: s.channels.map((c) => r.string(c, where)),
+      decision: r.string(s.decision, where),
+      outcome: r.string(s.outcome, where),
+    } as Step;
     if (s.error) out.error = { type: r.string(s.error.type, `${where} · error`), message: r.string(s.error.message, `${where} · error`) };
     const found = r.report().findings.length - before;
     if (found > 0) {
       out.flags = [
-        ...s.flags.map((f) => ({ ...f, reason: r.string(f.reason, `${where} · flag`) })),
+        ...s.flags.map((f) => ({ ...f, kind: r.string(f.kind, `${where} · flag`), reason: r.string(f.reason, `${where} · flag`) })),
         { kind: "secret_in_output", severity: "warn", reason: `${found} value${found === 1 ? "" : "s"} redacted on export` },
       ];
     } else {
-      out.flags = s.flags.map((f) => ({ ...f, reason: r.string(f.reason, `${where} · flag`) }));
+      out.flags = s.flags.map((f) => ({ ...f, kind: r.string(f.kind, `${where} · flag`), reason: r.string(f.reason, `${where} · flag`) }));
     }
     return out;
   });
@@ -69,7 +77,7 @@ export function buildExport(session: StoredSession, opts: { now?: Date } = {}): 
 
   const doc: ExportDocument = {
     session_id: summary.id,
-    agent: summary.agent,
+    agent: { ...summary.agent, kind: r.string(summary.agent.kind, "agent"), version: r.string(summary.agent.version, "agent") },
     workspace,
     started_at: summary.started_at,
     segment_count: session.segments.length,

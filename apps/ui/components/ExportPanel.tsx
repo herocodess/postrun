@@ -6,12 +6,13 @@
  */
 
 import { useEffect, useState } from "react";
-import type { ExportReviewResponse } from "@postrun/core/server/api";
+import type { ExportReviewResponse, SecretKind } from "@postrun/core/server/api";
 import { api } from "@/lib/api";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ExportReviewResponse };
 
-const KIND_LABEL: Record<string, string> = {
+// Typed against the redactor's kinds, so a new kind cannot ship without a label here.
+const KIND_LABEL: Record<SecretKind, string> = {
   "private-key": "private key",
   "aws-access-key": "AWS key",
   "github-token": "GitHub token",
@@ -21,9 +22,18 @@ const KIND_LABEL: Record<string, string> = {
   "slack-token": "Slack token",
   "google-api-key": "Google API key",
   jwt: "JWT",
+  "gitlab-token": "GitLab token",
+  "npm-token": "npm token",
+  "huggingface-token": "Hugging Face token",
+  "sendgrid-key": "SendGrid key",
+  "google-oauth-secret": "Google OAuth secret",
+  "webhook-url": "webhook URL",
   "url-password": "URL password",
   "auth-header": "auth header",
+  cookie: "cookie",
   credential: "credential",
+  "high-entropy": "random-looking value",
+  email: "email address",
 };
 
 export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
