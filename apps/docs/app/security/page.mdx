@@ -31,6 +31,8 @@ Everything Postrun writes under `~/.postrun` is created owner-only: directories 
 
 There is no account and no copy anywhere else. Delete `~/.postrun` and the recorded data is gone.
 
+To remove one session, use the review app's Delete button or [`pnpm delete`](/reference/cli/#pnpm-delete). The store runs with SQLite's `secure_delete` on, so deleted content is overwritten rather than left in free pages, and the write-ahead log is checkpointed and truncated straight after. The raw capture files are removed too. Only the session id is kept, so the recorder does not record it again. The agent's own copy under `~/.claude` or `~/.cline` is not touched.
+
 ## What Postrun reads and writes outside ~/.postrun
 
 - **Reads, never writes:** Cline's session store under `~/.cline`, and the Claude Code hook events passed to its hook script.

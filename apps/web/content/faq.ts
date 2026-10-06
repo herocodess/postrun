@@ -41,7 +41,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "Where is my data, and how do I delete it?",
-    a: "Everything Postrun stores lives in `~/.postrun` on your computer. Delete that folder and it's gone. There's no account and no copy anywhere else.",
+    a: "Everything Postrun stores lives in `~/.postrun` on your computer. To remove one session, open it and press Delete: it is removed from the store along with its raw files, overwritten on disk, and never recorded again. To remove everything, delete the `~/.postrun` folder. There's no account and no copy anywhere else.",
   },
   {
     q: "How do I get it?",

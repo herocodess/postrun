@@ -65,7 +65,8 @@
     "start": "node dist/server/cli.js",
     "export": "tsx src/export/cli.ts",
     "demo:data": "tsx src/demo/build.ts",
-    "bench:heavy": "node --expose-gc --import tsx src/bench/heavy-day.ts"
+    "bench:heavy": "node --expose-gc --import tsx src/bench/heavy-day.ts",
+    "delete": "tsx src/store/cli.ts delete"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

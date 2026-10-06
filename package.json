@@ -16,6 +16,7 @@
     "adapter:cline": "pnpm --silent --filter @postrun/core adapter:cline",
     "ingest": "pnpm --silent --filter @postrun/core ingest",
     "sessions": "pnpm --silent --filter @postrun/core sessions",
+    "delete": "pnpm --silent --filter @postrun/core delete",
     "export": "pnpm --silent --filter @postrun/core export",
     "capture": "pnpm --silent --filter @postrun/core capture",
     "capture:cc:setup": "pnpm --silent --filter @postrun/core capture:cc:setup",

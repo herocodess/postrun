@@ -11,6 +11,7 @@
  *   GET  /api/sessions/:id           one session (step previews) plus report projections
  *   GET  /api/sessions/:id?since=t   only the steps written after t, for live views
  *   GET  /api/sessions/:id/steps/:s  one step in full
+ *   DELETE /api/sessions/:id         delete a session and its raw capture files (same-origin only)
  *   GET  /api/sessions/:id/export    redacted, self-contained HTML report (download)
  *   GET  /api/sessions/:id/export/review   what that export would mask, as JSON
  *   POST /api/ingest                 push a v1.2 batch (bearer token; see ingest.ts, token.ts)
@@ -19,14 +20,26 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { exportSession } from "../export/index.js";
 import { sessionReport } from "../report/index.js";
-import { PostrunStore } from "../store/index.js";
+import { isSafeId, sessionDir } from "../capture/layout.js";
+import { DeletedSessionError, PostrunStore } from "../store/index.js";
 import { isLoopbackHost } from "../util/host.js";
-import type { ApiError, ExportReviewResponse, IngestErrorResponse, IngestResponse, SessionDeltaResponse, SessionDetailResponse, SessionListResponse, StepResponse } from "./api.js";
+import type {
+  ApiError,
+  DeleteSessionResponse,
+  ExportReviewResponse,
+  IngestErrorResponse,
+  IngestResponse,
+  SessionDeltaResponse,
+  SessionDetailResponse,
+  SessionListResponse,
+  StepResponse,
+} from "./api.js";
 import { previewStep } from "./preview.js";
 import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
 import { LiveFeed, SSE_HEADERS, type LiveFeedOptions } from "./live.js";
@@ -55,6 +68,8 @@ export interface ServerOptions {
   ingestToken?: string;
   /** Live feed tuning (poll interval, heartbeat, client cap). Tests shorten these. */
   live?: LiveFeedOptions;
+  /** Capture folder whose per-session raw files a delete also removes. Default POSTRUN_CAPTURE_DIR or ~/.postrun/captures. */
+  captureDir?: string;
 }
 
 export interface PostrunServer {
@@ -94,10 +109,11 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
   const uiRoot = resolve(opts.uiDir);
   const ingestToken = opts.ingestToken ?? loadOrCreateToken();
   const live = new LiveFeed(store, opts.live);
+  const captureDir = opts.captureDir ?? process.env["POSTRUN_CAPTURE_DIR"] ?? join(homedir(), ".postrun", "captures");
 
   const server = createServer((req, res) => {
     Promise.resolve()
-      .then(() => handle(req, res, { store, uiRoot, ingestToken, live }))
+      .then(() => handle(req, res, { store, uiRoot, ingestToken, live, captureDir }))
       .catch((err: unknown) => {
         // Never echo internal error text (paths, SQL) to the client.
         process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
@@ -157,6 +173,7 @@ interface Ctx {
   uiRoot: string;
   ingestToken: string;
   live: LiveFeed;
+  captureDir: string;
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
@@ -188,8 +205,33 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
     return;
   }
 
+  const del = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
+  if (del && method === "DELETE") {
+    // The only destructive route. A page on another site cannot reach it: DELETE needs a CORS preflight,
+    // which this server never answers, and requests a browser marks as cross-site are refused outright.
+    if (!sameOrigin(req)) {
+      json(res, 403, { error: "cross-site request refused" } satisfies ApiError);
+      return;
+    }
+    const id = decodeURIComponent(del[1] as string);
+    const gone = store.deleteSession(id);
+    if (!gone) {
+      json(res, 404, { error: `session ${id} not found` } satisfies ApiError);
+      return;
+    }
+    let removed_capture_files = false;
+    if (gone.agent_kind === "claude-code" && isSafeId(id)) {
+      const dir = sessionDir(ctx.captureDir, id);
+      removed_capture_files = existsSync(dir);
+      rmSync(dir, { recursive: true, force: true });
+    }
+    ctx.live.nudge();
+    json(res, 200, { deleted: true, id, agent_kind: gone.agent_kind, removed_capture_files } satisfies DeleteSessionResponse);
+    return;
+  }
+
   if (method !== "GET" && method !== "HEAD") {
-    text(res, 405, "method not allowed\n", { allow: "GET, HEAD" });
+    text(res, 405, "method not allowed\n", { allow: del ? "GET, HEAD, DELETE" : "GET, HEAD" });
     return;
   }
 
@@ -366,10 +408,38 @@ async function handleIngest(req: IncomingMessage, res: ServerResponse, ctx: Ctx)
     fail(checked.status, out);
     return;
   }
-  const { changed: _changed, written: _written, missing_content: _missing, ...rest } = store.appendBatch(checked.batch);
+  let appended;
+  try {
+    appended = store.appendBatch(checked.batch);
+  } catch (err) {
+    if (err instanceof DeletedSessionError) {
+      fail(410, { error: err.message } satisfies IngestErrorResponse);
+      return;
+    }
+    throw err;
+  }
+  const { changed: _changed, written: _written, missing_content: _missing, ...rest } = appended;
   const result: IngestResponse = rest;
   json(res, result.created ? 201 : 200, result);
   ctx.live.nudge();
+}
+
+/**
+ * True unless the browser says the request comes from another site. Sec-Fetch-Site is sent by every
+ * current browser; Origin, when present, must name this server. Non-browser clients (curl, the CLI)
+ * send neither and are allowed: they are already on this machine.
+ */
+function sameOrigin(req: IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  if (site !== undefined && site !== "same-origin" && site !== "none") return false;
+  const origin = req.headers["origin"];
+  if (origin === undefined) return true;
+  try {
+    const o = new URL(origin);
+    return isLoopbackHost(o.host) && o.host === req.headers.host;
+  } catch {
+    return false;
+  }
 }
 
 /** Read a request body up to max bytes. Resolves "too_large" as soon as the limit is crossed. */

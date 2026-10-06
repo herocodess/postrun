@@ -20,6 +20,15 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "Delete a session",
+    summary: "Remove one session from Postrun for good, without deleting everything else.",
+    items: [
+      { kind: "new", text: "A Delete button on every session, with a confirmation that says exactly what goes and what stays. Also available as pnpm delete." },
+      { kind: "security", text: "Deleted sessions are overwritten on disk, not just unlinked, and their raw capture files are removed. Postrun will not record a deleted session again, even if the agent keeps going." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "Light on a long day",
     summary: "Postrun now stays in the background on a very heavy day: several agents in parallel for twelve hours cost about 1% of one CPU core.",
     items: [

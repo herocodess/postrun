@@ -21,6 +21,10 @@ export const api = {
   sessionSince(id: string, asOf: string): string {
     return `/api/sessions/${enc(id)}?since=${enc(asOf)}`;
   },
+  /** DELETE removes a session. Never offered in the demo. */
+  deleteSession(id: string): string {
+    return `/api/sessions/${enc(id)}`;
+  },
   /** One step in full, for a step whose preview was cut. Demo data is never cut. */
   step(sessionId: string, stepId: string): string {
     return `/api/sessions/${enc(sessionId)}/steps/${enc(stepId)}`;

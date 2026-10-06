@@ -135,6 +135,13 @@ CREATE TABLE IF NOT EXISTS steps (
   PRIMARY KEY (session_id, id)
 );
 CREATE INDEX IF NOT EXISTS steps_session_seq ON steps(session_id, seq);
+
+-- Sessions deleted by the user. Capture never imports these ids again, and live views learn of the deletion.
+CREATE TABLE IF NOT EXISTS deleted_sessions (
+  id         TEXT PRIMARY KEY,
+  agent_kind TEXT,
+  deleted_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS steps_session_turn ON steps(session_id, turn_id, seq);
 `;
 
@@ -254,6 +261,14 @@ export interface IngestOptions {
   metaOnly?: ReadonlySet<string>;
 }
 
+/** Raised when capture or a push targets a session the user deleted. */
+export class DeletedSessionError extends Error {
+  constructor(readonly sessionId: string) {
+    super(`session ${sessionId} was deleted; it is not recorded again`);
+    this.name = "DeletedSessionError";
+  }
+}
+
 export class PostrunStore {
   readonly path: string;
   readonly ownerId: string;
@@ -273,6 +288,9 @@ export class PostrunStore {
       for (const suffix of ["", "-wal", "-shm"]) ensurePrivateFile(this.path + suffix);
     }
     this.db.pragma("journal_mode = WAL");
+    // Deleted or replaced content is overwritten, not just unlinked: deleting a session that held a
+    // secret must remove the secret from the file, not leave it in a free page.
+    this.db.pragma("secure_delete = ON");
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000"); // capture (writer) and serve (reader) share the file
     this.migrate();
@@ -314,6 +332,7 @@ export class PostrunStore {
   // ---- ingest ---------------------------------------------------------------
 
   ingest(record: SessionRecord, options: IngestOptions = {}): IngestResult {
+    if (this.isDeleted(record.id)) throw new DeletedSessionError(record.id);
     const now = new Date().toISOString();
     const run = this.db.transaction((r: SessionRecord): IngestResult => {
       const existing = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(r.id) as SessionRow | undefined;
@@ -410,6 +429,7 @@ export class PostrunStore {
    * finished session. The verdict is never touched by a push.
    */
   appendBatch(b: SessionBatch): IngestResult {
+    if (this.isDeleted(b.session.id)) throw new DeletedSessionError(b.session.id);
     const now = new Date().toISOString();
     const run = this.db.transaction((batch: SessionBatch): IngestResult => {
       const h = batch.session;
@@ -675,16 +695,54 @@ export class PostrunStore {
    * transaction as the children, so this sees writes from any process.
    */
   changedSince(since: string): Array<{ id: string; updated_at: string }> {
-    return this.db.prepare("SELECT id, updated_at FROM sessions WHERE updated_at >= ? ORDER BY updated_at, id").all(since) as Array<{
-      id: string;
-      updated_at: string;
-    }>;
+    // Deletions count as changes, so live views drop a deleted session.
+    return this.db
+      .prepare(
+        `SELECT id, updated_at FROM sessions WHERE updated_at >= ?
+         UNION ALL SELECT id, deleted_at AS updated_at FROM deleted_sessions WHERE deleted_at >= ?
+         ORDER BY updated_at, id`,
+      )
+      .all(since, since) as Array<{ id: string; updated_at: string }>;
   }
 
   /** Latest updated_at across all sessions, or undefined for an empty store. */
   lastUpdatedAt(): string | undefined {
-    const row = this.db.prepare("SELECT max(updated_at) AS m FROM sessions").get() as { m: string | null };
+    const row = this.db.prepare("SELECT max(m) AS m FROM (SELECT max(updated_at) AS m FROM sessions UNION ALL SELECT max(deleted_at) FROM deleted_sessions)").get() as {
+      m: string | null;
+    };
     return row.m ?? undefined;
+  }
+
+  /**
+   * Delete a session and everything recorded for it, and remember the id so capture never imports it
+   * again. Content is overwritten on disk (secure_delete) and the write-ahead log is checkpointed and
+   * truncated, so the deleted text does not linger in either file. Returns undefined if no such session.
+   */
+  deleteSession(id: string): { id: string; agent_kind: string; deleted_at: string } | undefined {
+    const deleted_at = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      const row = this.db.prepare("SELECT agent_kind FROM sessions WHERE id = ?").get(id) as { agent_kind: string } | undefined;
+      if (!row) return undefined;
+      for (const t of ["steps", "turns", "actors", "segments"]) this.db.prepare(`DELETE FROM ${t} WHERE session_id = ?`).run(id);
+      this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+      this.db.prepare("INSERT OR REPLACE INTO deleted_sessions (id, agent_kind, deleted_at) VALUES (?, ?, ?)").run(id, row.agent_kind, deleted_at);
+      return { id, agent_kind: row.agent_kind, deleted_at };
+    })();
+    if (result && this.path !== ":memory:") {
+      // Old page images of the deleted rows live in the WAL until a checkpoint. Another process holding
+      // a read transaction can delay it; the next checkpoint then finishes the job.
+      try {
+        this.db.pragma("wal_checkpoint(TRUNCATE)");
+      } catch {
+        /* busy: SQLite checkpoints again on its own */
+      }
+    }
+    return result;
+  }
+
+  /** Whether the user deleted this session; capture skips such ids. */
+  isDeleted(id: string): boolean {
+    return this.db.prepare("SELECT 1 FROM deleted_sessions WHERE id = ?").get(id) !== undefined;
   }
 
   /**

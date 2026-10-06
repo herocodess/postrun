@@ -3,9 +3,10 @@
 import { useSearchParams } from "next/navigation";
 import { memo, useEffect, useRef, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
-import { api } from "@/lib/api";
+import { api, DEMO } from "@/lib/api";
 import type { Step, Turn } from "@postrun/core/schema";
 import type { SessionDeltaResponse, SessionDetailResponse } from "@postrun/core/server/api";
+import { DeletePanel } from "@/components/DeletePanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import { StepRow } from "@/components/StepRow";
 
@@ -31,6 +32,7 @@ export function Report() {
   const id = params.get("id") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
   const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // Long sessions show their most recent turns; earlier ones load on request. A link to a step shows everything.
   const [shownTurns, setShownTurns] = useState(() => (typeof window !== "undefined" && window.location.hash.startsWith("#step-") ? Infinity : RECENT_TURNS));
   // Bumps when this session is written (a running agent, a late hook record) and on reconnect.
@@ -81,8 +83,10 @@ export function Report() {
         if (!cancelled) setState({ kind: "ready", data });
       })
       .catch((err: unknown) => {
-        // A failed live refetch keeps what is on screen; the top bar already shows the server is offline.
-        if (!cancelled) setState((prev) => (prev.kind === "ready" && prev.data.summary.id === id ? prev : { kind: "error", message: err instanceof Error ? err.message : String(err) }));
+        // A failed live refetch keeps what is on screen (the top bar shows the server is offline), except
+        // "not found": the session was deleted, so say so instead of showing stale data.
+        const message = err instanceof Error ? err.message : String(err);
+        if (!cancelled) setState((prev) => (prev.kind === "ready" && prev.data.summary.id === id && !/-> 404$/.test(message) ? prev : { kind: "error", message }));
       });
     return () => {
       cancelled = true;
@@ -90,7 +94,14 @@ export function Report() {
   }, [id, live]);
 
   if (state.kind === "loading") return <p>Loading…</p>;
-  if (state.kind === "error") return <p className="error">Could not load session: {state.message}</p>;
+  if (state.kind === "error")
+    return /-> 404$/.test(state.message) ? (
+      <p className="muted-block">
+        This session is not in Postrun anymore; it may have been deleted. <a href="/">See all sessions</a>
+      </p>
+    ) : (
+      <p className="error">Could not load session: {state.message}</p>
+    );
 
   const { summary, turns, steps, report, segments } = state.data;
   const stepsByTurn = new Map<string, Step[]>();
@@ -121,9 +132,14 @@ export function Report() {
             <span className={`badge ${summary.agent.kind === "cline" ? "cline" : "cc"}`}>{summary.agent.kind}</span>
             <h1 className="title">{firstLine(summary.title, 140) || summary.id}</h1>
             {summary.agent.version && summary.agent.version !== "unknown" ? <span className="ver">v{summary.agent.version}</span> : null}
-            <button type="button" className="btn" onClick={() => setExporting((v) => !v)} aria-expanded={exporting}>
+            <button type="button" className="btn" onClick={() => (setExporting((v) => !v), setDeleting(false))} aria-expanded={exporting}>
               Export report
             </button>
+            {!DEMO && (
+              <button type="button" className="btn ghost danger-text" onClick={() => (setDeleting((v) => !v), setExporting(false))} aria-expanded={deleting}>
+                Delete
+              </button>
+            )}
           </div>
 
           <div className="stats">
@@ -179,6 +195,7 @@ export function Report() {
       </div>
 
       {exporting && <ExportPanel sessionId={summary.id} onClose={() => setExporting(false)} />}
+      {deleting && <DeletePanel sessionId={summary.id} agent={summary.agent.kind} steps={summary.steps_total} onClose={() => setDeleting(false)} />}
 
       {/* FILES TOUCHED */}
       <div className="sec">

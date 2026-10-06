@@ -97,6 +97,10 @@ export default function Security() {
             The local store is <b>not</b> redacted. It holds whatever the session contained, including the output of commands such as <code>env</code>. Treat{" "}
             <code>~/.postrun</code> as sensitive. Deleting the folder removes everything Postrun has stored. There is no account and no copy anywhere else.
           </p>
+          <p>
+            You can also delete a single session from the review app. Its content is overwritten in the store, not just unlinked, its raw files are removed, and Postrun
+            will not record it again. The agent&rsquo;s own copy of the session, in Claude Code or Cline, is left for you to delete there.
+          </p>
 
           <h2 id="network">Network exposure</h2>
           <p>Postrun runs two local listeners: the review app and API server, and a telemetry receiver that Claude Code reports to.</p>

@@ -5,6 +5,7 @@
  *   GET /api/sessions/:id              -> SessionDetailResponse | ApiError (404)
  *   GET /api/sessions/:id?since=<as_of> -> SessionDeltaResponse (only steps written after as_of)
  *   GET /api/sessions/:id/steps/:step  -> StepResponse (one step in full)
+ *   DELETE /api/sessions/:id           -> DeleteSessionResponse | ApiError (403 cross-site, 404)
  *   POST /api/ingest  IngestRequest    -> IngestResponse (201 created, 200 updated)
  *                                         | IngestErrorResponse (400, 401, 409, 413, 415)
  *   GET /api/events[?session=<id>]     -> text/event-stream of LiveChange (see live.ts)
@@ -52,6 +53,14 @@ export interface SessionDeltaResponse extends Omit<SessionDetailResponse, "steps
 
 export interface StepResponse {
   step: Step;
+}
+
+export interface DeleteSessionResponse {
+  deleted: true;
+  id: string;
+  agent_kind: string;
+  /** Whether Postrun's raw capture files for the session were found and removed. */
+  removed_capture_files: boolean;
 }
 
 export interface ApiError {

@@ -1314,3 +1314,42 @@ h1.title {
 .more-turns .muted {
   color: var(--text-muted);
 }
+
+/* Delete: a quiet button, a clearly destructive confirm. */
+.btn.ghost.danger-text {
+  color: var(--text-secondary);
+}
+.btn.ghost.danger-text:hover {
+  color: var(--danger);
+  border-color: rgba(240, 97, 109, 0.45);
+}
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #0b0c0f;
+}
+.btn.danger:hover {
+  background: #f47c86;
+  border-color: #f47c86;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.delete-panel {
+  border-color: rgba(240, 97, 109, 0.4);
+}
+.delete-panel .export-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.muted-block {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 40px 0;
+}
+.muted-block a {
+  color: var(--accent-2);
+}

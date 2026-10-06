@@ -117,6 +117,21 @@ A Claude Code session updates at the end of each assistant turn. A Cline session
 
 The **Export report** button on a session opens the export panel. It lists every value redaction will mask before you download. See [Exporting and redaction](/export/).
 
+## Deleting a session
+
+The **Delete** button on a session removes it from Postrun on this computer. A short panel asks you to confirm first, with Cancel selected, and says how many steps will go.
+
+Deleting removes:
+
+- the session's steps, turns and summary from the store, with SQLite's secure delete on, so the content is overwritten rather than left in free pages, and the write-ahead log is cleared;
+- its raw capture files, for a Claude Code session.
+
+Postrun then remembers only the session id, so the recorder will not record that session again, even if the agent keeps writing to it. Pushes for it get `410`. Any other tab showing the session says it is no longer in Postrun.
+
+Deleting does not touch the agent's own copy. Claude Code keeps its transcripts under `~/.claude/projects` and Cline keeps tasks in `~/.cline/data/sessions`; delete them there if you want them gone everywhere.
+
+The same works from a terminal with [`pnpm delete`](/reference/cli/#pnpm-delete). The button is not shown in the demo.
+
 ## Read routes
 
 The review app uses these routes, which you can also call from scripts on the same machine. They need no token.
@@ -128,6 +143,7 @@ The review app uses these routes, which you can also call from scripts on the sa
 | `GET /api/sessions/<id>/export` | The redacted HTML report, as a download. |
 | `GET /api/sessions/<id>/export/review` | What the export would mask, as JSON. |
 | `GET /api/events` | The [live events stream](/reference/events-api/). |
+| `DELETE /api/sessions/<id>` | Deletes the session (see above). Only accepted from the review app itself: requests from another site get `403`. `404` if not found. |
 
 Every response carries `x-content-type-options: nosniff`, `referrer-policy: no-referrer` and `cache-control: no-store`, and no CORS headers.
 

@@ -38,7 +38,7 @@ import { appendFileSync, existsSync, readdirSync, readFileSync, renameSync, rmSy
 import { join } from "node:path";
 import { forEachLine } from "../adapters/claude-code/ndjson.js";
 import { claudeCodeRecord } from "../store/ingest.js";
-import type { PostrunStore } from "../store/store.js";
+import { DeletedSessionError, type PostrunStore } from "../store/store.js";
 import type { IngestResult } from "../store/types.js";
 import { ensurePrivateDir, PRIVATE_FILE_MODE } from "../util/files.js";
 import { IncrementalSession } from "./incremental.js";
@@ -101,6 +101,20 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
   const seen = new Map<string, { ended: boolean; last_event: string }>();
   const hooksOnlyReported = new Set<string>();
   const open = new Map<string, IncrementalSession>();
+  // Sessions the user deleted: their events are dropped and their folders removed. Checked once per id;
+  // a deletion made by another process shows up as DeletedSessionError on the next ingest.
+  const deleted = new Map<string, boolean>();
+  const isDeleted = (id: string): boolean => {
+    let d = deleted.get(id);
+    if (d === undefined) deleted.set(id, (d = opts.store.isDeleted(id)));
+    return d;
+  };
+  const forget = (id: string) => {
+    deleted.set(id, true);
+    open.delete(id);
+    seen.delete(id);
+    rmSync(sessionDir(opts.captureDir, id), { recursive: true, force: true });
+  };
   let state: RouterState = { offset: 0 };
   let timer: NodeJS.Timeout | undefined;
   let cleanTimer: NodeJS.Timeout | undefined;
@@ -143,6 +157,11 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
       opts.onIngest?.(result, trigger);
       return result;
     } catch (err) {
+      if (err instanceof DeletedSessionError) {
+        if (!deleted.get(sessionId)) log(`claude-code ${sessionId}: deleted by you, so it is not recorded; its raw files are removed`);
+        forget(sessionId);
+        return undefined;
+      }
       log(`claude-code ${sessionId}: ingest failed on ${trigger}: ${(err as Error).message}`);
       return undefined;
     }
@@ -180,6 +199,11 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
         }
         // Ids and event names come from a file other processes append to; only plain tokens reach paths and logs.
         if (!isSafeId(sid) || !isSafeId(ev)) return;
+        if (isDeleted(sid)) {
+          // Deleted by the user: never written to disk again, and any folder left from before goes too.
+          if (existsSync(sessionDir(opts.captureDir, sid))) forget(sid);
+          return;
+        }
         const list = batches.get(sid) ?? [];
         list.push(line);
         batches.set(sid, list);
@@ -295,6 +319,7 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
 
   const cleanUp = (now = Date.now()): string[] => {
     for (const [id, inc] of open) if (now - inc.lastUsed > IDLE_EVICT_MS) open.delete(id);
+    for (const [id, d] of deleted) if (!d) deleted.delete(id); // re-check, in case it was deleted since
     if (!Number.isFinite(retainMs)) return [];
     const removed: string[] = [];
     for (const id of sessionFolders()) {
@@ -325,7 +350,10 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
       }
       migrate();
       routeOnce(false); // backlog: route without per-line ingests, then catch up below
-      for (const id of sessionFolders()) if (!seen.has(id)) seen.set(id, { ended: false, last_event: "" });
+      for (const id of sessionFolders()) {
+        if (isDeleted(id)) forget(id);
+        else if (!seen.has(id)) seen.set(id, { ended: false, last_event: "" });
+      }
       // Catch up: anything not complete in the store may have changed while capture was stopped.
       const complete = new Set(opts.store.listSessions({ agent: "claude-code" }).filter((s) => s.ended_at).map((s) => s.id));
       const pending = sessionFolders().filter((id) => !complete.has(id));

@@ -153,6 +153,7 @@ Errors are JSON with an `error` message. Validation errors add `details`, a list
 | `401` | Missing or wrong token | `missing or invalid bearer token (see ~/.postrun/ingest-token)` |
 | `405` | Method is not `POST` | plain text `method not allowed` |
 | `409` | A step `seq` belongs to another step | `step seq already taken in this session` |
+| `410` | The session was deleted in Postrun | `session ... was deleted; it is not recorded again` |
 | `413` | Body over 8 MB, before or after gzip | `body larger than 8388608 bytes` or `decompressed body larger than 8388608 bytes` |
 | `413` | More than 5000 items of one kind | `too many steps in one batch: ...; split it into several pushes` |
 | `415` | Wrong content type | `content-type must be application/json, got ...` |

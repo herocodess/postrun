@@ -13,6 +13,7 @@ In early access, Postrun's commands are pnpm scripts run from the root of a chec
 | [`pnpm capture:cc:setup`](#pnpm-captureccsetup) | Configure Claude Code for recording, and nothing else. |
 | [`pnpm ingest`](#pnpm-ingest) | Build sessions from capture files and write them to the store. |
 | [`pnpm sessions`](#pnpm-sessions) | List stored sessions. |
+| [`pnpm delete`](#pnpm-delete) | Delete one session for good. |
 | [`pnpm serve`](#pnpm-serve) | Build the review app and serve it with the store. |
 | [`pnpm export`](#pnpm-export) | Write one session as a redacted HTML report. |
 | [`pnpm adapter:cc`, `pnpm adapter:cline`](#pnpm-adaptercc-and-pnpm-adaptercline) | Print a session's steps as JSON, without storing them. |
@@ -104,6 +105,24 @@ Lists stored sessions, newest first. For each: start time, agent, id and workspa
 | `--db <path>` | Read this store. |
 
 Prints `no sessions in <path>` when the store is empty.
+
+## pnpm delete
+
+```bash
+pnpm delete <session-id>
+pnpm delete <session-id> --yes
+```
+
+Without `--yes`, prints what would be deleted (agent, title, step count, and the raw capture folder if there is one) and changes nothing. With `--yes`, deletes the session from the store with secure delete on, removes its raw capture files, and keeps its id so the recorder never records it again. Get the id from [`pnpm sessions`](#pnpm-sessions).
+
+It does not touch the agent's own copy under `~/.claude/projects` or `~/.cline/data/sessions`, and says so. If the id is unknown it exits with an error, or says the session was already deleted.
+
+| Flag | Effect |
+| --- | --- |
+| `--yes` | Delete, instead of only showing what would go. |
+| `--db <path>` | Use this store. |
+
+The review app's Delete button does the same. See [Deleting a session](/review/#deleting-a-session).
 
 ## pnpm serve
 

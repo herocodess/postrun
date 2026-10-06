@@ -20,7 +20,7 @@ import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:f
 import { join } from "node:path";
 import { clineRecord } from "../store/ingest.js";
 import { createPacer } from "./pacer.js";
-import type { PostrunStore } from "../store/store.js";
+import { DeletedSessionError, type PostrunStore } from "../store/store.js";
 import type { IngestResult } from "../store/types.js";
 
 export interface ClineWatcherOptions {
@@ -75,6 +75,12 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
       opts.onIngest?.(result, trigger);
       return result;
     } catch (err) {
+      if (err instanceof DeletedSessionError) {
+        // Deleted by the user. Cline's own files are Cline's and stay; Postrun just stops importing them.
+        if (known.get(sessionId) !== Infinity) log(`cline ${sessionId}: deleted by you in Postrun, so it is not imported again (Cline keeps its own copy)`);
+        known.set(sessionId, Infinity);
+        return undefined;
+      }
       const msg = (err as Error).message;
       if (/JSON/.test(msg)) log(`cline ${sessionId}: messages file not parseable yet (mid-write?); will retry on next change`);
       else log(`cline ${sessionId}: ingest failed on ${trigger}: ${msg}`);
@@ -113,6 +119,10 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
       const storedAt = new Map(opts.store.listSessions({ agent: "cline" }).map((s) => [s.id, Date.parse(s.updated_at)]));
       let caughtUp = 0;
       for (const id of ids) {
+        if (opts.store.isDeleted(id)) {
+          known.set(id, Infinity);
+          continue;
+        }
         const m = mtimeOf(id);
         const at = storedAt.get(id);
         if (at !== undefined && at >= m) {
@@ -132,6 +142,7 @@ export function createClineWatcher(opts: ClineWatcherOptions): ClineWatcher {
             const id = name.split(/[\\/]/)[0];
             if (!id || !SAFE_ID.test(id)) return;
             if (!/\.(messages\.)?json$/.test(name) && !existsSync(join(opts.sessionsDir, id, `${id}.messages.json`))) return;
+            if (known.get(id) === Infinity) return; // deleted by the user
             if (!known.has(id)) known.set(id, 0);
             schedule(id, "watch");
           });
