@@ -3,7 +3,7 @@
  * temp directories seeded with COPIES of the real captures when available.
  */
 
-import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,22 +42,30 @@ try {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("otlp receiver", () => {
-  it("binds to 127.0.0.1, appends one NDJSON line per export, rejects non-json", async () => {
+  it("binds to 127.0.0.1, splits each logs export by session into its own folder, drops metrics and traces", async () => {
     const dir = mkdtempSync(join(tmpdir(), "postrun-cap-"));
     const r = createOtlpReceiver({ captureDir: dir, port: 0 });
     const { url } = await r.start();
     expect(url.startsWith("http://127.0.0.1:")).toBe(true);
-    const payload = { resourceLogs: [{ scopeLogs: [{ logRecords: [{ body: { stringValue: "x" }, attributes: [] }] }] }] };
-    const ok = await fetch(`${url}/v1/logs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    expect(ok.status).toBe(200);
+    const rec = (sid: string | undefined, n: number) => ({ body: { stringValue: `r${n}` }, attributes: sid === undefined ? [] : [{ key: "session.id", value: { stringValue: sid } }] });
+    const resource = { attributes: [{ key: "service.version", value: { stringValue: "2.1.30" } }] };
+    const payload = { resourceLogs: [{ resource, scopeLogs: [{ logRecords: [rec("s-1", 1), rec("s-2", 2), rec("s-1", 3), rec(undefined, 4), rec("../x", 5)] }] }] };
+    const json = { "content-type": "application/json" };
+    expect((await fetch(`${url}/v1/logs`, { method: "POST", headers: json, body: JSON.stringify(payload) })).status).toBe(200);
+    expect((await fetch(`${url}/v1/metrics`, { method: "POST", headers: json, body: "{}" })).status).toBe(200);
+    expect((await fetch(`${url}/v1/traces`, { method: "POST", headers: json, body: "{}" })).status).toBe(200);
     const bad = await fetch(`${url}/v1/logs`, { method: "POST", headers: { "content-type": "application/x-protobuf" }, body: "x" });
     expect(bad.status).toBe(415);
     expect((await fetch(`${url}/v1/nope`, { method: "POST" })).status).toBe(404);
     await r.stop();
-    const lines = readFileSync(join(dir, "otlp-logs.ndjson"), "utf8").trim().split("\n");
-    expect(lines).toHaveLength(1);
-    const parsed = JSON.parse(lines[0]!) as { received_at: string; payload: unknown };
-    expect(parsed.payload).toEqual(payload);
+    const read = (sid: string) => readFileSync(join(dir, "sessions", sid, "otlp-logs.ndjson"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as { payload: { resourceLogs: Array<{ resource: unknown; scopeLogs: Array<{ logRecords: unknown[] }> }> } });
+    const s1 = read("s-1");
+    expect(s1).toHaveLength(1);
+    expect(s1[0]!.payload.resourceLogs[0]!.resource).toEqual(resource);
+    expect(s1[0]!.payload.resourceLogs[0]!.scopeLogs[0]!.logRecords).toEqual([rec("s-1", 1), rec("s-1", 3)]);
+    expect(read("s-2")[0]!.payload.resourceLogs[0]!.scopeLogs[0]!.logRecords).toEqual([rec("s-2", 2)]);
+    expect(readdirSync(join(dir, "sessions")).sort()).toEqual(["s-1", "s-2"]); // no folder for a missing or unsafe id
+    expect(existsSync(join(dir, "otlp-metrics.ndjson")) || existsSync(join(dir, "otlp-traces.ndjson"))).toBe(false);
     expect(r.counts["/v1/logs"]).toBe(1);
   });
 
@@ -88,11 +96,13 @@ describe("otlp receiver", () => {
     expect(bomb.length).toBeLessThan(100_000);
     const inflated = await fetch(`${url}/v1/logs`, { method: "POST", headers: { ...headers, "content-encoding": "gzip" }, body: bomb });
     expect(inflated.status).toBe(400);
-    // Normal export still works and lands in an owner-only file.
-    expect((await fetch(`${url}/v1/logs`, { method: "POST", headers, body: "{}" })).status).toBe(200);
+    // Normal export still works and lands in an owner-only file in an owner-only folder.
+    const one = { resourceLogs: [{ scopeLogs: [{ logRecords: [{ attributes: [{ key: "session.id", value: { stringValue: "s-9" } }] }] }] }] };
+    expect((await fetch(`${url}/v1/logs`, { method: "POST", headers, body: JSON.stringify(one) })).status).toBe(200);
     await r.stop();
     expect(statSync(dir).mode & 0o777).toBe(0o700);
-    expect(statSync(join(dir, "otlp-logs.ndjson")).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, "sessions", "s-9")).mode & 0o777).toBe(0o700);
+    expect(statSync(join(dir, "sessions", "s-9", "otlp-logs.ndjson")).mode & 0o777).toBe(0o600);
     expect(r.counts["/v1/logs"]).toBe(1);
   });
 });
@@ -138,6 +148,20 @@ describe("setup helper", () => {
     const theirs = mergeCaptureSettings({ env: { OTEL_LOG_RAW_API_BODIES: "file:/Users/x/debug/bodies" } }, "/tmp/cap");
     expect(theirs.report.env_removed).toEqual([]);
     expect((theirs.settings["env"] as Record<string, unknown>)["OTEL_LOG_RAW_API_BODIES"]).toBe("file:/Users/x/debug/bodies");
+  });
+
+  it("asks for logs only, and retires the metrics and traces exporters only when they pointed at Postrun", () => {
+    const env = captureEnv("/tmp/cap");
+    expect(env["OTEL_LOGS_EXPORTER"]).toBe("otlp");
+    for (const k of ["OTEL_METRICS_EXPORTER", "OTEL_TRACES_EXPORTER", "OTEL_METRIC_EXPORT_INTERVAL", "OTEL_TRACES_EXPORT_INTERVAL"]) expect(Object.keys(env)).not.toContain(k);
+    const before = { OTEL_METRICS_EXPORTER: "otlp", OTEL_TRACES_EXPORTER: "otlp", OTEL_METRIC_EXPORT_INTERVAL: "10000", OTEL_TRACES_EXPORT_INTERVAL: "2000" };
+    const ours = mergeCaptureSettings({ env: { ...captureEnv("/tmp/cap"), ...before } }, "/tmp/cap");
+    expect(ours.report.env_removed.sort()).toEqual(Object.keys(before).sort());
+    expect(ours.report.changed).toBe(true);
+    // Someone's own OpenTelemetry setup, sending elsewhere: left alone.
+    const theirs = mergeCaptureSettings({ env: { ...before, OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.com" } }, "/tmp/cap");
+    expect(theirs.report.env_removed).toEqual([]);
+    expect((theirs.settings["env"] as Record<string, unknown>)["OTEL_METRICS_EXPORTER"]).toBe("otlp");
   });
 });
 
@@ -276,7 +300,9 @@ describe.skipIf(!hasCaptures)("claude-code watcher on a copy of the real capture
     await sleep(400);
     expect(events).toContain(`Stop:${target}:false`);
     const c1 = store.counts();
-    expect(store.getSession(target)!.steps).toHaveLength(readCaptureDir(dir, target).steps.length);
+    // The shared files were split into one folder per session on start.
+    expect(existsSync(join(dir, "otlp-logs.ndjson"))).toBe(false);
+    expect(store.getSession(target)!.steps).toHaveLength(readCaptureDir(join(dir, "sessions", target), target).steps.length);
 
     // SessionEnd: re-ingest is an update, counts unchanged.
     appendFileSync(join(dir, "hooks.ndjson"), all.find(isEnd)! + "\n");

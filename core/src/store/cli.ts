@@ -8,7 +8,9 @@
 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
 import { listCaptureSessions, loadCaptureDir } from "../adapters/claude-code/index.js";
+import { isSafeId, sessionDir, sessionsDir } from "../capture/layout.js";
 import { claudeCodeRecord, clineRecord } from "./ingest.js";
 import { PostrunStore, defaultDbPath } from "./store.js";
 
@@ -65,9 +67,15 @@ function main(argv: string[]): number {
           : (() => {
               // A live capture directory holds many sessions; without --session, ingest all of them.
               const dir = resolve(target ?? join(homedir(), ".postrun", "captures"));
+              // Per-session folders (sessions/<id>/), as capture writes them; or a flat directory of shared files.
+              const folders = existsSync(sessionsDir(dir)) ? readdirSync(sessionsDir(dir)).filter(isSafeId) : [];
+              if (folders.length > 0) {
+                const ids = f.session !== undefined ? [f.session] : folders;
+                return ids.map((id) => claudeCodeRecord(sessionDir(dir, id), id));
+              }
               const loaded = loadCaptureDir(dir); // one read for every session
               const ids = f.session !== undefined ? [f.session] : listCaptureSessions(dir, loaded);
-              if (ids.length === 0) missing(`no sessions in ${dir} (hooks.ndjson or otlp-logs.ndjson)`);
+              if (ids.length === 0) missing(`no sessions in ${dir} (sessions/, hooks.ndjson or otlp-logs.ndjson)`);
               return ids.map((id) => claudeCodeRecord(dir, id, loaded));
             })();
       for (const record of records) {

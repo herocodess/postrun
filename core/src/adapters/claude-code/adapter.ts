@@ -619,7 +619,8 @@ function toolStep(
       // A5: the hook's own structured diff, kept verbatim with its companions.
       if (r.structuredPatch !== undefined) {
         const sp: Record<string, unknown> = { structuredPatch: r.structuredPatch };
-        if (r.originalFile !== undefined) sp["originalFile"] = r.originalFile;
+        // originalFile (a full copy of the file before the edit) is deliberately not kept: the patch
+        // and old/new strings carry the change, and a copy per edit multiplied storage on busy days.
         if (r.userModified !== undefined) sp["userModified"] = r.userModified;
         payload.structured_patch = sp;
       }

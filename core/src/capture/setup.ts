@@ -33,9 +33,9 @@ export function defaultSettingsPath(): string {
 export function captureEnv(captureDir: string, otlpPort = DEFAULT_OTLP_PORT): Record<string, string> {
   return {
     CLAUDE_CODE_ENABLE_TELEMETRY: "1",
-    OTEL_METRICS_EXPORTER: "otlp",
+    // Logs only. Metrics and traces are never read, so Claude Code is not asked to send them
+    // (that costs CPU in Claude Code and disk here for nothing). See RETIRED_ENV.
     OTEL_LOGS_EXPORTER: "otlp",
-    OTEL_TRACES_EXPORTER: "otlp",
     CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
     OTEL_EXPORTER_OTLP_PROTOCOL: "http/json",
     OTEL_EXPORTER_OTLP_ENDPOINT: `http://${OTLP_HOST}:${otlpPort}`,
@@ -46,9 +46,7 @@ export function captureEnv(captureDir: string, otlpPort = DEFAULT_OTLP_PORT): Re
     // OTEL_LOG_RAW_API_BODIES is deliberately absent: it makes Claude Code write
     // every raw API request (system prompt, full conversation) to disk, and
     // Postrun never reads those files.
-    OTEL_METRIC_EXPORT_INTERVAL: "10000",
     OTEL_LOGS_EXPORT_INTERVAL: "2000",
-    OTEL_TRACES_EXPORT_INTERVAL: "2000",
     POSTRUN_CAPTURE_DIR: captureDir,
   };
 }
@@ -107,9 +105,21 @@ export function isPostrunHook(hook: unknown, script = hookScriptPath()): boolean
  * Env keys Postrun set in the past and no longer wants. Removed only when the
  * value carries Postrun's fingerprint, so a user's own setting is never touched.
  */
-const RETIRED_ENV: Array<{ key: string; ours: (value: unknown) => boolean }> = [
+const RETIRED_ENV: Array<{ key: string; ours: (value: unknown, env: Json) => boolean }> = [
   { key: "OTEL_LOG_RAW_API_BODIES", ours: (v) => typeof v === "string" && /^file:.*[\\/]\.postrun[\\/].*api-bodies$/.test(v) },
+  // Metrics and traces were exported to Postrun's receiver and never read. Removed only when the
+  // value is the one Postrun set AND the endpoint is Postrun's loopback receiver, so a user's own
+  // OpenTelemetry setup is left alone.
+  { key: "OTEL_METRICS_EXPORTER", ours: (v, env) => v === "otlp" && postrunEndpoint(env) },
+  { key: "OTEL_TRACES_EXPORTER", ours: (v, env) => v === "otlp" && postrunEndpoint(env) },
+  { key: "OTEL_METRIC_EXPORT_INTERVAL", ours: (v, env) => v === "10000" && postrunEndpoint(env) },
+  { key: "OTEL_TRACES_EXPORT_INTERVAL", ours: (v, env) => v === "2000" && postrunEndpoint(env) },
 ];
+
+function postrunEndpoint(env: Json): boolean {
+  const e = env["OTEL_EXPORTER_OTLP_ENDPOINT"];
+  return typeof e === "string" && e.startsWith(`http://${OTLP_HOST}:`) && typeof env["POSTRUN_CAPTURE_DIR"] === "string";
+}
 
 export interface MergeReport {
   env_added: string[];
@@ -149,7 +159,8 @@ export function mergeCaptureSettings(existing: Json, captureDir: string, otlpPor
     }
   }
   for (const r of RETIRED_ENV) {
-    if (r.key in env && r.ours(env[r.key])) {
+    // Judge by the settings as they were before this merge: the endpoint check must see the user's value.
+    if (r.key in env && r.ours(env[r.key], currentEnv ?? {})) {
       delete env[r.key];
       report.env_removed.push(r.key);
     }
@@ -316,7 +327,7 @@ export function describeConfigure(r: ConfigureResult): string {
   if (r.created) parts.push("created settings.json");
   if (r.env_added.length > 0) parts.push(`added ${r.env_added.length} env var(s)`);
   if (r.env_changed.length > 0) parts.push(`replaced ${r.env_changed.map((c) => `${c.key} (was ${JSON.stringify(c.from)})`).join(", ")}`);
-  if (r.env_removed.length > 0) parts.push(`removed retired ${r.env_removed.join(", ")} (Postrun never read those files; delete the directory by hand if you want)`);
+  if (r.env_removed.length > 0) parts.push(`removed ${r.env_removed.join(", ")}, which Postrun no longer uses`);
   if (r.hooks_added.length > 0) parts.push(`added hooks for ${r.hooks_added.join(", ")}`);
   if (r.hooks_updated.length > 0) parts.push(`updated existing Postrun hooks for ${r.hooks_updated.join(", ")}`);
   if (r.hooks_deduplicated.length > 0) parts.push(`removed ${r.hooks_deduplicated.length} duplicate Postrun hook(s)`);

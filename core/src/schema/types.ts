@@ -85,7 +85,7 @@ export interface EditPayload {
   path: string;
   old_string?: string; // full in hook; otlp-logs truncates
   new_string?: string;
-  structured_patch?: unknown; // v1.2 A5: the hook's own structured diff (plus originalFile, userModified when present)
+  structured_patch?: unknown; // v1.2 A5: the hook's own structured diff (plus userModified when present; never the full original file)
   is_full_write: boolean;
   landed_in_final_state?: boolean; // PROJECTION, not captured: false marks a dead-end edit. Adapters never set it.
 }

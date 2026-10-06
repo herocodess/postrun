@@ -1,28 +1,68 @@
 /**
  * Minimal OTLP http/json receiver for Claude Code telemetry.
  *
- * Listens on 127.0.0.1 only (default port 4318). Appends each export request
- * as one NDJSON line per signal, {received_at, payload}, exactly the format
- * the Claude Code adapter reads. Append-only; restarts never clobber.
+ * Listens on 127.0.0.1 only (default port 4318). Log exports are split by
+ * session: each session's records are appended as one NDJSON line,
+ * {received_at, payload}, to sessions/<id>/otlp-logs.ndjson, the format the
+ * Claude Code adapter reads. Append-only; restarts never clobber.
+ *
+ * Metrics and traces are accepted and dropped: Postrun never reads them, and
+ * setup no longer asks for them. A Claude Code started before that change may
+ * still send them until it restarts.
  */
 
 import { createServer, type Server } from "node:http";
-import { createWriteStream, type WriteStream } from "node:fs";
+import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { ensurePrivateDir, ensurePrivateFile, PRIVATE_FILE_MODE } from "../util/files.js";
+import { ensurePrivateDir, PRIVATE_FILE_MODE } from "../util/files.js";
 import { isLoopbackHost } from "../util/host.js";
+import { isSafeId, SESSION_OTLP_FILE, sessionDir } from "./layout.js";
 
 export const OTLP_HOST = "127.0.0.1";
 export const DEFAULT_OTLP_PORT = 4318;
 /** Largest export request accepted, before and after gzip. Claude Code batches are a few hundred KB at most. */
 export const MAX_BODY_BYTES = 32 * 1024 * 1024;
 
-const SIGNALS: Record<string, string> = {
-  "/v1/logs": "otlp-logs.ndjson",
-  "/v1/metrics": "otlp-metrics.ndjson",
-  "/v1/traces": "otlp-traces.ndjson",
+const SIGNALS: Record<string, "keep" | "drop"> = {
+  "/v1/logs": "keep",
+  "/v1/metrics": "drop",
+  "/v1/traces": "drop",
 };
+
+interface OtlpAttr {
+  key: string;
+  value?: { stringValue?: string };
+}
+interface LogsPayload {
+  resourceLogs?: Array<{ resource?: unknown; scopeLogs?: Array<{ scope?: unknown; logRecords?: Array<{ attributes?: OtlpAttr[] }> }> }>;
+}
+
+/**
+ * Split one OTLP logs export into one payload per session, keeping each
+ * record's resource and scope. Records without a usable session.id are dropped:
+ * the adapter could never place them.
+ */
+export function splitLogsBySession(payload: unknown): Map<string, LogsPayload> {
+  const out = new Map<string, LogsPayload>();
+  for (const rl of (payload as LogsPayload | null)?.resourceLogs ?? []) {
+    for (const sl of rl.scopeLogs ?? []) {
+      for (const rec of sl.logRecords ?? []) {
+        const id = rec.attributes?.find((a) => a.key === "session.id")?.value?.stringValue;
+        if (!isSafeId(id)) continue;
+        const p = out.get(id) ?? { resourceLogs: [] };
+        out.set(id, p);
+        // Group under the same resource/scope objects so a session's slice stays one compact payload.
+        let r = p.resourceLogs!.find((x) => x.resource === rl.resource);
+        if (!r) p.resourceLogs!.push((r = { resource: rl.resource, scopeLogs: [] }));
+        let s = r.scopeLogs!.find((x) => x.scope === sl.scope);
+        if (!s) r.scopeLogs!.push((s = { scope: sl.scope, logRecords: [] }));
+        s.logRecords!.push(rec);
+      }
+    }
+  }
+  return out;
+}
 
 export interface ReceiverOptions {
   captureDir: string;
@@ -47,18 +87,8 @@ export class OtlpPortInUseError extends Error {
 export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
   // Telemetry holds prompts and tool content: the directory and files are private to this user.
   ensurePrivateDir(opts.captureDir);
-  for (const name of Object.values(SIGNALS)) ensurePrivateFile(join(opts.captureDir, name));
   const port = opts.port ?? DEFAULT_OTLP_PORT;
   const log = opts.log ?? (() => undefined);
-  const streams = new Map<string, WriteStream>();
-  const streamFor = (path: string): WriteStream => {
-    let s = streams.get(path);
-    if (!s) {
-      s = createWriteStream(join(opts.captureDir, SIGNALS[path] as string), { flags: "a", mode: PRIVATE_FILE_MODE });
-      streams.set(path, s);
-    }
-    return s;
-  };
   const counts: Record<string, number> = { "/v1/logs": 0, "/v1/metrics": 0, "/v1/traces": 0 };
 
   const server = createServer((req, res) => {
@@ -106,7 +136,16 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
           return;
         }
         const payload: unknown = JSON.parse(body.toString("utf8"));
-        streamFor(path).write(JSON.stringify({ received_at: new Date().toISOString(), payload }) + "\n");
+        if (SIGNALS[path] === "keep") {
+          const received_at = new Date().toISOString();
+          // Synchronous appends: the line is on disk before Claude Code gets its 200, and a stop()
+          // right after never loses an export. Exports are small and arrive every few seconds.
+          for (const [sessionId, slice] of splitLogsBySession(payload)) {
+            const dir = sessionDir(opts.captureDir, sessionId);
+            ensurePrivateDir(dir);
+            appendFileSync(join(dir, SESSION_OTLP_FILE), JSON.stringify({ received_at, payload: slice }) + "\n", { mode: PRIVATE_FILE_MODE });
+          }
+        }
         counts[path] = (counts[path] ?? 0) + 1;
         res.writeHead(200, { "content-type": "application/json" }).end("{}");
       } catch (err) {
@@ -135,16 +174,8 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
 
   const stop = () =>
     new Promise<void>((resolve, reject) => {
-      server.close((err) => {
-        // Resolve only once every capture file is flushed and closed. Callers
-        // exit the process right after stop(), and createWriteStream opens its
-        // file asynchronously, so resolving on end() alone could drop the last
-        // export or leave a file that does not exist yet.
-        const flushed = [...streams.values()].map(
-          (s) => new Promise<void>((done) => (s.closed ? done() : s.once("close", () => done()).end())),
-        );
-        void Promise.all(flushed).then(() => (err ? reject(err) : resolve()));
-      });
+      // Appends are synchronous, so everything accepted is already on disk.
+      server.close((err) => (err ? reject(err) : resolve()));
     });
 
   return { server, counts, start, stop };
