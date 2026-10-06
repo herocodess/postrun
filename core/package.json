@@ -64,7 +64,8 @@
     "serve": "tsx src/server/cli.ts",
     "start": "node dist/server/cli.js",
     "export": "tsx src/export/cli.ts",
-    "demo:data": "tsx src/demo/build.ts"
+    "demo:data": "tsx src/demo/build.ts",
+    "bench:heavy": "tsx src/bench/heavy-day.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
