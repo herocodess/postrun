@@ -93,7 +93,8 @@ describe("light live views", () => {
     expect(d.steps.map((s) => s.id)).toEqual(["c2"]);
     expect(d.summary.steps_total).toBe(4);
     expect(d.report.commands.map((c) => c.command)).toEqual(["pnpm build", "pnpm test"]);
-    expect(d.turns[0]!.step_ids).toEqual(["m1", "c1", "e1", "c2"]);
+    expect(d.turns.map((t) => t.id)).toEqual(["turn:1"]);
+    expect(d.turns[0]!.step_ids).toEqual([]); // a delta does not resend every step id
     // Nothing new since the delta's own as_of.
     const { body: none } = await get<SessionDeltaResponse>(`/api/sessions/${SID}?since=${encodeURIComponent(d.as_of)}`);
     expect(none.steps).toEqual([]);

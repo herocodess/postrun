@@ -41,7 +41,7 @@ export interface SessionDetailResponse extends Omit<StoredSession, "steps"> {
 
 /**
  * The answer to ?since=: everything small in full, and only the steps written
- * after `since`. When steps were removed since then, `reload` is true and the
+ * after `since`. Turns come without step_ids (group steps by turn_id instead). When steps were removed since then, `reload` is true and the
  * caller should fetch the whole session again instead of applying this.
  */
 export interface SessionDeltaResponse extends Omit<SessionDetailResponse, "steps"> {
@@ -79,7 +79,7 @@ export interface IngestRequest {
 }
 
 /** Counts are for this batch, not the session total. The store's internal change counters are not part of it. */
-export type IngestResponse = Omit<IngestResult, "changed" | "written">;
+export type IngestResponse = Omit<IngestResult, "changed" | "written" | "missing_content">;
 
 export interface IngestErrorResponse {
   error: string;

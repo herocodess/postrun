@@ -14,9 +14,13 @@
  *   so it never grows: nothing is ever read whole, and no read depends on how
  *   much history exists.
  * - Ingests on Stop (end of an assistant turn) and SessionEnd, after a short
- *   wait so the last telemetry export arrives. Each ingest reads that session's
- *   folder only, and ingests are paced (pacer.ts) to about 1% of a core per busy
- *   session. A session appears while still open and is updated as it runs.
+ *   wait so the last telemetry export arrives. Live ingests are incremental
+ *   (incremental.ts): only the bytes added since the last turn are read, and
+ *   finished turns are kept light in memory, so a turn costs about the same at
+ *   hour twelve as at minute one. Ingests are also paced (pacer.ts) to about 1%
+ *   of a core per busy session. A session appears while still open and is
+ *   updated as it runs. Catch-up, the final ingest before clean-up, and any
+ *   repair read the session's folder in full.
  * - Catches up on start: every session folder not already complete in the store
  *   is ingested. That recovers sessions that ran while capture was stopped.
  * - Cleans up: a session folder idle for `retainMs` (24 hours) is ingested one
@@ -37,6 +41,7 @@ import { claudeCodeRecord } from "../store/ingest.js";
 import type { PostrunStore } from "../store/store.js";
 import type { IngestResult } from "../store/types.js";
 import { ensurePrivateDir, PRIVATE_FILE_MODE } from "../util/files.js";
+import { IncrementalSession } from "./incremental.js";
 import { INBOX_FILE, isSafeId, SESSION_HOOKS_FILE, SESSION_OTLP_FILE, sessionDir, sessionsDir } from "./layout.js";
 import { createPacer } from "./pacer.js";
 import { splitLogsBySession } from "./receiver.js";
@@ -70,6 +75,8 @@ export interface ClaudeCodeWatcher {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** An open session's in-memory state is dropped after this long without a turn, and rebuilt if it resumes. */
+const IDLE_EVICT_MS = 30 * 60 * 1000;
 const STATE_FILE = ".router-state.json";
 const ROTATING_SUFFIX = ".routing";
 
@@ -93,6 +100,7 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
   const log = opts.log ?? (() => undefined);
   const seen = new Map<string, { ended: boolean; last_event: string }>();
   const hooksOnlyReported = new Set<string>();
+  const open = new Map<string, IncrementalSession>();
   let state: RouterState = { offset: 0 };
   let timer: NodeJS.Timeout | undefined;
   let cleanTimer: NodeJS.Timeout | undefined;
@@ -101,8 +109,31 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
 
   const ingest = (sessionId: string, trigger = "on-demand"): IngestResult | undefined => {
     try {
-      const record = claudeCodeRecord(sessionDir(opts.captureDir, sessionId), sessionId);
-      const result = opts.store.ingest(record);
+      const dir = sessionDir(opts.captureDir, sessionId);
+      const live = trigger === "Stop" || trigger === "SessionEnd";
+      let record;
+      let result: IngestResult;
+      if (live) {
+        // Incremental: read only what was added since the last turn.
+        let inc = open.get(sessionId);
+        if (!inc) open.set(sessionId, (inc = new IncrementalSession(dir, sessionId)));
+        const update = inc.update();
+        record = update.record;
+        result = opts.store.ingest(record, { metaOnly: update.metaOnly });
+        if (result.missing_content) {
+          // A finished turn produced a step the store has no content for (telemetry far too late): read it all.
+          log(`claude-code ${sessionId}: ${result.missing_content} step(s) needed a full read; repairing`);
+          open.delete(sessionId);
+          record = claudeCodeRecord(dir, sessionId);
+          result = opts.store.ingest(record);
+        }
+        if (trigger === "SessionEnd") open.delete(sessionId); // over: free its memory
+      } else {
+        // A full read is the source of truth; the incremental state starts again from it next turn.
+        open.delete(sessionId);
+        record = claudeCodeRecord(dir, sessionId);
+        result = opts.store.ingest(record);
+      }
       const hooksOnly = record.segments.every((s) => !s.source_files.includes(SESSION_OTLP_FILE));
       if (hooksOnly && !hooksOnlyReported.has(sessionId)) {
         hooksOnlyReported.add(sessionId);
@@ -263,6 +294,7 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
   const sessionFolders = (): string[] => (existsSync(sessionsDir(opts.captureDir)) ? readdirSync(sessionsDir(opts.captureDir)).filter(isSafeId) : []);
 
   const cleanUp = (now = Date.now()): string[] => {
+    for (const [id, inc] of open) if (now - inc.lastUsed > IDLE_EVICT_MS) open.delete(id);
     if (!Number.isFinite(retainMs)) return [];
     const removed: string[] = [];
     for (const id of sessionFolders()) {
@@ -315,6 +347,7 @@ export function createClaudeCodeWatcher(opts: ClaudeCodeWatcherOptions): ClaudeC
       if (timer) clearInterval(timer);
       if (cleanTimer) clearInterval(cleanTimer);
       pacer.cancelAll();
+      open.clear();
     },
     ingest,
     sessions: () => new Map(seen),

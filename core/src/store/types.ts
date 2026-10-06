@@ -71,6 +71,8 @@ export interface IngestResult {
   changed: boolean;
   /** Steps actually written: new or changed. Unchanged steps are skipped. */
   written: number;
+  /** Metadata-only steps the store had never seen with content, so it could not write them. A full ingest repairs this. */
+  missing_content?: number;
   steps: number;
   turns: number;
   segments: number;

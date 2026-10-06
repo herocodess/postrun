@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS steps (
   payload        TEXT NOT NULL,
   flags          TEXT NOT NULL,
   hash           TEXT,
+  meta_hash      TEXT,
   written_at     TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (session_id, id)
 );
@@ -151,6 +152,7 @@ const V2_COLUMNS: Array<[table: string, column: string, decl: string]> = [
   ["sessions", "step_counts", "TEXT NOT NULL DEFAULT '{}'"],
   ["sessions", "pruned_at", "TEXT"],
   ["steps", "hash", "TEXT"],
+  ["steps", "meta_hash", "TEXT"],
   ["steps", "written_at", "TEXT NOT NULL DEFAULT ''"],
 ];
 
@@ -233,6 +235,25 @@ function stepHash(s: Step): string {
     .digest("base64");
 }
 
+/** Fingerprint of a step without its payload: order, turn, status, error, channels, flags. */
+function stepMetaHash(s: Step): string {
+  return createHash("sha1")
+    .update(JSON.stringify([s.segment_index, s.turn_id, s.actor_id, s.seq, s.at, s.type, s.decision, s.outcome, s.content_status, s.error ?? null, s.channels, s.flags]))
+    .digest("base64");
+}
+
+/** Matches the placeholder light records carry in place of content (adapters/claude-code/light.ts). */
+const LIGHT_IN_JSON = JSON.stringify("\u0000postrun:light").slice(1, -1);
+
+export interface IngestOptions {
+  /**
+   * Steps whose payload is not real content (built from light records): only their order, turn,
+   * status, error, channels and flags are updated, and only when those changed. Any step whose
+   * payload carries the light placeholder is treated this way regardless.
+   */
+  metaOnly?: ReadonlySet<string>;
+}
+
 export class PostrunStore {
   readonly path: string;
   readonly ownerId: string;
@@ -261,13 +282,18 @@ export class PostrunStore {
     const version = this.db.pragma("user_version", { simple: true }) as number;
     if (version > SCHEMA_VERSION) throw new Error(`${this.path} has schema version ${version}, newer than this build (${SCHEMA_VERSION})`);
     this.db.exec(DDL);
+    // Columns added during version 2 development reach any store that lacks them, whatever its version stamp.
+    const addMissingColumns = () => {
+      for (const [table, column, decl] of V2_COLUMNS) {
+        const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+        if (!cols.some((c) => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+      }
+    };
+    if (version >= SCHEMA_VERSION) addMissingColumns();
     if (version < SCHEMA_VERSION) {
       this.db.transaction(() => {
         // Version 1 tables predate these columns; CREATE TABLE IF NOT EXISTS above left them as they were.
-        for (const [table, column, decl] of V2_COLUMNS) {
-          const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-          if (!cols.some((c) => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
-        }
+        addMissingColumns();
         // Edits no longer keep a full copy of the original file; drop the copies already stored.
         this.db.exec(
           `UPDATE steps SET payload = json_remove(payload, '$.structured_patch.originalFile'), hash = NULL
@@ -287,7 +313,7 @@ export class PostrunStore {
 
   // ---- ingest ---------------------------------------------------------------
 
-  ingest(record: SessionRecord): IngestResult {
+  ingest(record: SessionRecord, options: IngestOptions = {}): IngestResult {
     const now = new Date().toISOString();
     const run = this.db.transaction((r: SessionRecord): IngestResult => {
       const existing = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(r.id) as SessionRow | undefined;
@@ -336,7 +362,7 @@ export class PostrunStore {
           updated_at: existing?.updated_at ?? now,
         });
 
-      const written = this.writeChildren(r.id, r, now);
+      const { written, missing } = this.writeChildren(r.id, r, now, options.metaOnly);
       // A capture record is the whole session, so anything it no longer contains goes. This matters
       // when a session was first read from hooks alone and its OTel data arrives later: the message
       // steps then get their OTel ids, and the hook-based ones must not linger as duplicates.
@@ -357,7 +383,17 @@ export class PostrunStore {
         this.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(now, r.id);
       }
 
-      return { session_id: r.id, created: !existing, changed, written, steps: r.steps.length, turns: r.turns.length, segments: r.segments.length, actors: r.actors.length };
+      return {
+        session_id: r.id,
+        created: !existing,
+        changed,
+        written,
+        ...(missing > 0 ? { missing_content: missing } : {}),
+        steps: r.steps.length,
+        turns: r.turns.length,
+        segments: r.segments.length,
+        actors: r.actors.length,
+      };
     });
     return run(record);
   }
@@ -421,7 +457,7 @@ export class PostrunStore {
           tokens_cache_creation: m?.tokens.cache_creation ?? null,
           now,
         });
-      const written = this.writeChildren(h.id, batch, now);
+      const { written } = this.writeChildren(h.id, batch, now);
       this.db.prepare(REFRESH_SUMMARY).run(h.id);
       return {
         session_id: h.id,
@@ -462,8 +498,16 @@ export class PostrunStore {
     return steps;
   }
 
-  /** Upsert children. Steps whose content is unchanged (same hash) are skipped. Returns the number of steps written. */
-  private writeChildren(sessionId: string, c: Pick<SessionRecord, "segments" | "actors" | "turns" | "steps">, now: string): number {
+  /**
+   * Upsert children. Steps whose content is unchanged (same hash) are skipped. Returns the number of
+   * steps written, and how many metadata-only steps had never been stored with content.
+   */
+  private writeChildren(
+    sessionId: string,
+    c: Pick<SessionRecord, "segments" | "actors" | "turns" | "steps">,
+    now: string,
+    metaOnly?: ReadonlySet<string>,
+  ): { written: number; missing: number } {
     const seg = this.db.prepare(
       `INSERT INTO segments (session_id, idx, start_reason, started_at, ended_at, source_files)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -487,31 +531,59 @@ export class PostrunStore {
 
     const step = this.db.prepare(
       `INSERT INTO steps (session_id, id, segment_index, turn_id, actor_id, seq, at, type, decision, outcome, content_status,
-         error_type, error_message, channels, payload, flags, hash, written_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         error_type, error_message, channels, payload, flags, hash, meta_hash, written_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(session_id, id) DO UPDATE SET segment_index = excluded.segment_index, turn_id = excluded.turn_id,
          actor_id = excluded.actor_id, seq = excluded.seq, at = excluded.at, type = excluded.type, decision = excluded.decision,
          outcome = excluded.outcome, content_status = excluded.content_status, error_type = excluded.error_type,
          error_message = excluded.error_message, channels = excluded.channels, payload = excluded.payload, flags = excluded.flags,
-         hash = excluded.hash, written_at = excluded.written_at`,
+         hash = excluded.hash, meta_hash = excluded.meta_hash, written_at = excluded.written_at`,
+    );
+    // Metadata only: never touches payload or the content hash.
+    const meta = this.db.prepare(
+      `UPDATE steps SET segment_index = ?, turn_id = ?, actor_id = ?, seq = ?, at = ?, type = ?, decision = ?, outcome = ?,
+         content_status = ?, error_type = ?, error_message = ?, channels = ?, flags = ?, meta_hash = ?, hash = NULL, written_at = ?
+       WHERE session_id = ? AND id = ?`,
     );
     // One read of the stored fingerprints, then write only new or changed steps: a long session
     // updated every turn writes that turn's steps, not the whole session again.
     const stored = new Map(
-      (this.db.prepare("SELECT id, hash FROM steps WHERE session_id = ?").all(sessionId) as Array<{ id: string; hash: string | null }>).map((r) => [r.id, r.hash]),
+      (this.db.prepare("SELECT id, hash, meta_hash FROM steps WHERE session_id = ?").all(sessionId) as Array<{ id: string; hash: string | null; meta_hash: string | null }>).map((r) => [
+        r.id,
+        r,
+      ]),
     );
     let written = 0;
+    let missing = 0;
     for (const s of c.steps) {
+      const prev = stored.get(s.id);
+      const metaHash = stepMetaHash(s);
+      const payloadJson = metaOnly?.has(s.id) ? undefined : JSON.stringify(s.payload);
+      if (payloadJson === undefined || payloadJson.includes(LIGHT_IN_JSON)) {
+        // No real content here. Update order and status of a stored step if they moved; a step never
+        // stored with content is left for a full ingest to write.
+        if (!prev) {
+          missing++; // no content to write it with: the caller must do a full ingest
+          continue;
+        }
+        if (prev.meta_hash === metaHash) continue;
+        meta.run(
+          s.segment_index, s.turn_id, s.actor_id, s.seq, s.at, s.type, s.decision, s.outcome, s.content_status,
+          s.error?.type ?? null, s.error?.message ?? null, JSON.stringify(s.channels), JSON.stringify(s.flags), metaHash, now, sessionId, s.id,
+        );
+        written++;
+        continue;
+      }
       const hash = stepHash(s);
-      if (stored.get(s.id) === hash) continue;
+      if (prev?.hash === hash) continue;
       step.run(
         sessionId, s.id, s.segment_index, s.turn_id, s.actor_id, s.seq, s.at, s.type, s.decision, s.outcome, s.content_status,
-        s.error?.type ?? null, s.error?.message ?? null, JSON.stringify(s.channels), JSON.stringify(s.payload), JSON.stringify(s.flags),
-        hash, now,
+        s.error?.type ?? null, s.error?.message ?? null, JSON.stringify(s.channels), payloadJson, JSON.stringify(s.flags),
+        hash, metaHash, now,
       );
       written++;
     }
-    return written;
+    return { written, missing };
   }
 
   // ---- query ----------------------------------------------------------------

@@ -232,6 +232,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
       const delta = store.stepsChangedSince(id, since);
       const body: SessionDeltaResponse = {
         ...full,
+        // step_ids would resend every step id in the session on every update; a delta leaves them empty.
+        turns: full.turns.map((t) => ({ ...t, step_ids: [] })),
         delta: true,
         reload: delta.reload,
         steps: delta.steps.map(previewStep),
@@ -364,7 +366,7 @@ async function handleIngest(req: IncomingMessage, res: ServerResponse, ctx: Ctx)
     fail(checked.status, out);
     return;
   }
-  const { changed: _changed, written: _written, ...rest } = store.appendBatch(checked.batch);
+  const { changed: _changed, written: _written, missing_content: _missing, ...rest } = store.appendBatch(checked.batch);
   const result: IngestResponse = rest;
   json(res, result.created ? 201 : 200, result);
   ctx.live.nudge();

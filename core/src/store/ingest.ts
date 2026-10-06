@@ -2,7 +2,7 @@
  * Adapter output -> SessionRecord -> store. One function per adapter.
  */
 
-import { readCaptureDir, type LoadedCapture } from "../adapters/claude-code/index.js";
+import { readCaptureDir, type AdapterResult, type LoadedCapture } from "../adapters/claude-code/index.js";
 import { adaptCline, loadClineSession } from "../adapters/cline/index.js";
 import { turnsFromSteps } from "../adapters/turns.js";
 import type { SessionRecord } from "./types.js";
@@ -13,7 +13,11 @@ import type { SessionRecord } from "./types.js";
  * A session recorded from hooks alone has no API metrics, so cost and tokens are zero.
  */
 export function claudeCodeRecord(capturesDir: string, sessionId?: string, loaded?: LoadedCapture): SessionRecord {
-  const r = readCaptureDir(capturesDir, sessionId, loaded);
+  return claudeCodeRecordFrom(readCaptureDir(capturesDir, sessionId, loaded), capturesDir);
+}
+
+/** A SessionRecord from Claude Code adapter output (the incremental ingest builds the result itself). */
+export function claudeCodeRecordFrom(r: AdapterResult, source: string): SessionRecord {
   const first = r.segments[0];
   const last = r.segments[r.segments.length - 1];
   const record: SessionRecord = {
@@ -26,7 +30,7 @@ export function claudeCodeRecord(capturesDir: string, sessionId?: string, loaded
     turns: turnsFromSteps(r.steps, r.session_id),
     steps: r.steps,
     metrics: r.stats.totals,
-    source: capturesDir,
+    source,
   };
   if (last?.ended_at) record.ended_at = last.ended_at;
   return record;
