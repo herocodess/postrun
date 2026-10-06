@@ -11,6 +11,7 @@ import type { AppSettings, AppStatus, DoctorCheck, DoctorResponse, SetupResponse
 import { api, DEMO } from "@/lib/api";
 import { ago, megabytes, useStatus } from "@/lib/status";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
+import { useSidebar } from "@/lib/sidebar";
 
 async function send<T>(url: string, method: "PUT" | "POST", body: unknown): Promise<T> {
   const res = await fetch(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -54,6 +55,7 @@ export function Settings() {
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | undefined>(undefined);
   const [checks, setChecks] = useState<DoctorCheck[] | undefined>(undefined);
   const [theme, setTheme] = useState<Theme>("system");
+  const [sidebar, setSidebar] = useSidebar();
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState("");
 
@@ -227,6 +229,15 @@ export function Settings() {
                 {(["system", "dark", "light"] as const).map((t) => (
                   <button key={t} type="button" className={theme === t ? "on" : ""} aria-pressed={theme === t} onClick={() => pickTheme(t)}>
                     {t === "system" ? "System" : t === "dark" ? "Dark" : "Light"}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row title="Sidebar" note="Collapsed shows icons only, with names on hover. You can also use the button at the bottom of the sidebar, or press [ anywhere.">
+              <div className="seg" role="group" aria-label="Sidebar">
+                {(["expanded", "collapsed"] as const).map((m) => (
+                  <button key={m} type="button" className={sidebar === m ? "on" : ""} aria-pressed={sidebar === m} onClick={() => setSidebar(m)}>
+                    {m === "expanded" ? "Expanded" : "Collapsed"}
                   </button>
                 ))}
               </div>

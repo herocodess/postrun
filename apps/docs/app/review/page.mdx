@@ -15,7 +15,7 @@ postrun open
 
 The review app runs at `http://127.0.0.1:1234/` whenever Postrun is running, so you can also bookmark that address. `postrun status` shows the address if you changed the port with `postrun setup --port`.
 
-The sidebar has four pages: **Dashboard**, **Sessions**, **Projects** and **Settings**. On a phone it becomes a bar across the top. The card at the bottom of the sidebar always says whether Postrun is recording:
+The sidebar has four pages: **Dashboard**, **Sessions**, **Projects** and **Settings**. It stays in place while the page scrolls. **Collapse** at its foot, or the `[` key, shrinks it to icons (hover one for its name); the choice is remembered, and you can also set it in Settings under Appearance. On a phone it becomes a bar across the top. The card at the bottom of the sidebar always says whether Postrun is recording:
 
 | Card | Meaning |
 | --- | --- |
@@ -182,7 +182,7 @@ Everything in Settings applies to this computer only.
 | Recording | Pause and resume recording; start Postrun when you log in (macOS and Linux with systemd) |
 | Agents | See whether Claude Code and Cline are found and set up; run setup again |
 | Notifications and updates | A desktop notification when a running session fails three steps in a row (once per streak); a daily check for a newer Postrun |
-| Appearance | System, dark or light theme, remembered in this browser |
+| Appearance | System, dark or light theme, and an expanded or collapsed sidebar, remembered in this browser |
 | Storage | Where sessions are stored and how much space they use; how long raw logs are kept (a day, a week, 30 days or until deleted); **Save backup**; **Delete all data** |
 | About | Your version, and **Run checks**, the same checks as `postrun doctor` |
 

@@ -16,10 +16,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
       <head>
-        {/* The chosen theme before first paint, so a light theme never flashes dark. */}
+        {/* The chosen theme and sidebar width before first paint, so nothing flashes or jumps. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("postrun.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`,
+            __html: `try{var d=document.documentElement,t=localStorage.getItem("postrun.theme");if(t==="light"||t==="dark")d.dataset.theme=t;if(localStorage.getItem("postrun.sidebar")==="collapsed")d.dataset.sidebar="collapsed"}catch(e){}`,
           }}
         />
       </head>

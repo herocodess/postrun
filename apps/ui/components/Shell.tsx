@@ -12,6 +12,7 @@ import { Mark } from "@postrun/brand/logo";
 import { DEMO } from "@/lib/api";
 import { useLiveStatus, useLiveVersion } from "@/lib/live";
 import { CountUp } from "@/lib/motion";
+import { useSidebar } from "@/lib/sidebar";
 import { ago, useStatus } from "@/lib/status";
 
 const NAV = [
@@ -70,7 +71,7 @@ function RecordingCard() {
 
   if (DEMO) {
     return (
-      <div className="rec-card">
+      <div className="rec-card" data-tip="Example data">
         <div className="rec-line">
           <span className="rec-dot demo" aria-hidden="true"></span>
           Example data
@@ -100,7 +101,7 @@ function RecordingCard() {
     note = "Development server: status is not available.";
   }
   return (
-    <Link href="/settings" className="rec-card" aria-label={`${label}. ${note} Open settings.`}>
+    <Link href="/settings" className="rec-card" aria-label={`${label}. ${note} Open settings.`} data-tip={label}>
       <div className="rec-line" role="status" aria-live="polite">
         <span className={`rec-dot ${tone}`} aria-hidden="true">
           {tone === "on" && version > 0 ? <span className="ping" key={version}></span> : null}
@@ -114,7 +115,7 @@ function RecordingCard() {
 }
 
 /** Where the active link sits inside the nav, so one highlight can glide between links. */
-function usePill(active: number) {
+function usePill(active: number, mode: string) {
   const nav = useRef<HTMLElement>(null);
   const [pill, setPill] = useState<{ x: number; y: number; w: number; h: number } | undefined>(undefined);
   useLayoutEffect(() => {
@@ -123,9 +124,14 @@ function usePill(active: number) {
       setPill(el ? { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight } : undefined);
     };
     measure();
+    // The sidebar animates its width when it collapses: measure again once it has settled.
+    const later = window.setTimeout(measure, 320);
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [active]);
+    return () => {
+      window.clearTimeout(later);
+      window.removeEventListener("resize", measure);
+    };
+  }, [active, mode]);
   return { nav, pill };
 }
 
@@ -170,28 +176,58 @@ export function Shell({ children }: { children: ReactNode }) {
   const { state } = useStatus();
   const count = state.kind === "ready" ? state.status.storage.sessions : undefined;
   const active = NAV.findIndex((n) => n.match(pathname));
-  const { nav, pill } = usePill(active);
+  const [sidebar, setSidebar] = useSidebar();
+  const { nav, pill } = usePill(active, sidebar);
+
+  // [ collapses or expands the sidebar from anywhere, except while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "[" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      setSidebar(document.documentElement.dataset["sidebar"] === "collapsed" ? "expanded" : "collapsed");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setSidebar]);
   return (
     <div className="app">
       <aside className="side">
         <Link href="/" className="side-brand" aria-label="postrun dashboard">
           <Mark size={22} title="" />
-          postrun
+          <span className="side-label">postrun</span>
         </Link>
         <nav className="side-nav" aria-label="App" ref={nav}>
           {pill && <span className="side-pill" aria-hidden="true" style={{ transform: `translate(${pill.x}px, ${pill.y}px)`, width: pill.w, height: pill.h }}></span>}
           {NAV.map((n) => {
             const on = n.match(pathname);
             return (
-              <Link key={n.href} href={n.href} className={on ? "on" : ""} aria-current={on ? "page" : undefined}>
+              <Link key={n.href} href={n.href} className={on ? "on" : ""} aria-current={on ? "page" : undefined} data-tip={n.label}>
                 {n.icon}
-                <span>{n.label}</span>
+                <span className="side-label">{n.label}</span>
                 {n.href === "/sessions" && count !== undefined ? <CountUp className="side-count" value={count} /> : null}
               </Link>
             );
           })}
         </nav>
         <RecordingCard />
+        <button
+          type="button"
+          className="side-toggle"
+          onClick={() => setSidebar(sidebar === "collapsed" ? "expanded" : "collapsed")}
+          aria-label={sidebar === "collapsed" ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={sidebar !== "collapsed"}
+          data-tip={sidebar === "collapsed" ? "Expand  [" : undefined}
+          title={sidebar === "collapsed" ? undefined : "Collapse sidebar ([)"}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M6 2.5v11" stroke="currentColor" strokeWidth="1.4" />
+            <path className="side-toggle-chev" d="M10.5 6 8.75 8l1.75 2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="side-label">Collapse</span>
+        </button>
       </aside>
       <div className="main">
         {DEMO && (
