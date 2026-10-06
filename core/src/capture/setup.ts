@@ -11,7 +11,7 @@
  * running keeps its old configuration until it is restarted.
  */
 
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,7 +103,16 @@ export function isPostrunHook(hook: unknown, script = hookScriptPath()): boolean
   const command = shellUnquote(hook["command"]);
   if (command === script) return true;
   const name = basename(command);
-  return (name === "capture-hook.sh" || name === "capture.sh") && /postrun/i.test(dirname(command));
+  if (name !== "capture-hook.sh" && name !== "capture.sh") return false;
+  // Only Postrun's own folders: the installed copy (~/.postrun/bin), a checkout's scripts folder
+  // (…/postrun/core/scripts), or the first prototype's (…/postrun-spike/hooks). A user's hook
+  // elsewhere is never taken, whatever its path contains.
+  const dir = dirname(command).replace(/\\/g, "/");
+  return (
+    /(?:^|\/)\.postrun\/bin$/.test(dir) ||
+    /(?:^|\/)postrun-spike\/hooks$/i.test(dir) ||
+    (/(?:^|\/)postrun(?:\/|$)/i.test(dir) && /\/(?:core\/)?scripts$/.test(dir))
+  );
 }
 
 /**
@@ -335,6 +344,9 @@ function readSettings(path: string): Json | undefined {
 }
 
 function writeSettings(path: string, settings: Json, created: boolean): void {
+  // A settings file kept by a dotfiles manager is a symlink: write the file it points at, beside it,
+  // so the link stays a link instead of being replaced by a plain copy.
+  if (!created) path = realpathSync(path);
   // Keep the file's existing permissions; a new file gets the usual 0644.
   const mode = created ? 0o644 : statSync(path).mode & 0o777;
   const tmp = `${path}.postrun-tmp-${process.pid}`;

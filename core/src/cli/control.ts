@@ -8,8 +8,8 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { INBOX_FILE, ROTATING_SUFFIX, ROUTER_STATE_FILE, sessionsDir, spoolDir } from "../capture/layout.js";
 import { configureClaudeCode, describeConfigure, foreignTelemetry, isClaudeCodeConfigured, readSettingsEnv } from "../capture/setup.js";
 import type { AppControl, AppSettings, AppStatus } from "../server/api.js";
@@ -65,7 +65,8 @@ export function notify(title: string, body: string): void {
     process.platform === "darwin"
       ? ["osascript", ["-e", `display notification "${q(body)}" with title "${q(title)}"`]]
       : process.platform === "linux"
-        ? ["notify-send", ["--app-name=Postrun", title, body]]
+        ? // "--": a session title starting with "-" is text, never an option.
+          ["notify-send", ["--app-name=Postrun", "--", title, body]]
         : undefined;
   if (!cmd) return;
   try {
@@ -85,12 +86,38 @@ export function newerVersion(a: string, b: string): boolean {
   return false;
 }
 
-/** The branch a working folder is on now, or undefined when it is not a git repository. */
+/**
+ * The branch a working folder is on now, or undefined when it is not a git repository or HEAD is
+ * detached. Read from .git/HEAD directly: running git inside a repository an agent worked on could
+ * run that repository's own configuration (fsmonitor and the like), and on a Mac without developer
+ * tools it pops an install dialog. Worktrees and submodules (.git is a file) are followed.
+ */
 export function gitBranch(root: string): string | undefined {
   if (!root || !existsSync(root)) return undefined;
-  const r = spawnSync("git", ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", timeout: 2000 });
-  const b = r.status === 0 ? r.stdout.trim() : "";
-  return b && b !== "HEAD" ? b : undefined;
+  let dir = resolve(root);
+  for (let i = 0; i < 64; i++) {
+    const dotGit = join(dir, ".git");
+    try {
+      const st = statSync(dotGit);
+      let gitDir = dotGit;
+      if (st.isFile()) {
+        const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"));
+        if (!m) return undefined;
+        gitDir = resolve(dir, (m[1] as string).trim());
+      }
+      const head = readFileSync(join(gitDir, "HEAD"), "utf8").trim();
+      const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
+      const branch = ref?.[1]?.trim();
+      // Only a plain branch name reaches the store and the page.
+      return branch && /^[\w./+-]{1,200}$/.test(branch) ? branch : undefined;
+    } catch {
+      // no .git here: look in the parent folder
+    }
+    const up = dirname(dir);
+    if (up === dir) return undefined;
+    dir = up;
+  }
+  return undefined;
 }
 
 export interface ControlDeps {

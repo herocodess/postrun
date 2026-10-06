@@ -149,6 +149,24 @@ describe("setup helper", () => {
     expect(kept["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-postrun-key=k_123,authorization=Bearer theirs");
   });
 
+  it("writes through a symlinked settings file, keeping the link", async () => {
+    const { symlinkSync, lstatSync, mkdirSync: mk } = await import("node:fs");
+    const root = mkdtempSync(join(tmpdir(), "postrun-link-"));
+    mk(join(root, "dotfiles"));
+    mk(join(root, ".claude"));
+    const real = join(root, "dotfiles", "claude-settings.json");
+    writeFileSync(real, JSON.stringify({ theme: "dark" }));
+    const link = join(root, ".claude", "settings.json");
+    symlinkSync(real, link);
+    const script = join(root, "capture-hook.sh");
+    writeFileSync(script, "#!/bin/sh\n", { mode: 0o700 });
+    configureClaudeCode({ captureDir: join(root, "c"), settingsPath: link, script });
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    const saved = JSON.parse(readFileSync(real, "utf8")) as Record<string, unknown>;
+    expect(saved["theme"]).toBe("dark");
+    expect(saved["hooks"]).toBeDefined();
+  });
+
   it("renders env and hooks pointing at the repo hook script", () => {
     const s = captureSettings("/tmp/cap", 4318) as { env: Record<string, string>; hooks: Record<string, unknown> };
     expect(s.env["OTEL_EXPORTER_OTLP_ENDPOINT"]).toBe("http://127.0.0.1:4318");
@@ -163,6 +181,10 @@ describe("setup helper", () => {
     expect(isPostrunHook({ type: "command", command: "/Users/x/dev/postrun-spike/hooks/capture.sh" })).toBe(true);
     expect(isPostrunHook({ type: "command", command: "/Users/x/bin/capture.sh" })).toBe(false);
     expect(isPostrunHook({ type: "command", command: "/Users/x/postrun/notify.sh" })).toBe(false);
+    // A user's own capture script that merely sits under a folder named postrun is not Postrun's.
+    expect(isPostrunHook({ type: "command", command: "/Users/x/work/postrun-notes/capture.sh" })).toBe(false);
+    expect(isPostrunHook({ type: "command", command: "/Users/x/postrun/tools/capture-hook.sh" })).toBe(false);
+    expect(isPostrunHook({ type: "command", command: "/Users/x/.postrun/bin/capture-hook.sh" })).toBe(true);
     expect(isPostrunHook({ type: "command", command: "prettier --write" })).toBe(false);
     expect(isPostrunHook("capture-hook.sh")).toBe(false);
   });

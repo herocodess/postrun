@@ -7,7 +7,7 @@
  * answers GET /api/health so `status` can tell it is really Postrun.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createClaudeCodeWatcher } from "../capture/claude-code-watcher.js";
 import { createClineWatcher } from "../capture/cline-watcher.js";
@@ -53,6 +53,23 @@ export function alive(pid: number): boolean {
   }
 }
 
+/**
+ * Whether the process in the pid file is really Postrun. After a crash or a reboot the pid file can
+ * name a process id the system has since given to something else; that process must never be
+ * signalled. Postrun answers its health route with its own pid, and its command line names it.
+ */
+export async function isPostrun(info: PidInfo): Promise<boolean> {
+  if (!alive(info.pid)) return false;
+  const h = await health(info.port);
+  if (h?.pid === info.pid) return true;
+  try {
+    const r = spawnSync("ps", ["-p", String(info.pid), "-o", "command="], { encoding: "utf8", timeout: 2000 });
+    return r.status === 0 && /postrun/i.test(r.stdout) && /\brun\b/.test(r.stdout);
+  } catch {
+    return false;
+  }
+}
+
 export interface Health {
   ok: boolean;
   version?: string;
@@ -84,7 +101,7 @@ export async function status(p: Paths): Promise<Status> {
   const info = readPid(p);
   const port = info?.port ?? readConfig(p).port;
   const url = `http://${LOCALHOST}:${port}/`;
-  if (!info || !alive(info.pid)) return { running: false, port, url };
+  if (!info || !(await isPostrun(info))) return { running: false, port, url };
   const h = await health(port);
   return { running: true, pid: info.pid, port, url, ...(h ? { health: h } : {}) };
 }
@@ -308,7 +325,8 @@ export async function start(p: Paths, opts: { waitMs?: number } = {}): Promise<{
 /** Stop the background process. Resolves true when one was running. */
 export async function stop(p: Paths, waitMs = 8000): Promise<boolean> {
   const info = readPid(p);
-  if (!info || !alive(info.pid)) {
+  // A stale pid file (the id now belongs to another program) is removed, and nothing is signalled.
+  if (!info || !(await isPostrun(info))) {
     rmSync(p.pid, { force: true });
     return false;
   }

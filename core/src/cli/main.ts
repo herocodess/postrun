@@ -16,7 +16,8 @@
 import { spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { sessionDir } from "../capture/layout.js";
 import { configureClaudeCode, foreignTelemetry, readSettingsEnv, unconfigureClaudeCode } from "../capture/setup.js";
 import { exportSession } from "../export/index.js";
@@ -395,6 +396,16 @@ function cmdAutostart(argv: string[]): number {
   return 0;
 }
 
+/**
+ * A folder uninstall may delete whole: Postrun's own files are in it, and it is not the home
+ * folder or the root. A mistyped POSTRUN_HOME must never take another folder with it.
+ */
+export function looksLikePostrunHome(dir: string, userHome = homedir()): boolean {
+  const d = resolve(dir);
+  if (d === resolve(userHome) || d === resolve("/") || d === dirname(resolve(userHome))) return false;
+  return ["postrun.db", "config.json", "ingest-token"].some((f) => existsSync(join(d, f)));
+}
+
 async function cmdUninstall(argv: string[]): Promise<number> {
   const a = parse(argv);
   onlyFlags(a, ["yes", "delete-data", "keep-data"]);
@@ -422,7 +433,9 @@ async function cmdUninstall(argv: string[]): Promise<number> {
     : a.flags.has("keep-data")
       ? false
       : await ask(`Also delete everything Postrun recorded (${p.home})? This cannot be undone.`, false);
-  if (deleteData) {
+  if (deleteData && !looksLikePostrunHome(p.home)) {
+    err(`  Not deleting ${p.home}: it does not look like Postrun's folder (no postrun.db, config.json or ingest-token in it). Check POSTRUN_HOME, then delete it yourself if you are sure.`);
+  } else if (deleteData) {
     rmSync(p.home, { recursive: true, force: true });
     out(`  Deleted ${p.home}`);
   } else {

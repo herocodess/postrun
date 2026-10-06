@@ -57,3 +57,63 @@ describe("delete everything", () => {
     store.close();
   });
 });
+
+describe("stopping with a stale pid file", () => {
+  it("never signals a process that is not Postrun, and removes the stale file", async () => {
+    const { spawn } = await import("node:child_process");
+    const { stop, status } = await import("./daemon.js");
+    const home = mkdtempSync(join(tmpdir(), "postrun-pid-"));
+    const p = paths({ HOME: home });
+    mkdirSync(p.home, { recursive: true });
+    // Some other program that happens to have the id the pid file names (after a reboot, say).
+    const other = spawn("sleep", ["30"], { stdio: "ignore" });
+    writeFileSync(p.pid, JSON.stringify({ pid: other.pid, port: 1, otlpPort: 1, version: "0.0.0", started_at: new Date().toISOString() }));
+    expect((await status(p)).running).toBe(false);
+    expect(await stop(p)).toBe(false);
+    expect(other.exitCode).toBeNull();
+    expect(other.killed).toBe(false);
+    expect(existsSync(p.pid)).toBe(false);
+    other.kill();
+  });
+});
+
+describe("uninstall --delete-data", () => {
+  it("only deletes a folder holding Postrun's own files, never the home folder", async () => {
+    const { looksLikePostrunHome } = await import("./main.js");
+    const home = mkdtempSync(join(tmpdir(), "postrun-home-"));
+    const mine = join(home, ".postrun");
+    mkdirSync(mine);
+    expect(looksLikePostrunHome(mine, home)).toBe(false); // empty: not obviously Postrun's
+    writeFileSync(join(mine, "config.json"), "{}");
+    expect(looksLikePostrunHome(mine, home)).toBe(true);
+    writeFileSync(join(home, "config.json"), "{}");
+    expect(looksLikePostrunHome(home, home)).toBe(false); // POSTRUN_HOME=$HOME by mistake
+    expect(looksLikePostrunHome(join(home, "Documents"), home)).toBe(false);
+  });
+});
+
+describe("the git branch probe", () => {
+  it("reads .git/HEAD without running git, follows worktrees, and ignores detached heads", async () => {
+    const { gitBranch } = await import("./control.js");
+    const root = mkdtempSync(join(tmpdir(), "postrun-git-"));
+    mkdirSync(join(root, ".git"));
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/feat/redesign\n");
+    // A repository's own config that would run code if git were run inside it.
+    writeFileSync(join(root, ".git", "config"), `[core]\n\tfsmonitor = touch ${join(root, "pwned")}\n`);
+    mkdirSync(join(root, "apps", "ui"), { recursive: true });
+    expect(gitBranch(join(root, "apps", "ui"))).toBe("feat/redesign");
+    expect(existsSync(join(root, "pwned"))).toBe(false);
+
+    const wt = mkdtempSync(join(tmpdir(), "postrun-wt-"));
+    mkdirSync(join(root, ".git", "worktrees", "w1"), { recursive: true });
+    writeFileSync(join(root, ".git", "worktrees", "w1", "HEAD"), "ref: refs/heads/fix/audit\n");
+    writeFileSync(join(wt, ".git"), `gitdir: ${join(root, ".git", "worktrees", "w1")}\n`);
+    expect(gitBranch(wt)).toBe("fix/audit");
+
+    writeFileSync(join(root, ".git", "HEAD"), "3c8bbc8a1f0e9d7c6b5a4f3e2d1c0b9a8f7e6d5c\n");
+    expect(gitBranch(root)).toBeUndefined();
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/<img src=x>\n");
+    expect(gitBranch(root)).toBeUndefined();
+    expect(gitBranch(mkdtempSync(join(tmpdir(), "postrun-nogit-")))).toBeUndefined();
+  });
+});
