@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { ClickTracker } from "@/components/ClickTracker";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
+import "@postrun/brand/brand.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,6 +19,8 @@ export const metadata: Metadata = {
     siteName: "postrun",
     type: "website",
   },
+  // Share images come from app/opengraph-image.png and app/twitter-image.png.
+  twitter: { card: "summary_large_image", title: "postrun · the flight recorder for coding agents" },
 };
 
 export const viewport: Viewport = {

@@ -15,12 +15,18 @@ type NavState = "top" | "folded" | "expanded";
 const TOP_ZONE = 24;
 const FOLD_DELTA = 8;
 
-const LINKS = [
+/**
+ * `external` opens in a new tab. `offsite` marks a link to another postrun site
+ * (the docs) that opens in the same tab but shows the ↗ arrow in the menu.
+ */
+type NavLink = { href: string; label: string; external?: boolean; offsite?: boolean };
+const LINKS: NavLink[] = [
   { href: "/#how", label: "How it works" },
-  { href: "/#share", label: "Sharing" },
-  { href: "/#security", label: "Security" },
-  { href: "/#faq", label: "FAQ" },
-  { href: "/example-report.html", label: "Example report", external: true },
+  { href: "/demo/", label: "Demo" },
+  { href: "/use-cases/", label: "Use cases" },
+  { href: "/security/", label: "Security" },
+  { href: "https://docs.postrun.app/", label: "Docs", offsite: true },
+  { href: "/changelog/", label: "Changelog" },
 ];
 
 export function Nav() {
@@ -103,21 +109,21 @@ export function Nav() {
           </button>
           <div id="nav-menu" className="nav-menu" hidden={!menuOpen}>
             {/* Links arrive like steps in a session timeline. */}
-            {[...LINKS, { href: "/#waitlist", label: "Get early access", cta: true }].map((l, i) => (
+            {[...LINKS.map((l) => ({ ...l, cta: false })), { href: "/#waitlist", label: "Get early access", cta: true, external: false, offsite: false }].map((l, i) => (
               <a
                 key={l.href}
                 href={l.href}
-                className={"cta" in l ? "menu-item menu-cta" : "menu-item"}
-                data-track={"cta" in l ? "Get early access" : `Nav: ${l.label}`}
+                className={l.cta ? "menu-item menu-cta" : "menu-item"}
+                data-track={l.cta ? "Get early access" : `Nav: ${l.label}`}
                 data-track-where="menu"
                 style={{ ["--i" as string]: i }}
                 onClick={() => setMenuOpen(false)}
-                {...("external" in l && l.external ? { target: "_blank", rel: "noopener" } : {})}
+                {...(l.external ? { target: "_blank", rel: "noopener" } : {})}
               >
                 <span className="mi-seq">{String(i + 1).padStart(2, "0")}</span>
                 <span className="mi-label">{l.label}</span>
                 <span className="mi-arrow" aria-hidden="true">
-                  {"external" in l && l.external ? "↗" : "→"}
+                  {l.external || l.offsite ? "↗" : "→"}
                 </span>
               </a>
             ))}

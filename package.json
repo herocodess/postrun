@@ -23,7 +23,8 @@
     "dev:core": "pnpm --filter @postrun/core serve",
     "dev:ui": "pnpm --filter @postrun/ui dev",
     "dev:web": "pnpm --filter @postrun/web dev",
-    "build:web": "pnpm --filter @postrun/web build"
+    "build:web": "pnpm --filter @postrun/web build",
+    "demo:build": "node scripts/build-demo.mjs"
   },
   "keywords": [
     "postrun",

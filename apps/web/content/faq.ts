@@ -25,7 +25,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "How does sharing work?",
-    a: "Export a session and you get a single HTML file: every command, edit and message, expandable, with failures and output. It has no JavaScript and loads nothing from the internet, so it's safe to open and works anywhere: email it, attach it to a pull request, or drop it in a chat.\n\nHosted share links are planned, built on the same redacted file.",
+    a: "Export a session and you get a single HTML file: every command, edit and message, expandable, with failures and output. It has no JavaScript and loads nothing from the internet, so it's safe to open and works anywhere: email it, share it alongside a pull request, or drop it in a chat.\n\nHosted share links are planned, built on the same redacted file.",
   },
   {
     q: "What does redaction catch, and can I rely on it?",

@@ -6,6 +6,7 @@ import { Mark } from "@/components/Logo";
 import { Nav } from "@/components/Nav";
 import { Reveal } from "@/components/Reveal";
 import { Terminal, type TermLine } from "@/components/Terminal";
+import { Testimonials } from "@/components/Testimonials";
 import { Waitlist } from "@/components/Waitlist";
 
 const RECORD: TermLine[] = [
@@ -81,12 +82,17 @@ export default function Home() {
               <a href="#waitlist" className="btn btn-primary btn-lg" data-track="Get early access" data-track-where="hero">
                 Get early access
               </a>
-              <a href="/example-report.html" target="_blank" rel="noopener" className="btn btn-ghost btn-lg" data-track="Example report" data-track-where="hero">
-                See an example report <span aria-hidden="true">→</span>
+              <a href="/demo/" className="btn btn-ghost btn-lg" data-track="Try the demo" data-track-where="hero">
+                Try the demo <span aria-hidden="true">→</span>
               </a>
             </Reveal>
             <Reveal delay={300}>
-              <p className="mono muted small">Local by default. Nothing leaves your machine unless you export it.</p>
+              <p className="mono muted small">
+                Local by default. Nothing leaves your machine unless you export it.{" "}
+                <a href="/example-report.html" target="_blank" rel="noopener" data-track="Example report" data-track-where="hero">
+                  See an exported report
+                </a>
+              </p>
             </Reveal>
           </div>
           <div className="wrap-wide hero-shot">
@@ -220,6 +226,8 @@ export default function Home() {
             </Reveal>
           </div>
         </section>
+
+        <Testimonials />
 
         <Faq />
 

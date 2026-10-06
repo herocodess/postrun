@@ -45,7 +45,7 @@ export default function Terms() {
       <p>
         These terms apply to your use of postrun.app (&ldquo;the website&rdquo;) and the Postrun software (&ldquo;the app&rdquo;), provided by [LEGAL ENTITY NAME] (&ldquo;we&rdquo;,
         &ldquo;us&rdquo;). By using either, you agree to them. If you use Postrun for your employer, you confirm you&rsquo;re allowed to accept these terms on its behalf. Our{" "}
-        <a href="/privacy">privacy policy</a> explains how we handle personal data.
+        <a href="/privacy/">privacy policy</a> explains how we handle personal data.
       </p>
 
       <h2 id="early-access">Early access</h2>
@@ -56,7 +56,7 @@ export default function Terms() {
 
       <h2 id="your-data">Your data and your responsibilities</h2>
       <p>
-        The app records sessions on your own computer and does not send them to us (see the <a href="/privacy#app">privacy policy</a>). You own your session data, and you&rsquo;re
+        The app records sessions on your own computer and does not send them to us (see the <a href="/privacy/#app">privacy policy</a>). You own your session data, and you&rsquo;re
         responsible for it, including:
       </p>
       <ul>
