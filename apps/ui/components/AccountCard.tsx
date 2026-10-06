@@ -7,64 +7,36 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AccountResponse, ApiError, ConnectResponse } from "@postrun/core/server/api";
+import type { AccountResponse } from "@postrun/core/server/api";
 import { Loader } from "@postrun/brand/logo";
 import { api, apiFetch, DEMO } from "@/lib/api";
+import { getAccount, startConnect } from "@/lib/account";
 
 type State = { kind: "loading" } | { kind: "demo" } | { kind: "ready"; a: AccountResponse } | { kind: "waiting"; a: AccountResponse; url: string } | { kind: "error"; a?: AccountResponse; message: string };
-
-async function account(): Promise<AccountResponse> {
-  const r = await apiFetch(api.account());
-  if (!r.ok) throw new Error(`${r.status}`);
-  return (await r.json()) as AccountResponse;
-}
 
 export function AccountCard() {
   const [s, setS] = useState<State>(DEMO ? { kind: "demo" } : { kind: "loading" });
   const [confirmOut, setConfirmOut] = useState(false);
   const [busy, setBusy] = useState(false);
-  const poll = useRef<number | undefined>(undefined);
+  const stop = useRef<(() => void) | undefined>(undefined);
 
   const load = useCallback(() => {
-    account()
+    getAccount()
       .then((a) => setS({ kind: "ready", a }))
       .catch(() => setS({ kind: "error", message: "Couldn't check this computer's sign-in." }));
   }, []);
   useEffect(() => {
     if (!DEMO) load();
-    return () => window.clearInterval(poll.current);
+    return () => stop.current?.();
   }, [load]);
 
   async function connect(a: AccountResponse) {
-    // Open the tab now, while this is still the click: browsers block tabs opened later.
-    const tab = window.open("about:blank", "_blank");
     setBusy(true);
     try {
-      const r = await apiFetch(api.connect(), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as ApiError).error ?? `${r.status}`);
-      const { url } = (await r.json()) as ConnectResponse;
-      if (tab) {
-        tab.opener = null;
-        tab.location.href = url;
-      }
-      setS({ kind: "waiting", a, url });
-      const started = Date.now();
-      window.clearInterval(poll.current);
-      poll.current = window.setInterval(() => {
-        account()
-          .then((next) => {
-            if (next.signed_in) {
-              window.clearInterval(poll.current);
-              setS({ kind: "ready", a: next });
-            } else if (!next.connecting || Date.now() - started > 10 * 60_000) {
-              window.clearInterval(poll.current);
-              setS({ kind: "ready", a: next });
-            }
-          })
-          .catch(() => undefined);
-      }, 1500);
+      const c = await startConnect((next) => setS({ kind: "ready", a: next }));
+      stop.current = c.stop;
+      setS({ kind: "waiting", a, url: c.url });
     } catch (e) {
-      tab?.close();
       setS({ kind: "error", a, message: `Couldn't start signing in: ${e instanceof Error ? e.message : String(e)}` });
     } finally {
       setBusy(false);

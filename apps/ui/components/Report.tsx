@@ -61,6 +61,7 @@ export function Report() {
   const id = params.get("id") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
   const [exporting, setExporting] = useState(false);
+  const [shareFocus, setShareFocus] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // Long sessions show their most recent turns; earlier ones load on request. A link to a step shows everything.
   const [shownTurns, setShownTurns] = useState(() => (typeof window !== "undefined" && window.location.hash.startsWith("#step-") ? Infinity : RECENT_TURNS));
@@ -317,8 +318,14 @@ export function Report() {
                 {copied === "ok" ? "Copied" : copied === "fail" ? "Could not copy" : "Copy as PR summary"}
               </span>
             </button>
-            <button type="button" className="btn" onClick={() => (setExporting((v) => !v), setDeleting(false))} aria-expanded={exporting}>
+            <button type="button" className="btn" onClick={() => (setExporting((v) => !(v && !shareFocus)), setShareFocus(false), setDeleting(false))} aria-expanded={exporting && !shareFocus}>
               Export report
+            </button>
+            <button type="button" className="btn primary share-btn" onClick={() => (setExporting(true), setShareFocus(true), setDeleting(false))} title="Send this session as a link that expires">
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              Share
             </button>
             {!DEMO && (
               <button type="button" className="btn ghost danger-text" onClick={() => (setDeleting((v) => !v), setExporting(false))} aria-expanded={deleting}>
@@ -403,7 +410,7 @@ export function Report() {
         </div>
       </div>
 
-      {exporting && <ExportPanel sessionId={summary.id} onClose={() => setExporting(false)} />}
+      {exporting && <ExportPanel sessionId={summary.id} focusShare={shareFocus} onClose={() => (setExporting(false), setShareFocus(false))} />}
       {deleting && <DeletePanel sessionId={summary.id} agent={summary.agent.kind} steps={summary.steps_total} onClose={() => setDeleting(false)} />}
 
       <div className={`review-row enter${commits.length || summary.git_branch ? " three" : ""}`} style={stagger(1, 12, 60)}>

@@ -108,9 +108,17 @@ npm uninstall -g postrun
 
 Everything under `~/.postrun` is readable only by your user account. Nothing is sent anywhere unless you make a [share link](/share/).
 
+## Share a session
+
+When someone else needs to see what an agent did, open the session in the review app and click **Share**. The first time, **Connect account** opens app.postrun.app in a new tab: sign in with GitHub or an email link and approve this computer. After that, **Create link** gives you a link that expires. Prefer the terminal? Run `postrun login` once, then `postrun share <session-id>`. See [Share links](/share/).
+
 ## Next steps
 
 <div className="cards">
+  <a href="/share/">
+    Share links
+    <span>Send a redacted session as a link that expires.</span>
+  </a>
   <a href="/capture/claude-code/">
     Claude Code
     <span>What setup changes and how sessions are built.</span>

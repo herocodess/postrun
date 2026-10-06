@@ -1507,3 +1507,70 @@ textarea:focus {
   gap: 8px;
   margin-top: 18px;
 }
+
+/* ---- first-visit checklist ---------------------------------------------------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.checklist {
+  list-style: none;
+  margin: 26px auto 0;
+  padding: 0;
+  max-width: 560px;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.checklist li {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--s1);
+  animation: rise 0.5s var(--ease) both;
+  animation-delay: calc(150ms + var(--i) * 90ms);
+  transition: border-color 0.3s;
+}
+.checklist li.next {
+  border-color: rgba(255, 106, 26, 0.45);
+  box-shadow: 0 0 0 4px rgba(255, 106, 26, 0.06);
+}
+.checklist li.done {
+  opacity: 0.75;
+}
+.check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  font: 12px var(--mono);
+  color: var(--text-2);
+}
+.checklist li.next .check {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.checklist li.done .check {
+  border-color: rgba(74, 222, 128, 0.5);
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--ok);
+}
+.check-title {
+  font-weight: 500;
+  color: var(--text);
+  font-size: 14.5px;
+}
+.check-body {
+  margin-top: 4px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}

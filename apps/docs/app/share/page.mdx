@@ -22,6 +22,8 @@ Each link is:
 
 Sharing needs a Postrun account. Sign in at [app.postrun.app](https://app.postrun.app) with GitHub or an email link: either one creates the account the first time. There are no passwords. The email link opens a page with a **Sign in** button; it works once and expires after 10 minutes.
 
+The quickest way to connect is from the review app: **Settings → Account → Connect account**, or the **Connect account** button the first time you share. The terminal works too:
+
 ```bash
 postrun login
 ```
@@ -46,10 +48,13 @@ and paste the token when it asks. It is read from the terminal (or stdin), never
 
 ### From the review app
 
-1. Open the session and click **Export report**.
+1. Open the session and click **Share**.
 2. Check what redaction masked, as you would for a file.
-3. Under **Share link**, choose how long it works and click **Create link**.
-4. Copy the link and send it.
+3. Not connected yet? Click **Connect account**, sign in at app.postrun.app in the tab that opens, and approve this computer. The panel updates by itself.
+4. Choose how long the link works and click **Create link**.
+5. Copy the link and send it.
+
+You can also connect or sign out under **Settings → Account**.
 
 The background process uploads the report with this computer's sign-in. The page itself never sees the token.
 

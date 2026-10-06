@@ -9,7 +9,7 @@ import { Terminal, type TermLine } from "@/components/Terminal";
 import { Testimonials } from "@/components/Testimonials";
 import { InstallBox } from "@/components/InstallBox";
 import { Waitlist } from "@/components/Waitlist";
-import { LOGIN_URL } from "@/content/site";
+import { APP_URL, START_URL } from "@/content/site";
 
 const RECORD: TermLine[] = [
   { kind: "cmd", text: "npm install -g postrun && postrun setup" },
@@ -82,7 +82,7 @@ export default function Home() {
               </p>
             </Reveal>
             <Reveal delay={240} className="cta-row">
-              <a href={LOGIN_URL} className="btn btn-primary btn-lg" data-track="Get started" data-track-where="hero">
+              <a href={START_URL} className="btn btn-primary btn-lg" data-track="Get started" data-track-where="hero">
                 Get started
               </a>
               <a href="/demo/" className="btn btn-ghost btn-lg" data-track="Try the demo" data-track-where="hero">
@@ -91,7 +91,7 @@ export default function Home() {
             </Reveal>
             <Reveal delay={300}>
               <p className="mono muted small">
-                Local by default. Nothing leaves your machine unless you export it.{" "}
+                Free and open source. No account needed to record. Nothing leaves your machine unless you share it.{" "}
                 <a href="/example-report.html" target="_blank" rel="noopener" data-track="Example report" data-track-where="hero">
                   See an exported report
                 </a>
@@ -151,13 +151,60 @@ export default function Home() {
               {[
                 { n: "01 · RECORD", h: "Capture on your machine", p: "Hooks and local telemetry feed a recorder bound to 127.0.0.1. Prompts, tool calls, output and edits land in a private store in your home folder.", t: RECORD, title: "capture" },
                 { n: "02 · REVIEW", h: "Read the whole session", p: "One timeline across agents: every turn and step, the files it touched, the commands it ran, what failed and why. It updates live while the agent works.", t: REVIEW, title: "review" },
-                { n: "03 · SHARE", h: "Send a report, not your logs", p: "Export one session as a single HTML file. Secrets, credentials and home paths are masked first, and you see every masked value before you send it.", t: SHARE, title: "export" },
+                { n: "03 · SHARE", h: "Send a report, not your logs", p: "Export one session as a single HTML file, or send it as a link that expires. Secrets, credentials and home paths are masked first, and you see every masked value before you send it.", t: SHARE, title: "export" },
               ].map((c, i) => (
                 <Reveal key={c.n} delay={i * 120} className="how-card">
                   <span className="kicker">{c.n}</span>
                   <h3>{c.h}</h3>
                   <p>{c.p}</p>
                   <Terminal title={c.title} lines={c.t} />
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* WHERE THINGS LIVE */}
+        <section id="pieces" className="section section-tight">
+          <div className="wrap">
+            <Reveal className="section-head">
+              <span className="kicker muted">HOW IT FITS TOGETHER</span>
+              <h2>One tool on your computer. An account only if you share.</h2>
+            </Reveal>
+            <div className="pieces">
+              {[
+                {
+                  k: "ON YOUR COMPUTER",
+                  h: "postrun and the review app",
+                  p: "Install once with npm. It records in the background, and the review app opens in your browser at 127.0.0.1:1234. Everything stays in ~/.postrun.",
+                  link: { href: START_URL, label: "Install Postrun" },
+                  need: "No account",
+                },
+                {
+                  k: "YOUR ACCOUNT",
+                  h: "app.postrun.app",
+                  p: "Only for share links: see how often each link was opened, turn links off, and connect your computers. Sign in with GitHub or an email link.",
+                  link: { href: `${APP_URL}/login`, label: "Sign in" },
+                  need: "Free account",
+                },
+                {
+                  k: "WHEN YOU'RE STUCK",
+                  h: "docs.postrun.app",
+                  p: "The quickstart, every command, how redaction works, and fixes for common problems. Send feedback from the review app's sidebar any time.",
+                  link: { href: "https://docs.postrun.app/quickstart/", label: "Read the quickstart" },
+                  need: "Always open",
+                },
+              ].map((c, i) => (
+                <Reveal key={c.k} delay={i * 110} className="piece">
+                  <span className="kicker">{c.k}</span>
+                  <h3>{c.h}</h3>
+                  <p>{c.p}</p>
+                  <div className="piece-foot">
+                    <a href={c.link.href} data-track={c.link.label} data-track-where="pieces">
+                      {c.link.label} <span aria-hidden="true">→</span>
+                    </a>
+                    <span className="piece-need mono">{c.need}</span>
+                  </div>
                 </Reveal>
               ))}
             </div>
@@ -196,7 +243,7 @@ export default function Home() {
                 <li>One self-contained HTML file. No account, no server, no install for the reader.</li>
                 <li>No JavaScript and no outside requests, so it is safe to open from anyone.</li>
                 <li>Every command, edit and message, expandable, with failures and output.</li>
-                <li>Hosted share links next, built on the same file.</li>
+                <li>Or send a share link: the same file, unlisted, expiring, and easy to turn off. Links need a free account; recording never does.</li>
               </ul>
             </Reveal>
             <Reveal delay={150} className="share-demo">

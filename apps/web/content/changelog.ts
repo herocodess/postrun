@@ -22,6 +22,18 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    version: "0.3.1",
+    title: "Clearer paths through Postrun",
+    summary: "Fewer places to get lost: sharing starts from the session, and every part of Postrun says what it's for.",
+    items: [
+      { kind: "new", text: "A Share button on every session. The first time, Connect account sets up sharing right there, with no terminal." },
+      { kind: "improved", text: "postrun status says whether this computer is connected for share links, and postrun setup ends with how to share." },
+      { kind: "improved", text: "A new account at app.postrun.app shows a three-step checklist that ticks itself off: install, connect a computer, share a session." },
+      { kind: "improved", text: "postrun.app's Get started takes you to the install command, and a new section explains what runs on your computer and what the account is for." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     version: "0.3.0",
     title: "Tell us what you think, and one connected Postrun",
     summary: "Send feedback from anywhere in Postrun, connect your account without a terminal, and Postrun is now open source.",
