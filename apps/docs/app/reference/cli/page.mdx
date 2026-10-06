@@ -66,6 +66,14 @@ postrun sessions [--agent claude-code|cline]
 
 Lists stored sessions, newest first: start time, agent and id, then the first line of the first prompt, then steps, turns, failures, cost and working folder.
 
+## postrun stats
+
+```bash
+postrun stats [--json]
+```
+
+Prints how you use Postrun, counted on this computer only: sessions recorded (by agent), days active in the last 30, and how often each feature was used in the last 30 days and in all. It shows counts only, with no sessions, paths or text, so it is safe to paste to someone. `--json` prints the same as JSON. Nothing is sent anywhere. See [Security](/security/#your-usage-counts).
+
 ## postrun export
 
 ```bash

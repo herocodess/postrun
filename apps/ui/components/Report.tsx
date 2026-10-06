@@ -15,6 +15,7 @@ import { Tape } from "@/components/Tape";
 import { projectHref } from "@/components/Projects";
 import { ChangesView, GitPanel, RiskPanel, ShortcutHelp, VerdictPanel } from "@/components/ReviewPanels";
 import { changesByFile, commitsOf, plainSummary, prSummary } from "@/lib/review";
+import { track } from "@/lib/usage";
 
 type Tab = "timeline" | "changes" | "files";
 
@@ -74,6 +75,7 @@ export function Report() {
   const copyPr = useCallback(async () => {
     if (state.kind !== "ready") return;
     const ok = await copyText(prSummary(state.data));
+    if (ok) track("pr_summary_copied");
     setCopied(ok ? "ok" : "fail");
     window.setTimeout(() => setCopied("idle"), 2200);
   }, [state]);
@@ -159,6 +161,7 @@ export function Report() {
         const at = list.findIndex((d) => d.contains(document.activeElement));
         return at >= 0 ? at : cur.current;
       };
+      if ("jkfeg123ancg?".includes(e.key)) track("keyboard_used", id);
       switch (e.key) {
         case "j":
         case "k": {
@@ -216,6 +219,15 @@ export function Report() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, copyPr]);
+
+  // Local usage counts: a session looked at, and the Changes tab opened (once each per session).
+  const loadedId = state.kind === "ready" ? state.data.summary.id : undefined;
+  useEffect(() => {
+    if (loadedId) track("session_viewed", loadedId);
+  }, [loadedId]);
+  useEffect(() => {
+    if (tab === "changes" && loadedId) track("changes_viewed", loadedId);
+  }, [tab, loadedId]);
 
   if (state.kind === "loading") return <ReportSkeleton />;
   if (state.kind === "error")

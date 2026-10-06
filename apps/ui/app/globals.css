@@ -4670,3 +4670,120 @@ pre.diff {
     animation: none;
   }
 }
+
+/* ==== YOUR USAGE (Settings) ====================================================== */
+.usage-pad {
+  padding: 0 20px 18px;
+}
+.usage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 20px 18px;
+}
+.usage-figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.usage-fig {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  background: var(--surface-1);
+  animation: enter-rise 380ms var(--ease-out) both;
+}
+.usage-fig:nth-child(2) { animation-delay: 40ms; }
+.usage-fig:nth-child(3) { animation-delay: 80ms; }
+.usage-fig:nth-child(4) { animation-delay: 120ms; }
+.usage-fig:nth-child(5) { animation-delay: 160ms; }
+.usage-fig:nth-child(6) { animation-delay: 200ms; }
+.usage-fig-n {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.usage-fig-n .muted {
+  font-size: 13px;
+  font-weight: 500;
+}
+.usage-fig-l {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.usage-days {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  gap: 3px;
+  height: 22px;
+}
+.usage-day {
+  border-radius: 4px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transform-origin: bottom;
+  animation: bar-in 420ms var(--ease-out) both;
+  animation-delay: calc(120ms + var(--i, 0) * 12ms);
+}
+.usage-day.on {
+  background: color-mix(in srgb, var(--accent) calc(var(--level, 0.4) * 100%), var(--surface-2));
+  box-shadow: none;
+}
+.usage-days-x {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.usage-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.usage-table td {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.usage-table th.num {
+  font-family: var(--sans);
+}
+.usage-table .num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  width: 110px;
+}
+.usage-table tr.unused td {
+  color: var(--text-muted);
+}
+.usage-card .set-note code {
+  font: 12px var(--mono);
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.usage-card .btn.ok {
+  color: var(--success);
+}
+@media (prefers-reduced-motion: reduce) {
+  .usage-fig,
+  .usage-day {
+    animation: none;
+  }
+}

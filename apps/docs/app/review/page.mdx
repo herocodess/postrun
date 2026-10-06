@@ -185,6 +185,7 @@ Everything in Settings applies to this computer only.
 | Notifications and updates | A desktop notification when a running session fails three steps in a row (once per streak); a daily check for a newer Postrun |
 | Appearance | System, dark or light theme, and an expanded or collapsed sidebar, remembered in this browser |
 | Storage | Where sessions are stored and how much space they use; how long raw logs are kept (a day, a week, 30 days or until deleted); **Save backup**; **Delete all data** |
+| Your usage | How often you use each feature, counted on this computer only and never sent: days active, sessions recorded, reviews, PR summaries, exports and searches, a 30-day activity strip, and **Copy summary** (the same text as `postrun stats`) |
 | About | Your version, and **Run checks**, the same checks as `postrun doctor` |
 
 Both notifications and the update check are off until you turn them on. The update check is the only time Postrun contacts the internet: once a day it asks the npm registry for the latest version number, and a banner appears at the top when a newer one is out.
@@ -235,6 +236,7 @@ The review app uses these routes, which you can also call from scripts on the sa
 | `GET /api/status` | Whether Postrun is recording, which agents are set up, storage use, settings and the update check. |
 | `GET /api/doctor` | The `postrun doctor` checks as JSON. |
 | `GET /api/backup` | A copy of the store, as a download. |
+| `GET /api/usage` | Local usage counts, and the same summary as plain text (`text`). |
 | `GET /api/events` | The [live events stream](/reference/events-api/). |
 | `DELETE /api/sessions/<id>` | Deletes the session (see above). |
 | `PUT /api/sessions/<id>/verdict` | `{ state, note? }` with `state` `approved`, `needs_attention` or `null` to clear. |
@@ -242,6 +244,7 @@ The review app uses these routes, which you can also call from scripts on the sa
 | `POST /api/recording` | `{ paused }` pauses or resumes recording. |
 | `POST /api/setup` | Runs setup again. |
 | `POST /api/data/delete` | `{ confirm: "delete everything" }` deletes every session. |
+| `POST /api/usage` | `{ event }` counts one use the page alone can see: `app_opened`, `session_viewed`, `pr_summary_copied`, `changes_viewed` or `keyboard_used`. Anything else is refused. |
 
 Routes that change something are only accepted from the review app itself: requests from another site get `403`, and a body must be JSON. `status`, `doctor`, `backup`, `settings`, `recording`, `setup` and `data/delete` need the background process, so they return `501` from the development server.
 

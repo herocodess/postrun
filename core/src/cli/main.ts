@@ -22,6 +22,7 @@ import { sessionDir } from "../capture/layout.js";
 import { configureClaudeCode, foreignTelemetry, readSettingsEnv, unconfigureClaudeCode } from "../capture/setup.js";
 import { exportSession } from "../export/index.js";
 import { PostrunStore } from "../store/store.js";
+import { formatUsage } from "../store/usage.js";
 import { ensurePrivateDir, PRIVATE_DIR_MODE } from "../util/files.js";
 import { VERSION } from "./assets.js";
 import { installHook } from "./hook.js";
@@ -318,6 +319,25 @@ function cmdSessions(argv: string[]): number {
   });
 }
 
+/**
+ * Local usage counts, as plain text to read or paste (or JSON with --json). Nothing is sent
+ * anywhere: this is how a person chooses to share how they use Postrun.
+ */
+function cmdStats(argv: string[]): number {
+  const a = parse(argv);
+  onlyFlags(a, ["json"]);
+  const p = paths();
+  if (!existsSync(p.db)) {
+    out("Nothing counted yet: run postrun setup, then use Postrun for a while.");
+    return 0;
+  }
+  return withStore(p, (store) => {
+    const u = store.usage({ version: VERSION, platform: `${process.platform} ${process.arch}` });
+    out(a.flags.has("json") ? JSON.stringify(u, null, 2) : `${formatUsage(u)}\n\nThese counts never leave this computer unless you paste them somewhere.`);
+    return 0;
+  });
+}
+
 function cmdExport(argv: string[]): number {
   const a = parse(argv, ["out"]);
   onlyFlags(a, ["out", "force"]);
@@ -483,6 +503,7 @@ Everyday
   open                 Open the review app in your browser
   sessions             List recorded sessions
   export <id>          Write a redacted HTML report of one session
+  stats                How you use Postrun: counts only, to read or share
   delete <id>          Delete one session for good
 
 Running
@@ -545,6 +566,8 @@ export async function main(argv: string[]): Promise<number> {
         return cmdSessions(rest);
       case "export":
         return cmdExport(rest);
+      case "stats":
+        return cmdStats(rest);
       case "delete":
         return cmdDelete(rest);
       case "doctor":

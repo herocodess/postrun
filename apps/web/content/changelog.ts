@@ -20,6 +20,16 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "See how you use Postrun",
+    summary: "Postrun counts how often you use each feature, on your computer only, and shows you.",
+    items: [
+      { kind: "new", text: "Settings has a Your usage card: days active, sessions recorded, reviews, PR summaries, exports and searches, with a 30-day activity strip." },
+      { kind: "new", text: "postrun stats prints the same summary as plain text, ready to paste. Copy summary in Settings does the same." },
+      { kind: "security", text: "Counts only: a day, a feature name and a number, never sessions, paths or text. Nothing is ever sent, and Delete all data clears them." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "A security pass",
     summary: "A full audit of Postrun, and fixes for everything it found, before accounts and sharing arrive.",
     items: [

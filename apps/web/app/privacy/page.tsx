@@ -30,6 +30,10 @@ export default function Privacy() {
           everything it stored is gone.
         </p>
         <p>
+          The app also counts how often you use its features (a day, a feature name and a number, never what your agents did), on your computer only. It never sends
+          them. You can see them in Settings or with <code>postrun stats</code>, and paste them to me if you choose.
+        </p>
+        <p>
           One optional exception: if you turn on <b>Check for new versions</b> in Settings (it is off until you do), the app asks the npm registry once a day for the latest
           Postrun version number. That request carries nothing about you or your sessions; npm sees your IP address, as with any download. Turn it off again in Settings.
         </p>

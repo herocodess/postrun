@@ -23,6 +23,12 @@ import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import type { Actor, AgentInfo, Flag, SessionSegment, Step, Turn, Verdict, Workspace } from "../schema/index.js";
 import { RISK_KINDS, RISK_RULES_VERSION, withRiskFlags } from "../report/risk.js";
+import { isUsageEvent, USAGE_EVENTS, USAGE_KEEP_DAYS, type UsageEvent, type UsageSummary } from "./usage.js";
+
+/** YYYY-MM-DD in this machine's time zone: a "day" of use is the user's day, not UTC's. */
+function localDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 import type { IngestResult, SessionBatch, SessionMetrics, SessionRecord, SessionRefs, SessionSummary, StoreCounts, StoredSession } from "./types.js";
 
 export const LOCAL_OWNER_ID = "local";
@@ -146,6 +152,13 @@ CREATE TABLE IF NOT EXISTS deleted_sessions (
   deleted_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS steps_session_turn ON steps(session_id, turn_id, seq);
+-- Local feature counts (see usage.ts): a day, an event name from a fixed list, a number. Never content.
+CREATE TABLE IF NOT EXISTS usage_daily (
+  day   TEXT NOT NULL,
+  event TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  PRIMARY KEY (day, event)
+);
 `;
 
 /** Indexes on columns that version 1 stores gain by ALTER TABLE, so they run after the upgrade. */
@@ -1099,7 +1112,7 @@ export class PostrunStore {
     this.db.transaction(() => {
       // Remembered as deleted, as one-by-one deletes are, so an agent's own copy (Cline's task store) is not read back in.
       this.db.prepare("INSERT OR REPLACE INTO deleted_sessions (id, agent_kind, deleted_at) SELECT id, agent_kind, ? FROM sessions").run(new Date().toISOString());
-      for (const t of ["steps", "turns", "actors", "segments", "sessions"]) this.db.exec(`DELETE FROM ${t}`);
+      for (const t of ["steps", "turns", "actors", "segments", "sessions", "usage_daily"]) this.db.exec(`DELETE FROM ${t}`);
     })();
     try {
       this.db.exec("INSERT INTO steps_fts (steps_fts) VALUES ('optimize')");
@@ -1108,6 +1121,56 @@ export class PostrunStore {
       // another connection is busy; the content is already overwritten
     }
     return n;
+  }
+
+  // ---- local usage counts ---------------------------------------------------
+
+  /** Count one use of a feature today (local time). Unknown event names are ignored, never stored. */
+  countUsage(event: string, now = new Date()): void {
+    if (!isUsageEvent(event)) return;
+    const day = localDay(now);
+    this.db
+      .prepare("INSERT INTO usage_daily (day, event, count) VALUES (?, ?, 1) ON CONFLICT(day, event) DO UPDATE SET count = count + 1")
+      .run(day, event);
+    const cutoff = localDay(new Date(now.getTime() - USAGE_KEEP_DAYS * 86_400_000));
+    this.db.prepare("DELETE FROM usage_daily WHERE day < ?").run(cutoff);
+  }
+
+  /** What `postrun stats` and Settings show: counts per feature, active days, and session totals. */
+  usage(meta: { version: string; platform: string }, now = new Date()): UsageSummary {
+    const from = localDay(new Date(now.getTime() - 29 * 86_400_000));
+    const rows = this.db.prepare("SELECT day, event, count FROM usage_daily").all() as Array<{ day: string; event: string; count: number }>;
+    const events = Object.fromEntries((Object.keys(USAGE_EVENTS) as UsageEvent[]).map((e) => [e, { total: 0, last_30: 0 }])) as UsageSummary["events"];
+    const byDay = new Map<string, { opened: boolean; actions: number }>();
+    let since: string | undefined;
+    for (const r of rows) {
+      if (!isUsageEvent(r.event)) continue;
+      events[r.event].total += r.count;
+      if (!since || r.day < since) since = r.day;
+      if (r.day < from) continue;
+      events[r.event].last_30 += r.count;
+      const d = byDay.get(r.day) ?? { opened: false, actions: 0 };
+      if (r.event === "app_opened") d.opened = true;
+      else d.actions += r.count;
+      byDay.set(r.day, d);
+    }
+    const daily: UsageSummary["daily"] = [];
+    for (let i = 29; i >= 0; i--) {
+      const day = localDay(new Date(now.getTime() - i * 86_400_000));
+      daily.push({ day, ...(byDay.get(day) ?? { opened: false, actions: 0 }) });
+    }
+    const agents = this.db.prepare("SELECT agent_kind AS k, count(*) AS n, min(started_at) AS first FROM sessions GROUP BY agent_kind").all() as Array<{ k: string; n: number; first: string }>;
+    const recent = (this.db.prepare("SELECT count(*) AS n FROM sessions WHERE started_at >= ?").get(new Date(now.getTime() - 30 * 86_400_000).toISOString()) as { n: number }).n;
+    const firstAt = agents.map((a) => a.first).sort()[0];
+    return {
+      ...(since ? { since } : {}),
+      days_active_30: daily.filter((d) => d.opened).length,
+      events,
+      daily,
+      sessions: { total: agents.reduce((n, a) => n + a.n, 0), by_agent: Object.fromEntries(agents.map((a) => [a.k, a.n])), ...(firstAt ? { first_at: firstAt } : {}), last_30: recent },
+      version: meta.version,
+      platform: meta.platform,
+    };
   }
 
   /** Write a consistent copy of the whole store to `path`, which must not exist yet. */

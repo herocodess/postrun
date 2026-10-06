@@ -112,6 +112,10 @@ export const api = {
   status(): string {
     return "/api/status";
   },
+  /** Local usage counts. The demo has a fixed example. */
+  usage(): string {
+    return DEMO ? `${BASE}/data/usage.json` : "/api/usage";
+  },
   doctor(): string {
     return "/api/doctor";
   },

@@ -95,7 +95,11 @@ Nothing is rate limited, because neither listener is reachable from the network.
 
 ## What never leaves your machine
 
-Postrun has no telemetry and never phones home. The recorder, the store and the review app all run locally. Nothing leaves your machine unless you export a session yourself, one session at a time.
+Postrun has no telemetry and never phones home. The recorder, the store and the review app all run locally. Nothing leaves your machine unless you export a session yourself, one session at a time. The one optional exception is **Check for new versions** in Settings, off until you turn it on, which asks the npm registry for the latest version number once a day.
+
+### Your usage counts
+
+Postrun counts how often you use its features (opening the app, marking a review, copying a PR summary, exporting, searching and a few more) in a `usage_daily` table in the store: a day, a feature name from a fixed list, and a number. Nothing else: no session ids, paths or text. The counts are never sent anywhere. **Settings → Your usage** and `postrun stats` show them, so you can share a summary if you choose. Days older than about 13 months are dropped, and **Delete all data** clears them.
 
 ## Sharing on purpose
 

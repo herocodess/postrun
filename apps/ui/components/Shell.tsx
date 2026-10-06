@@ -13,6 +13,7 @@ import { DEMO, hasKey, LOCKED_EVENT, scrubKeyFromAddress } from "@/lib/api";
 import { useLiveStatus, useLiveVersion } from "@/lib/live";
 import { CountUp } from "@/lib/motion";
 import { useSidebar } from "@/lib/sidebar";
+import { track } from "@/lib/usage";
 import { ago, useStatus } from "@/lib/status";
 
 const NAV = [
@@ -227,6 +228,7 @@ export function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (DEMO) return;
     scrubKeyFromAddress();
+    if (hasKey()) track("app_opened", "load");
     const later = window.setTimeout(scrubKeyFromAddress, 0);
     if (!hasKey()) setLocked(true);
     const on = () => setLocked(true);

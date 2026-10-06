@@ -34,6 +34,11 @@ import type { Actor, SessionSegment, Step, Turn, ValidationError } from "../sche
 export type { LiveChange } from "./live.js";
 import type { RedactionReport } from "../redact/redact.js";
 export type { RedactionReport, Finding, SecretKind } from "../redact/redact.js";
+import type { UsageSummary } from "../store/usage.js";
+export type { UsageEvent, UsageSummary } from "../store/usage.js";
+
+/** GET /api/usage: local feature counts, and the same summary as plain text (what postrun stats prints). */
+export type UsageResponse = UsageSummary & { text: string };
 import type { IngestResult, SessionHeader, SessionSummary, StoredSession } from "../store/types.js";
 import type { ProjectSummary } from "../store/store.js";
 export type { Dashboard, DashboardTotals, ProjectSummary } from "../store/store.js";

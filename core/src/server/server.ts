@@ -48,11 +48,13 @@ import type {
   SessionDetailResponse,
   SessionListResponse,
   StepResponse,
+  UsageResponse,
 } from "./api.js";
 import { previewStep } from "./preview.js";
 import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
 import { LiveFeed, SSE_HEADERS, type LiveFeedOptions } from "./live.js";
 import { bearerMatches, loadOrCreateToken } from "./token.js";
+import { CLIENT_USAGE_EVENTS, formatUsage, isUsageEvent, type UsageEvent } from "../store/usage.js";
 import { pipeline } from "node:stream";
 
 /**
@@ -196,6 +198,15 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+/** Count a feature use locally. Counting must never fail a request. */
+function count(ctx: Ctx, event: UsageEvent): void {
+  try {
+    ctx.store.countUsage(event);
+  } catch {
+    // a busy store skips one count; nothing else depends on it
+  }
+}
+
 /** The key as a bearer header, or as ?key= for downloads and the live stream. Compared in constant time. */
 function hasKey(req: IncomingMessage, url: URL, token: string): boolean {
   if (bearerMatches(req.headers.authorization, token)) return true;
@@ -323,6 +334,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
     let page;
     try {
       page = store.querySessions(query);
+      // One search per query typed, not per page of results.
+      if (query.q && !query.cursor) count(ctx, "search");
     } catch (err) {
       if (err instanceof BadCursorError) {
         json(res, 400, { error: "invalid cursor" } satisfies ApiError);
@@ -397,6 +410,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
       return;
     }
     const html = Buffer.from(result.html, "utf8");
+    if (method === "GET") count(ctx, "report_exported");
     res.writeHead(200, {
       ...BASE_HEADERS,
       "content-type": "text/html; charset=utf-8",
@@ -657,7 +671,7 @@ const noControl = (res: ServerResponse) =>
 /** PUT and POST routes of the review app. Returns false when the path is not one of them. */
 async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: URL, method: string, ctx: Ctx): Promise<boolean> {
   const verdict = /^\/api\/sessions\/([^/]+)\/verdict$/.exec(url.pathname);
-  const routes = ["/api/settings", "/api/recording", "/api/setup", "/api/data/delete"];
+  const routes = ["/api/settings", "/api/recording", "/api/setup", "/api/data/delete", "/api/usage"];
   if (!verdict && !routes.includes(url.pathname)) return false;
   const want = verdict || url.pathname === "/api/settings" ? "PUT" : "POST";
   if (method !== want) {
@@ -681,6 +695,18 @@ async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: UR
     return true;
   }
 
+  if (url.pathname === "/api/usage") {
+    // Only the uses the page alone can see; the rest are counted by the server as they happen.
+    const event = body["event"];
+    if (!isUsageEvent(event) || !CLIENT_USAGE_EVENTS.includes(event)) {
+      json(res, 400, { error: `event must be one of ${CLIENT_USAGE_EVENTS.join(", ")}` } satisfies ApiError);
+      return true;
+    }
+    count(ctx, event);
+    res.writeHead(204, BASE_HEADERS).end();
+    return true;
+  }
+
   if (verdict) {
     const id = decodeURIComponent(verdict[1] as string);
     const state = body["state"];
@@ -694,6 +720,7 @@ async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: UR
       return true;
     }
     ctx.live.nudge();
+    if (state !== null) count(ctx, "review_marked");
     const v = ctx.store.getSessionShell(id)?.summary.verdict;
     json(res, 200, { id, verdict: v ? { state: v.state, ...(v.note ? { note: v.note } : {}) } : null } satisfies VerdictResponse);
     return true;
@@ -763,6 +790,11 @@ async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL
       json(res, 200, { root, files: store.projectFiles(root) } satisfies ProjectFilesResponse);
       return true;
     }
+    case "/api/usage": {
+      const summary = store.usage({ version: String(ctx.health["version"] ?? "dev"), platform: `${process.platform} ${process.arch}` });
+      json(res, 200, { ...summary, text: formatUsage(summary) } satisfies UsageResponse);
+      return true;
+    }
     case "/api/export": {
       const ids = [...new Set((url.searchParams.get("ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean))].slice(0, 100);
       if (ids.length === 0) {
@@ -786,6 +818,7 @@ async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL
         return true;
       }
       const body = zip(entries);
+      if (method === "GET") count(ctx, "reports_zipped");
       res.writeHead(200, {
         ...BASE_HEADERS,
         "content-type": "application/zip",
@@ -832,6 +865,7 @@ async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL
           res.end();
           cleanUp();
         } else {
+          count(ctx, "backup_saved");
           pipeline(createReadStream(file), res, cleanUp);
         }
       }
