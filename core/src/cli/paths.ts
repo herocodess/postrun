@@ -51,9 +51,15 @@ export interface Config {
   otlpPort: number;
   /** False when the user already sends Claude Code telemetry elsewhere: record from hooks only. */
   telemetry: boolean;
+  /** Hours a quiet session's raw logs are kept; 0 keeps them. */
+  rawLogHours: number;
+  /** Desktop notification when a running session fails several steps in a row. */
+  notifyFailures: boolean;
+  /** Check npm once a day for a newer version. Off unless the user turns it on. */
+  updateCheck: boolean;
 }
 
-export const DEFAULT_CONFIG: Config = { port: DEFAULT_PORT, otlpPort: DEFAULT_OTLP_PORT, telemetry: true };
+export const DEFAULT_CONFIG: Config = { port: DEFAULT_PORT, otlpPort: DEFAULT_OTLP_PORT, telemetry: true, rawLogHours: 24, notifyFailures: false, updateCheck: false };
 
 function validPort(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 65535;
@@ -70,6 +76,10 @@ export function readConfig(p: Paths): Config {
     port: validPort(raw["port"]) ? raw["port"] : DEFAULT_CONFIG.port,
     otlpPort: validPort(raw["otlpPort"]) ? raw["otlpPort"] : DEFAULT_CONFIG.otlpPort,
     telemetry: typeof raw["telemetry"] === "boolean" ? raw["telemetry"] : DEFAULT_CONFIG.telemetry,
+    rawLogHours:
+      typeof raw["rawLogHours"] === "number" && Number.isInteger(raw["rawLogHours"]) && raw["rawLogHours"] >= 0 ? raw["rawLogHours"] : DEFAULT_CONFIG.rawLogHours,
+    notifyFailures: typeof raw["notifyFailures"] === "boolean" ? raw["notifyFailures"] : DEFAULT_CONFIG.notifyFailures,
+    updateCheck: typeof raw["updateCheck"] === "boolean" ? raw["updateCheck"] : DEFAULT_CONFIG.updateCheck,
   };
 }
 

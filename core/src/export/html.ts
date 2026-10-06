@@ -211,7 +211,7 @@ function stepBody(s: Step): string {
     }
     case "other": {
       const p = s.payload;
-      return `<div class="kv">tool <span class="mono">${esc(p.tool_name)}</span></div>${Object.keys(p.raw).length ? `<pre class="code scroll">${esc(JSON.stringify(p.raw, null, 2))}</pre>` : ""}`;
+      return `<div class="kv">tool <span class="mono">${esc(p.tool_name)}</span></div>${Object.keys(p.raw ?? {}).length ? `<pre class="code scroll">${esc(JSON.stringify(p.raw, null, 2))}</pre>` : ""}`;
     }
   }
 }

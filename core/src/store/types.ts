@@ -53,6 +53,8 @@ export interface SessionSummary {
    * step in that slice failed. Empty for a session with no steps.
    */
   strip: string;
+  /** The git branch the working folder was on when the session was first recorded. */
+  git_branch?: string;
   failed_count: number;
   reference_only_count: number;
   flag_count: number;

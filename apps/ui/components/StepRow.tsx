@@ -196,7 +196,7 @@ function Content({ step }: { step: Step }) {
     }
     case "other": {
       const p = step.payload;
-      const raw = Object.keys(p.raw).length ? JSON.stringify(p.raw, null, 2) : "";
+      const raw = Object.keys(p.raw ?? {}).length ? JSON.stringify(p.raw, null, 2) : "";
       return (
         <>
           <div className="sb-kv">

@@ -20,7 +20,8 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -29,9 +30,17 @@ import { sessionReport } from "../report/index.js";
 import { isSafeId, sessionDir } from "../capture/layout.js";
 import { BadCursorError, DeletedSessionError, MAX_PAGE, PostrunStore, type SessionQuery } from "../store/index.js";
 import { isLoopbackHost } from "../util/host.js";
+import { zip } from "../util/zip.js";
 import type {
   ApiError,
+  AppControl,
+  AppSettings,
+  DeleteAllResponse,
   DeleteSessionResponse,
+  DoctorResponse,
+  ProjectFilesResponse,
+  ProjectsResponse,
+  VerdictResponse,
   ExportReviewResponse,
   IngestErrorResponse,
   IngestResponse,
@@ -72,6 +81,8 @@ export interface ServerOptions {
   captureDir?: string;
   /** Extra fields for GET /api/health, such as the version and pid of the background process. */
   health?: Record<string, unknown>;
+  /** Status, settings and maintenance, provided by the background process. Without it those routes answer 501. */
+  control?: AppControl;
 }
 
 export interface PostrunServer {
@@ -115,7 +126,7 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
 
   const server = createServer((req, res) => {
     Promise.resolve()
-      .then(() => handle(req, res, { store, uiRoot, ingestToken, live, captureDir, health: opts.health ?? {} }))
+      .then(() => handle(req, res, { store, uiRoot, ingestToken, live, captureDir, health: opts.health ?? {}, ...(opts.control ? { control: opts.control } : {}) }))
       .catch((err: unknown) => {
         // Never echo internal error text (paths, SQL) to the client.
         process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
@@ -177,6 +188,7 @@ interface Ctx {
   live: LiveFeed;
   captureDir: string;
   health: Record<string, unknown>;
+  control?: AppControl;
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Promise<void> {
@@ -238,10 +250,17 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
     return;
   }
 
+  // The app's own writes: same origin only, JSON bodies only (so a cross-site page cannot send one without a preflight).
+  if (method === "PUT" || method === "POST") {
+    if (await handleAppWrite(req, res, url, method, ctx)) return;
+  }
+
   if (method !== "GET" && method !== "HEAD") {
     text(res, 405, "method not allowed\n", { allow: del ? "GET, HEAD, DELETE" : "GET, HEAD" });
     return;
   }
+
+  if (await handleAppRead(req, res, url, method, ctx)) return;
 
   if (url.pathname === "/api/events") {
     const session = url.searchParams.get("session") ?? undefined;
@@ -568,5 +587,206 @@ export function sessionQuery(p: URLSearchParams): SessionQuery {
   if (limit !== undefined) q.limit = limit;
   const cursor = str("cursor");
   if (cursor) q.cursor = cursor;
+  const workspace = str("workspace");
+  if (workspace) q.workspace = workspace;
+  const verdict = str("verdict");
+  if (verdict !== undefined) {
+    if (verdict !== "none" && verdict !== "approved" && verdict !== "needs_attention") throw new Error('verdict must be "none", "approved" or "needs_attention"');
+    q.verdict = verdict;
+  }
+  if (str("flagged") === "1") q.flagged = true;
+  if (str("in_steps") === "0") q.inSteps = false;
   return q;
+}
+
+const JSON_BODY_LIMIT = 64 * 1024;
+
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | "too_large" | "bad"> {
+  const type = (req.headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase();
+  if (type !== "application/json") return "bad";
+  const body = await readBody(req, JSON_BODY_LIMIT);
+  if (body === "too_large") return "too_large";
+  try {
+    const v = JSON.parse(body.length ? body.toString("utf8") : "{}") as unknown;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : "bad";
+  } catch {
+    return "bad";
+  }
+}
+
+const noControl = (res: ServerResponse) =>
+  json(res, 501, { error: "not available here: start Postrun with postrun start to change settings and see its status" } satisfies ApiError);
+
+/** PUT and POST routes of the review app. Returns false when the path is not one of them. */
+async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: URL, method: string, ctx: Ctx): Promise<boolean> {
+  const verdict = /^\/api\/sessions\/([^/]+)\/verdict$/.exec(url.pathname);
+  const routes = ["/api/settings", "/api/recording", "/api/setup", "/api/data/delete"];
+  if (!verdict && !routes.includes(url.pathname)) return false;
+  const want = verdict || url.pathname === "/api/settings" ? "PUT" : "POST";
+  if (method !== want) {
+    text(res, 405, "method not allowed\n", { allow: want });
+    return true;
+  }
+  if (!sameOrigin(req)) {
+    json(res, 403, { error: "cross-site request refused" } satisfies ApiError);
+    return true;
+  }
+  const body = await readJson(req);
+  if (body === "too_large") {
+    json(res, 413, { error: "body too large" } satisfies ApiError);
+    return true;
+  }
+  if (body === "bad") {
+    json(res, 415, { error: "send a JSON object with content-type application/json" } satisfies ApiError);
+    return true;
+  }
+
+  if (verdict) {
+    const id = decodeURIComponent(verdict[1] as string);
+    const state = body["state"];
+    if (state !== null && state !== "approved" && state !== "needs_attention") {
+      json(res, 400, { error: 'state must be "approved", "needs_attention" or null' } satisfies ApiError);
+      return true;
+    }
+    const note = typeof body["note"] === "string" ? body["note"] : undefined;
+    if (!ctx.store.setVerdict(id, state, note)) {
+      json(res, 404, { error: `session ${id} not found` } satisfies ApiError);
+      return true;
+    }
+    ctx.live.nudge();
+    const v = ctx.store.getSessionShell(id)?.summary.verdict;
+    json(res, 200, { id, verdict: v ? { state: v.state, ...(v.note ? { note: v.note } : {}) } : null } satisfies VerdictResponse);
+    return true;
+  }
+
+  const control = ctx.control;
+  if (!control) {
+    noControl(res);
+    return true;
+  }
+  try {
+    if (url.pathname === "/api/settings") {
+      const patch: Partial<AppSettings> = {};
+      if (typeof body["autostart"] === "boolean") patch.autostart = body["autostart"];
+      if (typeof body["notify_failures"] === "boolean") patch.notify_failures = body["notify_failures"];
+      if (typeof body["update_check"] === "boolean") patch.update_check = body["update_check"];
+      if (body["raw_log_hours"] !== undefined) {
+        const h = body["raw_log_hours"];
+        if (typeof h !== "number" || !Number.isInteger(h) || h < 0 || h > 24 * 365) {
+          json(res, 400, { error: "raw_log_hours must be a whole number of hours, 0 to keep them" } satisfies ApiError);
+          return true;
+        }
+        patch.raw_log_hours = h;
+      }
+      json(res, 200, await control.updateSettings(patch));
+    } else if (url.pathname === "/api/recording") {
+      if (typeof body["paused"] !== "boolean") {
+        json(res, 400, { error: "paused must be true or false" } satisfies ApiError);
+        return true;
+      }
+      json(res, 200, await control.setPaused(body["paused"]));
+    } else if (url.pathname === "/api/setup") {
+      json(res, 200, await control.runSetup());
+    } else {
+      if (body["confirm"] !== "delete everything") {
+        json(res, 400, { error: 'send { "confirm": "delete everything" } to delete every recorded session' } satisfies ApiError);
+        return true;
+      }
+      const r = await control.deleteAll();
+      ctx.live.nudge();
+      json(res, 200, r satisfies DeleteAllResponse);
+    }
+  } catch (err) {
+    json(res, 500, { error: (err as Error).message } satisfies ApiError);
+  }
+  return true;
+}
+
+/** GET routes of the review app beyond sessions. Returns false when the path is not one of them. */
+async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL, method: string, ctx: Ctx): Promise<boolean> {
+  const { store } = ctx;
+  switch (url.pathname) {
+    case "/api/dashboard": {
+      const days = Number(url.searchParams.get("days") ?? "7");
+      if (![1, 7, 30, 90].includes(days)) {
+        json(res, 400, { error: "days must be 1, 7, 30 or 90" } satisfies ApiError);
+        return true;
+      }
+      json(res, 200, store.dashboard(days));
+      return true;
+    }
+    case "/api/projects":
+      json(res, 200, { projects: store.projects() } satisfies ProjectsResponse);
+      return true;
+    case "/api/projects/files": {
+      const root = url.searchParams.get("root") ?? "";
+      json(res, 200, { root, files: store.projectFiles(root) } satisfies ProjectFilesResponse);
+      return true;
+    }
+    case "/api/export": {
+      const ids = [...new Set((url.searchParams.get("ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean))].slice(0, 100);
+      if (ids.length === 0) {
+        json(res, 400, { error: "ids must list one or more session ids, separated by commas" } satisfies ApiError);
+        return true;
+      }
+      const entries = [];
+      for (const id of ids) {
+        const session = store.getSession(id);
+        if (!session) continue;
+        const r = exportSession(session);
+        entries.push({ name: r.filename, data: Buffer.from(r.html, "utf8") });
+      }
+      if (entries.length === 0) {
+        json(res, 404, { error: "none of those sessions were found" } satisfies ApiError);
+        return true;
+      }
+      const body = zip(entries);
+      res.writeHead(200, {
+        ...BASE_HEADERS,
+        "content-type": "application/zip",
+        "content-length": body.byteLength,
+        "content-disposition": `attachment; filename="postrun-${entries.length}-sessions-${new Date().toISOString().slice(0, 10)}.zip"`,
+      });
+      res.end(method === "HEAD" ? undefined : body);
+      return true;
+    }
+    case "/api/status":
+    case "/api/doctor":
+    case "/api/backup": {
+      const control = ctx.control;
+      if (!control) {
+        noControl(res);
+        return true;
+      }
+      if (url.pathname === "/api/status") json(res, 200, await control.status());
+      else if (url.pathname === "/api/doctor") json(res, 200, { checks: await control.doctor() } satisfies DoctorResponse);
+      else {
+        // A consistent copy of the store, streamed, then removed. It is the unredacted store: same origin only.
+        if (!sameOrigin(req)) {
+          json(res, 403, { error: "cross-site request refused" } satisfies ApiError);
+          return true;
+        }
+        const dir = mkdtempSync(join(tmpdir(), "postrun-backup-"));
+        const file = join(dir, "postrun-backup.db");
+        store.backupTo(file);
+        res.writeHead(200, {
+          ...BASE_HEADERS,
+          "content-type": "application/vnd.sqlite3",
+          "content-length": statSync(file).size,
+          "content-disposition": `attachment; filename="postrun-backup-${new Date().toISOString().slice(0, 10)}.db"`,
+        });
+        if (method === "HEAD") {
+          res.end();
+          rmSync(dir, { recursive: true, force: true });
+        } else {
+          const stream = createReadStream(file);
+          stream.pipe(res);
+          stream.on("close", () => rmSync(dir, { recursive: true, force: true }));
+        }
+      }
+      return true;
+    }
+    default:
+      return false;
+  }
 }

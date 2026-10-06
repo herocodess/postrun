@@ -18,6 +18,8 @@ import { PostrunStore } from "../store/store.js";
 import { ensurePrivateDir, ensurePrivateFile, PRIVATE_FILE_MODE } from "../util/files.js";
 import { uiDir, VERSION } from "./assets.js";
 import { readConfig, type Paths } from "./paths.js";
+import { createControl, gitBranch, type Recorder } from "./control.js";
+import type { IngestResult } from "../store/types.js";
 
 const LOG_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -121,7 +123,59 @@ export async function run(p: Paths): Promise<number> {
   }
 
   const store = new PostrunStore({ path: p.db });
-  const healthInfo: Record<string, unknown> = { version: VERSION, pid: process.pid, telemetry: config.telemetry ? "starting" : "off (hooks only)", catching_up: true };
+  const healthInfo: Record<string, unknown> = { version: VERSION, pid: process.pid, telemetry: config.telemetry ? "starting" : "off (hooks only)", catching_up: true, paused: false };
+
+  // Recording: both watchers, which can be paused, resumed and restarted with new settings.
+  let cc: ReturnType<typeof createClaudeCodeWatcher> | undefined;
+  let cline: ReturnType<typeof createClineWatcher> | undefined;
+  let paused = false;
+  let control: ReturnType<typeof createControl> | undefined;
+  const afterIngest = (result: IngestResult) => {
+    if (result.created) {
+      // The branch the project is on as the session starts, read once.
+      const root = store.getSessionShell(result.session_id)?.summary.workspace.root ?? "";
+      const branch = gitBranch(root);
+      if (branch) store.setGitBranch(result.session_id, branch);
+    }
+    control?.onFailures(result.session_id);
+  };
+  const startWatchers = () => {
+    const hours = readConfig(p).rawLogHours;
+    cc = createClaudeCodeWatcher({ captureDir: p.captures, store, log, retainMs: hours > 0 ? hours * 3_600_000 : Infinity, onIngest: afterIngest });
+    cline = createClineWatcher({ sessionsDir: p.clineSessions, store, log, onIngest: afterIngest });
+    cc.start();
+    cline.start();
+  };
+  const stopWatchers = () => {
+    cc?.stop();
+    cline?.stop();
+    cc = cline = undefined;
+  };
+  const recorder: Recorder = {
+    since: new Date().toISOString(),
+    health: healthInfo,
+    paused: () => paused,
+    pause() {
+      paused = true;
+      healthInfo["paused"] = true;
+      stopWatchers();
+      log("recording paused from the review app");
+    },
+    resume() {
+      paused = false;
+      healthInfo["paused"] = false;
+      startWatchers();
+      recorder.since = new Date().toISOString();
+      log("recording resumed; caught up on anything written while paused");
+    },
+    restart() {
+      stopWatchers();
+      startWatchers();
+      log("recording restarted with new settings");
+    },
+  };
+  control = createControl({ paths: p, store, recorder, log, port: config.port });
+
   const app = createPostrunServer({
     port: config.port,
     store,
@@ -129,6 +183,7 @@ export async function run(p: Paths): Promise<number> {
     captureDir: p.captures,
     ingestToken: loadOrCreateToken(p.token),
     health: healthInfo,
+    control,
   });
   try {
     await app.start();
@@ -154,17 +209,15 @@ export async function run(p: Paths): Promise<number> {
       log(`telemetry receiver NOT running (${(err as Error).message}); recording from hooks only. Run: postrun doctor`);
     }
   }
-
-  const cc = createClaudeCodeWatcher({ captureDir: p.captures, store, log });
-  const cline = createClineWatcher({ sessionsDir: p.clineSessions, store, log });
+  if (config.updateCheck) control.startUpdateChecks();
 
   let stopping = false;
   const shutdown = (signal: string) => {
     if (stopping) return;
     stopping = true;
     log(`stopping (${signal})`);
-    cc.stop();
-    cline.stop();
+    stopWatchers();
+    control?.stopUpdateChecks();
     const pidNow = readPid(p);
     if (pidNow?.pid === process.pid) rmSync(p.pid, { force: true });
     void Promise.allSettled([receiver?.stop(), app.stop()]).finally(() => {
@@ -182,8 +235,7 @@ export async function run(p: Paths): Promise<number> {
   // Catch up after the review app is listening, so `start` can report success straight away.
   setImmediate(() => {
     const t = Date.now();
-    cc.start();
-    cline.start();
+    startWatchers();
     healthInfo["catching_up"] = false;
     log(`caught up in ${Date.now() - t} ms; recording`);
   });

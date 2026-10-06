@@ -12,6 +12,21 @@
  *   GET /api/events[?session=<id>]     -> text/event-stream of LiveChange (see live.ts)
  *   GET /api/sessions/:id/export        -> redacted HTML report, as a download
  *   GET /api/sessions/:id/export/review -> ExportReviewResponse
+ *   PUT /api/sessions/:id/verdict  VerdictRequest -> VerdictResponse (same origin only)
+ *   GET /api/dashboard?days=1|7|30      -> Dashboard
+ *   GET /api/projects                   -> ProjectsResponse
+ *   GET /api/projects/files?root=       -> ProjectFilesResponse
+ *   GET /api/export?ids=a,b             -> zip of redacted HTML reports, as a download
+ *
+ * With the background process (postrun start), also:
+ *   GET /api/status                     -> AppStatus
+ *   GET /api/doctor                     -> DoctorResponse
+ *   PUT /api/settings  Partial<AppSettings> -> AppStatus (same origin only)
+ *   POST /api/recording { paused }      -> AppStatus (same origin only)
+ *   POST /api/setup                     -> SetupResponse (same origin only)
+ *   GET /api/backup                     -> the whole store as one SQLite file, as a download
+ *   POST /api/data/delete { confirm: "delete everything" } -> DeleteAllResponse (same origin only)
+ * Without it (a plain dev server), those answer 501.
  */
 
 import type { SessionReport } from "../report/index.js";
@@ -20,6 +35,8 @@ export type { LiveChange } from "./live.js";
 import type { RedactionReport } from "../redact/redact.js";
 export type { RedactionReport, Finding, SecretKind } from "../redact/redact.js";
 import type { IngestResult, SessionHeader, SessionSummary, StoredSession } from "../store/types.js";
+import type { ProjectSummary } from "../store/store.js";
+export type { Dashboard, DashboardTotals, ProjectSummary } from "../store/store.js";
 
 export interface SessionListResponse {
   sessions: SessionSummary[];
@@ -33,6 +50,84 @@ export interface SessionListResponse {
   empty_count: number;
   /** Present when there is another page: pass it as ?cursor= with the same filters. */
   next_cursor?: string;
+  /** With a search of 3+ characters: where it matched inside a session's steps (\u0001 and \u0002 mark the match). */
+  matches?: Record<string, { seq: number; text: string }>;
+}
+
+export interface VerdictRequest {
+  /** "approved" shows as Looks good, "needs_attention" as Needs follow-up; null clears the review. */
+  state: "approved" | "needs_attention" | null;
+  note?: string;
+}
+
+export interface VerdictResponse {
+  id: string;
+  verdict: { state: string; note?: string } | null;
+}
+
+export interface ProjectsResponse {
+  projects: ProjectSummary[];
+}
+
+export interface ProjectFilesResponse {
+  root: string;
+  files: Array<{ path: string; edits: number; reads: number; sessions: number }>;
+}
+
+/** Settings the review app can change. Stored in ~/.postrun/config.json. */
+export interface AppSettings {
+  /** Start Postrun when you log in (launchd or systemd). */
+  autostart: boolean;
+  /** Hours to keep a quiet session's raw logs; 0 keeps them. */
+  raw_log_hours: number;
+  /** A desktop notification when a running session fails several steps in a row. */
+  notify_failures: boolean;
+  /** Check npm once a day for a newer Postrun. The only network call Postrun makes, and only when on. */
+  update_check: boolean;
+}
+
+export interface AppStatus {
+  version: string;
+  pid: number;
+  recording: { paused: boolean; since: string; last_activity?: string; telemetry: string; catching_up: boolean };
+  agents: {
+    claude_code: { found: boolean; configured: boolean; mode: "telemetry" | "hooks only"; settings_path: string; last_activity?: string };
+    cline: { found: boolean; dir: string };
+  };
+  storage: { home: string; total_bytes: number; store_bytes: number; raw_bytes: number; sessions: number };
+  autostart: { supported: boolean; reason?: string };
+  settings: AppSettings;
+  update?: { current: string; latest: string; newer: boolean; checked_at: string };
+  address: string;
+}
+
+export interface DoctorCheck {
+  level: "ok" | "info" | "warn" | "fail";
+  title: string;
+  detail?: string;
+  fix?: string;
+}
+
+export interface DoctorResponse {
+  checks: DoctorCheck[];
+}
+
+export interface SetupResponse {
+  summary: string;
+}
+
+export interface DeleteAllResponse {
+  deleted: number;
+}
+
+/** What the background process provides to the server for the app's own routes. */
+export interface AppControl {
+  status(): Promise<AppStatus>;
+  doctor(): Promise<DoctorCheck[]>;
+  updateSettings(patch: Partial<AppSettings>): Promise<AppStatus>;
+  setPaused(paused: boolean): Promise<AppStatus>;
+  runSetup(): Promise<SetupResponse>;
+  deleteAll(): Promise<DeleteAllResponse>;
 }
 
 /**

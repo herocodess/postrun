@@ -20,7 +20,7 @@ for (let i = 0; i < Number(process.argv[3] ?? 26); i++) {
     const type = k === 0 ? "message" : x < 0.38 ? "command" : x < 0.58 ? "edit" : x < 0.78 ? "read" : x < 0.9 ? "message" : "other";
     const failed = type === "command" && rand() < 0.12;
     steps.push({ id: `s${k}`, session_id: id, segment_index: 0, turn_id: "turn:1", actor_id: "root", seq: k + 1, at, type, decision: "auto", outcome: failed ? "failed" : "ok", content_status: "inline", channels: ["hook"], flags: [],
-      payload: type === "message" ? { role: k === 0 ? "user" : "assistant", text: k === 0 ? prompt : "ok" } : type === "command" ? { command: "pnpm test" } : type === "other" ? { tool_name: "WebFetch" } : { path: "/w/a.ts", ...(type === "edit" ? { is_full_write: false } : {}) } } as Step);
+      payload: type === "message" ? { role: k === 0 ? "user" : "assistant", text: k === 0 ? prompt : "ok" } : type === "command" ? { command: "pnpm test" } : type === "other" ? { tool_name: "WebFetch", raw: { url: "https://example.com" } } : { path: "/w/a.ts", ...(type === "edit" ? { is_full_write: false } : {}) } } as Step);
   }
   const cost = n ? Number((rand() * 2.4).toFixed(4)) : 0;
   store.ingest({ id, agent: { kind, version: kind === "cline" ? "4.1.17" : "2.1.30" }, workspace: { root: projects[i % projects.length]! }, started_at: at,

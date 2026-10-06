@@ -22,7 +22,8 @@ import { configureClaudeCode, foreignTelemetry, readSettingsEnv, unconfigureClau
 import { exportSession } from "../export/index.js";
 import { PostrunStore } from "../store/store.js";
 import { ensurePrivateDir, PRIVATE_DIR_MODE } from "../util/files.js";
-import { bundledHookScript, VERSION } from "./assets.js";
+import { VERSION } from "./assets.js";
+import { installHook } from "./hook.js";
 import { readPid, run, start, status, stop } from "./daemon.js";
 import { doctor, formatChecks, portFree } from "./doctor.js";
 import { paths, readConfig, writeConfig, type Paths } from "./paths.js";
@@ -96,18 +97,6 @@ function openBrowser(url: string): boolean {
 async function firstFreePort(from: number, tries = 20): Promise<number | undefined> {
   for (let port = from; port < from + tries && port <= 65535; port++) if (await portFree(port)) return port;
   return undefined;
-}
-
-/** Copy the hook script to ~/.postrun/bin, so updating or moving Postrun never breaks recording. */
-function installHook(p: Paths): void {
-  ensurePrivateDir(p.home);
-  mkdirSync(p.bin, { recursive: true, mode: PRIVATE_DIR_MODE });
-  chmodSync(p.bin, PRIVATE_DIR_MODE);
-  // Copy then rename: a hook firing during an update never sees half a file.
-  const tmp = `${p.hook}.tmp-${process.pid}`;
-  copyFileSync(bundledHookScript(), tmp);
-  chmodSync(tmp, 0o700);
-  renameSync(tmp, p.hook);
 }
 
 async function cmdSetup(argv: string[]): Promise<number> {

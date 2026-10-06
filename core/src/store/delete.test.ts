@@ -131,3 +131,22 @@ describe("deleting a session", () => {
     store.close();
   });
 });
+
+describe("deleting with the search index", () => {
+  it("leaves no copy of a deleted session's output in the search index", () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-del-fts-"));
+    const path = join(dir, "postrun.db");
+    const store = new PostrunStore({ path });
+    const other = record("other");
+    (other.steps[0] as { payload: { stdout: string } }).payload.stdout = "nothing secret here\n".repeat(50);
+    store.ingest(other);
+    store.ingest(record("gone"));
+    expect(store.querySessions({ q: SECRET.slice(0, 20) }).sessions.map((s) => s.id)).toEqual(["gone"]);
+    store.deleteSession("gone");
+    expect(store.querySessions({ q: SECRET.slice(0, 20) }).total).toBe(0);
+    store.close();
+    for (const f of [path, `${path}-wal`]) {
+      if (existsSync(f)) expect(readFileSync(f).includes(Buffer.from(SECRET)), f).toBe(false);
+    }
+  });
+});
