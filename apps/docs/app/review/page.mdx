@@ -188,7 +188,7 @@ Everything in Settings applies to this computer only.
 | Your usage | How often you use each feature, counted on this computer only and never sent: days active, sessions recorded, reviews, PR summaries, exports and searches, a 30-day activity strip, and **Copy summary** (the same text as `postrun stats`) |
 | About | Your version, and **Run checks**, the same checks as `postrun doctor` |
 
-Both notifications and the update check are off until you turn them on. The update check is the only time Postrun contacts the internet: once a day it asks the npm registry for the latest version number, and a banner appears at the top when a newer one is out.
+Both notifications and the update check are off until you turn them on. Once a day the update check asks the npm registry for the latest version number, and a banner appears at the top when a newer one is out. Apart from that, Postrun only contacts the internet when you make a [share link](/share/).
 
 **Save backup** downloads one file with every session (a copy of the store). It is not redacted: keep it private. **Delete all data** removes every session and raw log after you type `delete everything`. New sessions are still recorded.
 
@@ -203,6 +203,8 @@ A Claude Code session updates at the end of each assistant turn. A Cline session
 ## Export
 
 The **Export report** button on a session opens the export panel. It lists every value redaction will mask before you download. See [Exporting and redaction](/export/).
+
+Below the download, **Share link** uploads the same redacted report to app.postrun.app and gives you a link to copy. Choose how long it works (1, 7, 30 or 90 days) and click **Create link**. If this computer isn't signed in yet, the panel says to run `postrun login` first. See [Share links](/share/).
 
 ## Deleting a session
 
@@ -237,6 +239,8 @@ The review app uses these routes, which you can also call from scripts on the sa
 | `GET /api/doctor` | The `postrun doctor` checks as JSON. |
 | `GET /api/backup` | A copy of the store, as a download. |
 | `GET /api/usage` | Local usage counts, and the same summary as plain text (`text`). |
+| `GET /api/account` | `{ signed_in, email?, server }`: whether this computer can make share links. |
+| `POST /api/sessions/<id>/share` | Body `{ expires_days }` (1, 7, 30 or 90). Uploads the redacted report and returns `{ url, title, expires_at, masked, home_paths }`. `409` with `code: "not_signed_in"` when this computer isn't signed in. Same origin only. |
 | `GET /api/events` | The [live events stream](/reference/events-api/). |
 | `DELETE /api/sessions/<id>` | Deletes the session (see above). |
 | `PUT /api/sessions/<id>/verdict` | `{ state, note? }` with `state` `approved`, `needs_attention` or `null` to clear. |

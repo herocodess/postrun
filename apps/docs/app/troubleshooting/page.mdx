@@ -179,6 +179,40 @@ No session <id>. List them with: postrun sessions
 
 Check the id with `postrun sessions`.
 
+## Share links
+
+### Unknown command "login"
+
+Your Postrun is older than 0.2.0. Update with `npm install -g postrun@latest`, then run `postrun setup`.
+
+### This computer isn't signed in
+
+```text
+This computer isn't signed in to Postrun, or its sign-in was removed. Run: postrun login
+```
+
+Run `postrun login`. You also see this after signing the computer out in Settings at app.postrun.app, or after deleting your account.
+
+### The browser says the link doesn't match, or timed out
+
+`postrun login` waits 10 minutes for you to click **Connect**, and only accepts the browser tab it opened. Run `postrun login` again and use the new tab.
+
+### That sign-in link has expired or was already used
+
+Email links work once and expire after 10 minutes. Some work email systems open links to scan them; the link opens a page with a **Sign in** button for that reason, so scanning alone doesn't use it up. Send yourself a new link.
+
+### Too many sign-in emails
+
+At most 5 sign-in emails go to one address in an hour. Wait, then try again, or use GitHub.
+
+### That's a lot of shares in an hour, or you have 200 live links
+
+You can make 30 links an hour and keep 200 live at once. Turn off links you no longer need at app.postrun.app.
+
+### Only reports made by Postrun can be shared
+
+app.postrun.app only hosts reports Postrun's exporter made. Share with `postrun share` or the **Share link** button rather than uploading a file yourself.
+
 ## Removing Postrun
 
 `postrun uninstall` takes Postrun out of Claude Code and stops it. If you already ran `npm uninstall -g postrun` without it, Claude Code still calls the hook script in `~/.postrun/bin`, which keeps writing to `~/.postrun/captures` but nothing reads it. Install Postrun again and run `postrun uninstall`, or remove the hooks whose command ends in `.postrun/bin/capture-hook.sh` from `~/.claude/settings.json` by hand.

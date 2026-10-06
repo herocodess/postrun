@@ -22,6 +22,10 @@ Install it with `npm install -g postrun` and run `postrun setup`. The [quickstar
     Export and redaction
     <span>Share one session as a safe, self-contained report.</span>
   </a>
+  <a href="/share/">
+    Share links
+    <span>Send a redacted report as a link that expires.</span>
+  </a>
   <a href="/security/">
     Security model
     <span>What is recorded, where it lives, what never leaves.</span>
@@ -51,12 +55,14 @@ agent ──► capture ──► store ──► review app
            └─ adapters normalize each agent's logs into v1.2 steps
 
 store ──► export ──► one redacted HTML report you can send
+                 └──► share link on app.postrun.app, only when you ask
 ```
 
 - **Capture** watches your agents while they work: a local telemetry receiver and hooks for Claude Code, the task store for Cline.
 - **The store** is a SQLite file in `~/.postrun`, readable only by your user account.
 - **The review app** runs on `127.0.0.1:1234` and updates live as sessions are written.
 - **Export** writes one session to a single HTML file, with secrets masked, for you to share on purpose.
+- **Share links** upload that same redacted file to [app.postrun.app](https://app.postrun.app) and give you an unlisted link that expires. This is the only part that needs an account, and nothing is uploaded unless you ask for a link.
 
 <Callout type="tip" title="Local by default">
   Nothing leaves your machine unless you export a session. The recorder and the review app listen on `127.0.0.1` only, and Postrun has no telemetry. See the [security model](/security/).

@@ -4,11 +4,15 @@ Session review framework for AI coding agents. Real captures on disk become sche
 
 ## Layout
 
-pnpm workspace with three packages:
+pnpm workspace:
 
-- `core/` (`@postrun/core`): the logic. Schema types, per-agent adapters, the localhost-only server, and the future capture and AI seams. No UI code.
-- `apps/ui` (`@postrun/ui`): the review app. Next.js (App Router, TypeScript) session timeline. Imports types from `@postrun/core`, never runtime code.
+- `core/` (`@postrun/core`): the logic. Schema types, per-agent adapters, capture, the store, redaction and export, the localhost-only server, and the `postrun` command (including `login` and `share`). No UI code.
+- `apps/ui` (`@postrun/ui`): the review app that runs on your own computer at 127.0.0.1:1234. Next.js static export, bundled into the npm package. Imports types from `@postrun/core`, never runtime code.
+- `apps/app` (`@postrun/app`): app.postrun.app, the only hosted part. Accounts (GitHub or email link) and share links, on Vercel with Postgres on Neon. See `apps/app/README.md`.
 - `apps/web` (`@postrun/web`): the postrun.app marketing site, a static Next.js export. See `apps/web/README.md`.
+- `apps/docs` (`@postrun/docs`): docs.postrun.app.
+- `packages/brand`: the logo, loader, tokens and fonts every app shares.
+- `packages/postrun`: the npm package `postrun`.
 - `docs/`: schema drafts, pressure test, handoffs, and decisions.
 
 ## Setup

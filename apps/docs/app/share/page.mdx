@@ -5,7 +5,11 @@ export const metadata = {
 
 # Share links
 
-A share link is the same redacted report that [export](/export/) writes, uploaded to `app.postrun.app` so you can send a link instead of a file. You choose to share one session at a time. Nothing else leaves your machine, and recording never needs an account.
+A share link is the same redacted report that [export](/export/) writes, uploaded to [app.postrun.app](https://app.postrun.app) so you can send a link instead of a file. You choose to share one session at a time. Nothing else leaves your machine, and recording never needs an account.
+
+<Callout type="note" title="Needs Postrun 0.2.0 or newer">
+  `postrun login`, `postrun share` and the **Share link** button arrived in 0.2.0. Check with `postrun version`, and update with `npm install -g postrun@latest`, then `postrun setup`.
+</Callout>
 
 Each link is:
 
@@ -16,7 +20,7 @@ Each link is:
 
 ## Connect this computer, once
 
-Sharing needs a Postrun account. Sign in with GitHub or an email link: either one creates the account the first time. There are no passwords.
+Sharing needs a Postrun account. Sign in at [app.postrun.app](https://app.postrun.app) with GitHub or an email link: either one creates the account the first time. There are no passwords. The email link opens a page with a **Sign in** button; it works once and expires after 10 minutes.
 
 ```bash
 postrun login
