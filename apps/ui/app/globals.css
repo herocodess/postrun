@@ -1277,3 +1277,14 @@ h1.title {
   outline: 2px solid var(--accent-2);
   outline-offset: 2px;
 }
+
+.sb-loading {
+  margin: -8px 14px 14px 66px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+@media (max-width: 760px) {
+  .sb-loading {
+    margin-left: 12px;
+  }
+}

@@ -31,7 +31,8 @@ writeFileSync(join(out, "sessions.json"), JSON.stringify(list));
 
 for (const s of sessions) {
   const full = store.getSession(s.id)!;
-  const detail: SessionDetailResponse = { ...full, report: sessionReport(full.steps) };
+  // Full steps, not previews: the static demo has no per-step endpoint to fetch the rest from.
+  const detail: SessionDetailResponse = { ...full, report: sessionReport(full.steps), as_of: full.summary.updated_at };
   writeFileSync(join(out, "sessions", `${s.id}.json`), JSON.stringify(detail));
   const ex = exportSession(full, { now: new Date("2026-10-06T08:00:00.000Z") });
   const review: ExportReviewResponse = { filename: ex.filename, bytes: Buffer.byteLength(ex.html), redaction: ex.redaction };

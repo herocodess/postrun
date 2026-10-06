@@ -8,7 +8,9 @@
  * `pnpm ingest`.
  *
  *   GET  /api/sessions[?agent=kind]  history list, newest first
- *   GET  /api/sessions/:id           one full session plus report projections
+ *   GET  /api/sessions/:id           one session (step previews) plus report projections
+ *   GET  /api/sessions/:id?since=t   only the steps written after t, for live views
+ *   GET  /api/sessions/:id/steps/:s  one step in full
  *   GET  /api/sessions/:id/export    redacted, self-contained HTML report (download)
  *   GET  /api/sessions/:id/export/review   what that export would mask, as JSON
  *   POST /api/ingest                 push a v1.2 batch (bearer token; see ingest.ts, token.ts)
@@ -24,7 +26,8 @@ import { exportSession } from "../export/index.js";
 import { sessionReport } from "../report/index.js";
 import { PostrunStore } from "../store/index.js";
 import { isLoopbackHost } from "../util/host.js";
-import type { ApiError, ExportReviewResponse, IngestErrorResponse, IngestResponse, SessionDetailResponse, SessionListResponse } from "./api.js";
+import type { ApiError, ExportReviewResponse, IngestErrorResponse, IngestResponse, SessionDeltaResponse, SessionDetailResponse, SessionListResponse, StepResponse } from "./api.js";
+import { previewStep } from "./preview.js";
 import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
 import { LiveFeed, SSE_HEADERS, type LiveFeedOptions } from "./live.js";
 import { bearerMatches, loadOrCreateToken } from "./token.js";
@@ -218,14 +221,45 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
   const m = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (m) {
     const id = decodeURIComponent(m[1] as string);
+    const since = url.searchParams.get("since");
+    if (since) {
+      // Live view: everything small, plus only the steps written after `since`.
+      const full = store.getSessionShell(id);
+      if (!full) {
+        json(res, 404, { error: `session ${id} not found` } satisfies ApiError);
+        return;
+      }
+      const delta = store.stepsChangedSince(id, since);
+      const body: SessionDeltaResponse = {
+        ...full,
+        delta: true,
+        reload: delta.reload,
+        steps: delta.steps.map(previewStep),
+        report: sessionReport(store.reportSteps(id)),
+        as_of: full.summary.updated_at,
+      };
+      json(res, 200, body);
+      return;
+    }
     const session = store.getSession(id);
     if (!session) {
       const body: ApiError = { error: `session ${id} not found` };
       json(res, 404, body);
       return;
     }
-    const body: SessionDetailResponse = { ...session, report: sessionReport(session.steps) };
+    const body: SessionDetailResponse = { ...session, steps: session.steps.map(previewStep), report: sessionReport(session.steps), as_of: session.summary.updated_at };
     json(res, 200, body);
+    return;
+  }
+
+  const st = /^\/api\/sessions\/([^/]+)\/steps\/([^/]+)$/.exec(url.pathname);
+  if (st) {
+    const step = store.getStep(decodeURIComponent(st[1] as string), decodeURIComponent(st[2] as string));
+    if (!step) {
+      json(res, 404, { error: "step not found" } satisfies ApiError);
+      return;
+    }
+    json(res, 200, { step } satisfies StepResponse);
     return;
   }
 
@@ -330,7 +364,8 @@ async function handleIngest(req: IncomingMessage, res: ServerResponse, ctx: Ctx)
     fail(checked.status, out);
     return;
   }
-  const result: IngestResponse = store.appendBatch(checked.batch);
+  const { changed: _changed, written: _written, ...rest } = store.appendBatch(checked.batch);
+  const result: IngestResponse = rest;
   json(res, result.created ? 201 : 200, result);
   ctx.live.nudge();
 }

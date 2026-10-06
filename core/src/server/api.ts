@@ -3,6 +3,8 @@
  *
  *   GET /api/sessions[?agent=<kind>]   -> SessionListResponse
  *   GET /api/sessions/:id              -> SessionDetailResponse | ApiError (404)
+ *   GET /api/sessions/:id?since=<as_of> -> SessionDeltaResponse (only steps written after as_of)
+ *   GET /api/sessions/:id/steps/:step  -> StepResponse (one step in full)
  *   POST /api/ingest  IngestRequest    -> IngestResponse (201 created, 200 updated)
  *                                         | IngestErrorResponse (400, 401, 409, 413, 415)
  *   GET /api/events[?session=<id>]     -> text/event-stream of LiveChange (see live.ts)
@@ -23,8 +25,33 @@ export interface SessionListResponse {
   agents: string[];
 }
 
-export interface SessionDetailResponse extends StoredSession {
+/**
+ * A step as the session view first receives it: long output, messages and
+ * diffs are cut to their first 2 KB, with each cut field's full length in
+ * `truncated`. GET /api/sessions/:id/steps/:step returns it in full.
+ */
+export type StepPreview = Step & { truncated?: Record<string, number> };
+
+export interface SessionDetailResponse extends Omit<StoredSession, "steps"> {
+  steps: StepPreview[];
   report: SessionReport;
+  /** Pass back as ?since= to get only what changed after this response. */
+  as_of: string;
+}
+
+/**
+ * The answer to ?since=: everything small in full, and only the steps written
+ * after `since`. When steps were removed since then, `reload` is true and the
+ * caller should fetch the whole session again instead of applying this.
+ */
+export interface SessionDeltaResponse extends Omit<SessionDetailResponse, "steps"> {
+  delta: true;
+  reload: boolean;
+  steps: StepPreview[];
+}
+
+export interface StepResponse {
+  step: Step;
 }
 
 export interface ApiError {
@@ -51,8 +78,8 @@ export interface IngestRequest {
   steps?: Step[];
 }
 
-/** Counts are for this batch, not the session total. */
-export type IngestResponse = IngestResult;
+/** Counts are for this batch, not the session total. The store's internal change counters are not part of it. */
+export type IngestResponse = Omit<IngestResult, "changed" | "written">;
 
 export interface IngestErrorResponse {
   error: string;

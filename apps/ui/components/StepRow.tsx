@@ -10,16 +10,40 @@
  * renders only while open, which keeps long sessions fast, and very long
  * output is cut to the first OUTPUT_LIMIT characters until asked for.
  * A step can be linked to as #step-<seq>; that step opens and scrolls into view.
+ *
+ * The session view receives previews (long fields cut to 2 KB). When a cut
+ * step is opened, the full step is fetched once and shown in its place.
  */
 
 import { useEffect, useRef, useState } from "react";
 import type { Step } from "@postrun/core/schema";
+import type { StepPreview, StepResponse } from "@postrun/core/server/api";
+import { api } from "@/lib/api";
 import { summarize } from "@/lib/summarize";
 
 const OUTPUT_LIMIT = 100_000;
 
-export function StepRow({ step }: { step: Step }) {
+export function StepRow({ step, sessionId }: { step: StepPreview; sessionId: string }) {
   const [open, setOpen] = useState(false);
+  const [full, setFull] = useState<{ step: Step } | { error: string } | undefined>(undefined);
+  const cut = step.truncated !== undefined;
+
+  // Fetch the full step the first time a cut step is opened. A live update that changes the step resets this.
+  useEffect(() => setFull(undefined), [step]);
+  useEffect(() => {
+    if (!open || !cut || full) return;
+    let cancelled = false;
+    fetch(api.step(sessionId, step.id))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`${res.status}`);
+        return ((await res.json()) as StepResponse).step;
+      })
+      .then((s) => !cancelled && setFull({ step: s }))
+      .catch((err: unknown) => !cancelled && setFull({ error: err instanceof Error ? err.message : String(err) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, cut, full, sessionId, step.id]);
   const ref = useRef<HTMLDetailsElement>(null);
   const sum = summarize(step);
   const anchor = `step-${step.seq}`;
@@ -57,7 +81,13 @@ export function StepRow({ step }: { step: Step }) {
         {step.flags.length > 0 && <span className="st-flag" title={step.flags.map((f) => f.kind).join(", ")}></span>}
         <span className={`st-status ${statusClass}`}>{statusText}</span>
       </summary>
-      {open && <StepBody step={step} />}
+      {open && (
+        <>
+          <StepBody step={full && "step" in full ? full.step : step} />
+          {cut && !full ? <p className="sb-loading">Loading the full output…</p> : null}
+          {full && "error" in full ? <p className="sb-loading">Could not load the full step ({full.error}); showing the first 2 KB.</p> : null}
+        </>
+      )}
     </details>
   );
 }

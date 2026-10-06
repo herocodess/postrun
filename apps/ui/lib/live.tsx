@@ -115,15 +115,35 @@ export function useLiveStatus(): LiveStatus {
  * when sessionId is omitted), and on every reconnect. Put it in a fetch
  * effect's dependency list to refetch live.
  */
+/** Refetch at most this often per view, however busy the agents are. */
+export const LIVE_MIN_INTERVAL_MS = 2000;
+
 export function useLiveVersion(sessionId?: string): number {
   const { subscribe } = useContext(Ctx);
   const [version, setVersion] = useState(0);
-  useEffect(
-    () =>
-      subscribe((id) => {
-        if (id === undefined || sessionId === undefined || id === sessionId) setVersion((v) => v + 1);
-      }),
-    [subscribe, sessionId],
-  );
+  useEffect(() => {
+    // Leading and trailing: the first change shows at once, a burst of changes becomes one more
+    // refetch LIVE_MIN_INTERVAL_MS later, so four busy agents do not mean a refetch every second.
+    let last = 0;
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    const bump = () => {
+      last = Date.now();
+      setVersion((v) => v + 1);
+    };
+    const unsubscribe = subscribe((id) => {
+      if (!(id === undefined || sessionId === undefined || id === sessionId)) return;
+      const wait = last + LIVE_MIN_INTERVAL_MS - Date.now();
+      if (wait <= 0 && !pending) bump();
+      else if (!pending)
+        pending = setTimeout(() => {
+          pending = undefined;
+          bump();
+        }, Math.max(wait, 0));
+    });
+    return () => {
+      unsubscribe();
+      if (pending) clearTimeout(pending);
+    };
+  }, [subscribe, sessionId]);
   return version;
 }

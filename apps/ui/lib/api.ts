@@ -17,6 +17,14 @@ export const api = {
   session(id: string): string {
     return DEMO ? `${BASE}/data/sessions/${enc(id)}.json` : `/api/sessions/${enc(id)}`;
   },
+  /** Only the steps written after `asOf` (a previous response's as_of). The demo never changes, so it is never asked. */
+  sessionSince(id: string, asOf: string): string {
+    return `/api/sessions/${enc(id)}?since=${enc(asOf)}`;
+  },
+  /** One step in full, for a step whose preview was cut. Demo data is never cut. */
+  step(sessionId: string, stepId: string): string {
+    return `/api/sessions/${enc(sessionId)}/steps/${enc(stepId)}`;
+  },
   exportReview(id: string): string {
     return DEMO ? `${BASE}/data/exports/${enc(id)}.review.json` : `/api/sessions/${enc(id)}/export/review`;
   },

@@ -1,11 +1,11 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
 import { api } from "@/lib/api";
 import type { Step, Turn } from "@postrun/core/schema";
-import type { SessionDetailResponse } from "@postrun/core/server/api";
+import type { SessionDeltaResponse, SessionDetailResponse } from "@postrun/core/server/api";
 import { ExportPanel } from "@/components/ExportPanel";
 import { StepRow } from "@/components/StepRow";
 
@@ -34,17 +34,47 @@ export function Report() {
   // Bumps when this session is written (a running agent, a late hook record) and on reconnect.
   const live = useLiveVersion(id || undefined);
 
+  // The data on screen, readable from inside the fetch effect without re-running it, and a full
+  // load still in flight, so a live update that lands during it waits for it instead of loading twice.
+  const current = useRef<SessionDetailResponse | undefined>(undefined);
+  const inflight = useRef<{ id: string; promise: Promise<SessionDetailResponse> } | undefined>(undefined);
+  useEffect(() => {
+    current.current = state.kind === "ready" ? state.data : undefined;
+  }, [state]);
+
   useEffect(() => {
     if (!id) {
       setState({ kind: "error", message: "no session id in the URL (expected /session?id=...)" });
       return;
     }
     let cancelled = false;
-    fetch(api.session(id))
-      .then(async (res) => {
+    const loadFull = (): Promise<SessionDetailResponse> => {
+      const promise = (async () => {
+        const res = await fetch(api.session(id));
         if (!res.ok) throw new Error(`GET /api/sessions/${id} -> ${res.status}`);
         return (await res.json()) as SessionDetailResponse;
-      })
+      })();
+      inflight.current = { id, promise };
+      void promise.finally(() => {
+        if (inflight.current?.promise === promise) inflight.current = undefined;
+      }).catch(() => undefined);
+      return promise;
+    };
+    // A live update asks only for what changed since the data on screen, and merges it in.
+    const load = async (): Promise<SessionDetailResponse> => {
+      let have = current.current;
+      if (!have && inflight.current?.id === id) have = await inflight.current.promise;
+      if (!have || have.summary.id !== id) return loadFull();
+      const res = await fetch(api.sessionSince(id, have.as_of));
+      if (!res.ok) throw new Error(`GET /api/sessions/${id}?since -> ${res.status}`);
+      const delta = (await res.json()) as SessionDeltaResponse;
+      if (delta.reload) return loadFull();
+      const byId = new Map(have.steps.map((s) => [s.id, s]));
+      for (const s of delta.steps) byId.set(s.id, s);
+      const { delta: _d, reload: _r, ...rest } = delta;
+      return { ...rest, steps: [...byId.values()].sort((a, b) => a.seq - b.seq) };
+    };
+    load()
       .then((data) => {
         if (!cancelled) setState({ kind: "ready", data });
       })
@@ -252,7 +282,7 @@ export function Report() {
                 <span className="mode">{t.mode || "no mode"}</span>
               </div>
               {list.map((s) => (
-                <StepRow key={s.id} step={s} />
+                <StepRow key={s.id} step={s} sessionId={summary.id} />
               ))}
             </div>
           );
