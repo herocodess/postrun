@@ -246,6 +246,9 @@ async function cmdSetup(argv: string[]): Promise<number> {
   out(`Postrun is recording. Review your sessions at ${url}`);
   if (hasClaude) out(`Restart any Claude Code session that is already open, so it is recorded too.`);
   out(`Check on it any time with postrun status, or postrun doctor if something looks wrong.`);
+  out();
+  out(`To send a session as a link: click Share on it in the review app (it connects a free account the first time),`);
+  out(`or run postrun login once, then postrun share <id>. Docs: https://docs.postrun.app`);
   if (!a.flags.has("no-open") && interactive()) openApp(p, url);
   return 0;
 }
@@ -287,6 +290,8 @@ async function cmdStatus(): Promise<number> {
   if (c) out(`Stored: ${c.sessions} session(s), ${c.steps} steps`);
   if (s.health.telemetry && s.health.telemetry !== "running") out(`Telemetry: ${s.health.telemetry}`);
   if (s.health.catching_up) out(`Catching up on sessions recorded while it was stopped.`);
+  const acct = readAccount(p.home);
+  out(acct ? `Account: ${acct.email ?? "signed in"} on ${acct.server.replace(/^https?:\/\//, "")} (for share links)` : "Account: not connected (only needed for share links: postrun login)");
   return 0;
 }
 

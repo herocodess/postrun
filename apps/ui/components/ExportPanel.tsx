@@ -5,10 +5,11 @@
  * the same file `postrun export` writes; redaction cannot be switched off.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AccountResponse, ApiError, ExportReviewResponse, SecretKind, ShareResponse } from "@postrun/core/server/api";
 import { Loader } from "@postrun/brand/logo";
 import { api, apiFetch, DEMO } from "@/lib/api";
+import { startConnect } from "@/lib/account";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ExportReviewResponse };
 
@@ -37,7 +38,7 @@ const KIND_LABEL: Record<SecretKind, string> = {
   email: "email address",
 };
 
-export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+export function ExportPanel({ sessionId, onClose, focusShare = false }: { sessionId: string; onClose: () => void; focusShare?: boolean }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const reviewUrl = api.exportReview(sessionId);
   const downloadUrl = api.exportDownload(sessionId);
@@ -74,7 +75,7 @@ export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose
       )}
       {state.kind === "error" && <p className="error">Could not prepare the export: {state.message}</p>}
       {state.kind === "ready" && <Review data={state.data} href={downloadUrl} />}
-      {state.kind === "ready" && <ShareLink sessionId={sessionId} />}
+      {state.kind === "ready" && <ShareLink sessionId={sessionId} focus={focusShare} />}
     </section>
   );
 }
@@ -127,8 +128,14 @@ type ShareState =
  * A link instead of a file: the same redacted report, uploaded to app.postrun.app by the
  * background process with this computer's sign-in. Only on purpose, one session at a time.
  */
-function ShareLink({ sessionId }: { sessionId: string }) {
+function ShareLink({ sessionId, focus }: { sessionId: string; focus: boolean }) {
   const [s, setS] = useState<ShareState>(DEMO ? { kind: "demo" } : { kind: "loading" });
+  const [connecting, setConnecting] = useState<string>();
+  const box = useRef<HTMLDivElement>(null);
+  // Opened with the Share button: bring the share part into view.
+  useEffect(() => {
+    if (focus) box.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focus]);
   const [days, setDays] = useState<(typeof EXPIRY)[number]>(30);
   const [copied, setCopied] = useState(false);
 
@@ -169,7 +176,7 @@ function ShareLink({ sessionId }: { sessionId: string }) {
   const manage = (server: string) => `${server}/shares`;
 
   return (
-    <div className="share-box">
+    <div className="share-box" ref={box}>
       <div className="share-box-head">
         <h3>Share link</h3>
         <span className="sub">the same redacted report, as an unlisted link that expires</span>
@@ -178,12 +185,36 @@ function ShareLink({ sessionId }: { sessionId: string }) {
       {s.kind === "demo" && <p className="muted">In your own Postrun, this uploads the report above and gives you a link to send.</p>}
       {s.kind === "signed-out" && (
         <div className="share-signin">
-          <p className="muted">
-            Connect this computer to a Postrun account once, in a terminal: <code>postrun login</code>
-          </p>
-          <button type="button" className="btn ghost" onClick={load}>
-            I&apos;ve done it
-          </button>
+          {connecting ? (
+            <>
+              <Loader size={18} inline label="Waiting for the browser" />
+              <p className="muted">
+                Approve this computer in the tab that opened, and this updates by itself.{" "}
+                <a href={connecting} target="_blank" rel="noreferrer">
+                  Didn&apos;t open?
+                </a>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="muted">Share links need a free Postrun account, connected to this computer once. Recording never does.</p>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() =>
+                  void startConnect((a) => {
+                    setConnecting(undefined);
+                    setS(a.signed_in ? { kind: "ready", account: a } : { kind: "signed-out", server: a.server });
+                  }).then(
+                    (c) => setConnecting(c.url),
+                    () => setS({ kind: "signed-out", server: s.server }),
+                  )
+                }
+              >
+                Connect account
+              </button>
+            </>
+          )}
         </div>
       )}
       {(s.kind === "ready" || s.kind === "making" || s.kind === "error") && (

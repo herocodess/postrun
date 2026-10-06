@@ -1,5 +1,5 @@
 import { Reveal } from "./Reveal";
-import { LOGIN_URL } from "@/content/site";
+import { START_URL } from "@/content/site";
 
 /** Closing call to action for content pages: get started, and the example report. */
 export function PageCta({
@@ -17,7 +17,7 @@ export function PageCta({
       <h2>{title}</h2>
       <p>{body}</p>
       <div className="cta-row">
-        <a href={LOGIN_URL} className="btn btn-primary" data-track="Get started" data-track-where={where}>
+        <a href={START_URL} className="btn btn-primary" data-track="Get started" data-track-where={where}>
           Get started
         </a>
         <a href="/example-report.html" target="_blank" rel="noopener" className="btn btn-ghost" data-track="Example report" data-track-where={where}>

@@ -5252,3 +5252,11 @@ pre.diff {
     width: calc(100% - 32px);
   }
 }
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.share-signin a {
+  color: var(--accent-2);
+}

@@ -8,3 +8,5 @@ export const GITHUB_URL = "https://github.com/herocodess/postrun";
  */
 export const APP_URL = (process.env["NEXT_PUBLIC_POSTRUN_APP_URL"] ?? "https://app.postrun.app").replace(/\/+$/, "");
 export const LOGIN_URL = `${APP_URL}/login`;
+/** Getting started means installing Postrun, not making an account: recording never needs one. */
+export const START_URL = "/#install";

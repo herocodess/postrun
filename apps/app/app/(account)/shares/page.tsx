@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { baseUrl } from "@/lib/env";
 import { bytes, plural, relative, shortDate } from "@/lib/format";
 import { requireViewer } from "@/lib/session";
-import { listShares, shareStatus } from "@/lib/shares";
+import { listShares, listTokens, shareStatus } from "@/lib/shares";
 import { CountUp } from "@/components/CountUp";
 import { ShareActions } from "@/components/ShareActions";
 
@@ -13,7 +13,7 @@ const STATUS_LABEL = { live: "Live", expired: "Expired", off: "Turned off" } as 
 
 export default async function Shares() {
   const v = await requireViewer("/shares");
-  const shares = await listShares(v.id);
+  const [shares, tokens] = await Promise.all([listShares(v.id), listTokens(v.id)]);
   const now = new Date();
   const live = shares.filter((s) => shareStatus(s, now) === "live");
   const opens = shares.reduce((n, s) => n + s.opens, 0);
@@ -29,7 +29,7 @@ export default async function Shares() {
       </div>
 
       {shares.length === 0 ? (
-        <Empty />
+        <Empty computers={tokens.map((t) => t.name)} />
       ) : (
         <>
           <div className="figs rise" style={{ ["--d" as string]: 1 }}>
@@ -98,7 +98,47 @@ export default async function Shares() {
   );
 }
 
-function Empty() {
+/**
+ * First visit: a short checklist that ticks itself off, so it's clear the account is only one
+ * part of Postrun, and what to do on the computer.
+ */
+function Empty({ computers }: { computers: string[] }) {
+  const connected = computers.length > 0;
+  const steps = [
+    {
+      done: connected,
+      title: "Install Postrun on your computer",
+      body: (
+        <>
+          It records your agents and opens the review app at <span className="mono">127.0.0.1:1234</span>. No account needed for this part.
+          <code className="cmd">npm install -g postrun &amp;&amp; postrun setup</code>
+        </>
+      ),
+    },
+    {
+      done: connected,
+      title: connected ? `Computer connected: ${computers.slice(0, 2).join(", ")}${computers.length > 2 ? ` and ${computers.length - 2} more` : ""}` : "Connect it to this account",
+      body: connected ? (
+        <>It can now make share links as you. Manage it in <a href="/settings">Settings</a>.</>
+      ) : (
+        <>
+          In the review app, open <strong className="t-plain">Settings → Account → Connect account</strong>. Or in a terminal:
+          <code className="cmd">postrun login</code>
+        </>
+      ),
+    },
+    {
+      done: false,
+      title: "Share a session",
+      body: (
+        <>
+          Open a session in the review app and click <strong className="t-plain">Share</strong>, or run <span className="mono">postrun share &lt;session id&gt;</span>. The link shows up here,
+          with how many times it was opened.
+        </>
+      ),
+    },
+  ];
+  const next = steps.findIndex((s) => !s.done);
   return (
     <section className="empty rise" style={{ ["--d" as string]: 1 }}>
       <div className="empty-art" aria-hidden="true">
@@ -107,36 +147,38 @@ function Empty() {
         <span className="empty-step" style={{ ["--i" as string]: 2 }}></span>
         <span className="empty-link"></span>
       </div>
-      <h2>No share links yet</h2>
-      <p className="muted">Sharing happens from your own machine, one session at a time. Postrun redacts the report first and shows you what it masked.</p>
+      <h2>Your first share link, in three steps</h2>
+      <p className="muted">Postrun runs on your computer. This account is only for sending a session as a link, and Postrun redacts it first.</p>
+      <ol className="checklist">
+        {steps.map((st, i) => (
+          <li key={i} className={st.done ? "done" : i === next ? "next" : ""} style={{ ["--i" as string]: i }}>
+            <span className="check" aria-hidden="true">
+              {st.done ? (
+                <svg width="14" height="14" viewBox="0 0 14 14">
+                  <path d="M3 7.4l2.6 2.6L11 4.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                i + 1
+              )}
+            </span>
+            <div>
+              <div className="check-title">
+                {st.title}
+                {st.done && <span className="sr-only"> (done)</span>}
+              </div>
+              <div className="check-body">{st.body}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
       <div className="empty-actions">
         <a className="btn btn-ghost btn-sm" href="http://127.0.0.1:1234/" target="_blank" rel="noreferrer">
           Open your review app
         </a>
-        <a className="btn btn-quiet btn-sm" href="https://docs.postrun.app/quickstart/">
-          Don&apos;t have Postrun yet?
+        <a className="btn btn-quiet btn-sm" href="https://docs.postrun.app/share/">
+          How share links work
         </a>
       </div>
-      <ol className="steps">
-        <li>
-          <span className="step-n">1</span>
-          <div>
-            Connect this account to your computer: <strong className="t-plain">Connect account</strong> in the review app&apos;s Settings, or in a terminal:
-            <code className="cmd">postrun login</code>
-          </div>
-        </li>
-        <li>
-          <span className="step-n">2</span>
-          <div>
-            Open a session in the review app and choose <strong className="t-plain">Share link</strong>, or run:
-            <code className="cmd">postrun share &lt;session id&gt;</code>
-          </div>
-        </li>
-        <li>
-          <span className="step-n">3</span>
-          <div>The link appears here, with how many times it was opened.</div>
-        </li>
-      </ol>
     </section>
   );
 }

@@ -32,6 +32,23 @@ Install it with `npm install -g postrun` and run `postrun setup`. The [quickstar
   </a>
 </div>
 
+## Where you'll use Postrun
+
+| Where | What it's for | Account? |
+| --- | --- | --- |
+| The `postrun` command | Installs, starts and checks the recorder; `postrun share` and `postrun feedback` | No |
+| The review app, `http://127.0.0.1:1234` | Reading and reviewing sessions, exporting, the **Share** button, **Feedback** | No |
+| [app.postrun.app](https://app.postrun.app) | Your share links (open counts, turn off), connected computers, feedback | Free, only for sharing |
+| [postrun.app](https://postrun.app) and these docs | What Postrun is, the changelog, how to use it | No |
+
+A typical first day:
+
+1. `npm install -g postrun && postrun setup`. The review app opens.
+2. Work with Claude Code or Cline as usual. Sessions appear in the review app as they happen.
+3. Open a session to review it: the timeline, what changed, risk flags, your verdict.
+4. Need someone else to see it? Click **Share** on the session. The first time, connect a free account; after that, copy the link.
+5. See who opened your links, or turn them off, at app.postrun.app. The review app's sidebar has a **Share links** shortcut.
+
 ## What Postrun records
 
 A **session** is one run of one agent against one working directory. Inside it, each **turn** starts with your prompt, and each turn is a sequence of **steps**: the smallest unit Postrun records. A step is one of:

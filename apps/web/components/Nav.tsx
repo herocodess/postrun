@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Wordmark } from "./Logo";
 import { signedInHere } from "@postrun/brand/logo";
-import { APP_URL, GITHUB_URL, LOGIN_URL } from "@/content/site";
+import { APP_URL, GITHUB_URL, LOGIN_URL, START_URL } from "@/content/site";
 
 /**
  * Translucent header with three states:
@@ -105,7 +105,7 @@ export function Nav() {
               <a href={LOGIN_URL} className="nav-login" data-track="Log in" data-track-where="nav">
                 Log in
               </a>
-              <a href={LOGIN_URL} className="btn btn-primary btn-sm nav-cta" data-track="Get started" data-track-where="nav">
+              <a href={START_URL} className="btn btn-primary btn-sm nav-cta" data-track="Get started" data-track-where="nav">
                 Get started
               </a>
             </>
@@ -136,7 +136,7 @@ export function Nav() {
                 ? [{ href: `${APP_URL}/shares`, label: "Dashboard", cta: true, external: false, offsite: true }]
                 : [
                     { href: LOGIN_URL, label: "Log in", cta: false, external: false, offsite: true },
-                    { href: `${LOGIN_URL}?new=1`, label: "Get started", cta: true, external: false, offsite: true },
+                    { href: START_URL, label: "Get started", cta: true, external: false, offsite: false },
                   ]),
             ].map((l, i) => (
               <a
