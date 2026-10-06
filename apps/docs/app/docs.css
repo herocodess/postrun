@@ -19,7 +19,7 @@ a {
   text-decoration: none;
 }
 a:hover {
-  color: #c7d2fe;
+  color: #ffd3ba;
 }
 :focus-visible {
   outline: 2px solid var(--accent-ink);
@@ -77,8 +77,8 @@ a:hover {
 .docs-tag {
   font: 500 12px var(--mono);
   color: var(--accent-ink);
-  background: rgba(99, 102, 241, 0.14);
-  border: 1px solid rgba(129, 140, 248, 0.3);
+  background: rgba(255, 106, 26, 0.14);
+  border: 1px solid rgba(255, 138, 76, 0.3);
   padding: 2px 8px;
   border-radius: 999px;
 }
@@ -101,11 +101,11 @@ a:hover {
 }
 .btn-primary {
   background: var(--accent-btn);
-  color: #fff;
+  color: var(--accent-btn-ink);
 }
 .btn-primary:hover {
-  color: #fff;
-  filter: brightness(1.12);
+  color: var(--accent-btn-ink);
+  background: #fff;
 }
 .cta-short {
   display: none;
@@ -125,7 +125,7 @@ a:hover {
   cursor: pointer;
 }
 .search-btn:hover {
-  border-color: rgba(129, 140, 248, 0.45);
+  border-color: rgba(255, 138, 76, 0.45);
   color: var(--text-2);
 }
 .search-label {
@@ -178,7 +178,7 @@ a:hover {
   color: var(--text);
 }
 .search-results li[aria-selected="true"] a {
-  background: rgba(99, 102, 241, 0.14);
+  background: rgba(255, 106, 26, 0.14);
 }
 .sr-title {
   font-weight: 500;
@@ -241,7 +241,7 @@ a:hover {
 }
 .side-nav a[aria-current="page"] {
   color: var(--text);
-  background: rgba(99, 102, 241, 0.14);
+  background: rgba(255, 106, 26, 0.14);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .side-mobile {
@@ -444,7 +444,7 @@ a:hover {
     transform 0.2s var(--ease);
 }
 .cards a:hover {
-  border-color: rgba(129, 140, 248, 0.45);
+  border-color: rgba(255, 138, 76, 0.45);
   transform: translateY(-1px);
 }
 .cards a span {
@@ -468,7 +468,7 @@ a:hover {
   color: var(--text);
 }
 .pn:hover {
-  border-color: rgba(129, 140, 248, 0.45);
+  border-color: rgba(255, 138, 76, 0.45);
 }
 .pn.next {
   text-align: right;

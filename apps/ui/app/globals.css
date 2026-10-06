@@ -17,9 +17,9 @@ body {
   font-family: var(--sans);
   font-size: 13px;
   line-height: 1.5;
-  /* faint indigo glow top-left, teal top-right */
+  /* faint warm glow top-left, teal top-right */
   background-image:
-    radial-gradient(1100px 500px at 12% -8%, rgba(99, 102, 241, 0.10), transparent 60%),
+    radial-gradient(1100px 500px at 12% -8%, rgba(255, 106, 26, 0.10), transparent 60%),
     radial-gradient(900px 500px at 100% 0%, rgba(94, 234, 212, 0.05), transparent 55%);
   -webkit-font-smoothing: antialiased;
   padding-bottom: 80px;
@@ -745,7 +745,7 @@ tr.failed:hover td {
 }
 
 .st-type.edit {
-  background: rgba(129, 140, 248, 0.12);
+  background: rgba(255, 138, 76, 0.12);
   color: var(--accent-2);
 }
 
@@ -827,13 +827,14 @@ tr.failed:hover td {
 }
 
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--btn-primary);
+  border-color: var(--btn-primary);
+  color: var(--btn-primary-ink);
 }
 
 .btn.primary:hover {
-  background: var(--accent-2);
+  background: #fff;
+  border-color: #fff;
 }
 
 .btn.ghost {
@@ -938,15 +939,15 @@ tr.failed:hover td {
   font-size: 13px;
   text-align: center;
   color: var(--text-secondary);
-  background: rgba(99, 102, 241, 0.12);
-  border-bottom: 1px solid rgba(129, 140, 248, 0.25);
+  background: rgba(255, 106, 26, 0.12);
+  border-bottom: 1px solid rgba(255, 138, 76, 0.25);
 }
 .demo-banner b {
   color: var(--text-primary);
   font-weight: 600;
 }
 .demo-banner a {
-  color: #a5b4fc;
+  color: #ffb38a;
   font-weight: 500;
   white-space: nowrap;
 }

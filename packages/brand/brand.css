@@ -15,9 +15,12 @@
   --text-2: #a3a9b7;
   --muted: #7d8496;
   --faint: #7a8191; /* 4.5:1 or better on every surface (WCAG AA) */
-  --accent: #6366f1;
-  --accent-ink: #a5b4fc;
-  --accent-btn: #4f46e5;
+  /* Palette D: orange is a signal (logo, links, markers), never a surface.
+     Primary buttons are warm white with near-black text. */
+  --accent: #ff6a1a;
+  --accent-ink: #ffb38a;
+  --accent-btn: #ece9e3;
+  --accent-btn-ink: #0b0c0f;
   --ok: #4ade80;
   --warn: #fbbf24;
   --bad: #f87171;

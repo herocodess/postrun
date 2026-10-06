@@ -22,7 +22,7 @@ a {
   text-decoration: none;
 }
 a:hover {
-  color: #c7d2fe;
+  color: #ffd3ba;
 }
 :focus-visible {
   outline: 2px solid var(--accent-ink);
@@ -137,14 +137,12 @@ html.js .reveal[data-in] {
 }
 .btn-primary {
   background: var(--accent-btn);
-  color: #fff;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-    0 8px 24px -10px rgba(79, 70, 229, 0.8);
+  color: var(--accent-btn-ink);
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
 }
 .btn-primary:hover {
-  color: #fff;
-  filter: brightness(1.12);
+  color: var(--accent-btn-ink);
+  background: #fff;
 }
 .btn-ghost {
   color: #d4d8e1;
@@ -165,7 +163,8 @@ html.js .reveal[data-in] {
   padding: 0 22px;
 }
 .btn.is-busy {
-  background: #2a2c5e;
+  background: #24211f;
+  color: var(--text);
   cursor: progress;
   min-width: min(220px, 100%);
 }
@@ -175,7 +174,7 @@ html.js .reveal[data-in] {
 .btn .bar {
   position: absolute;
   inset: 0 auto 0 0;
-  background: var(--accent-btn);
+  background: rgba(255, 106, 26, 0.35);
   transition: width 0.1s linear;
 }
 .btn .bar-label {
@@ -313,9 +312,9 @@ html.js .reveal[data-in] {
   transform: scale(0.92);
 }
 .nav[data-menu] .menu-btn {
-  background: rgba(99, 102, 241, 0.14);
-  border-color: rgba(129, 140, 248, 0.45);
-  box-shadow: 0 0 18px -4px rgba(99, 102, 241, 0.6);
+  background: rgba(255, 106, 26, 0.14);
+  border-color: rgba(255, 138, 76, 0.45);
+  box-shadow: 0 0 18px -4px rgba(255, 106, 26, 0.6);
 }
 .menu-mark .mm-step {
   fill: var(--text);
@@ -390,7 +389,7 @@ html.js .reveal[data-in] {
   from {
     opacity: 0;
     transform: translateY(-8px);
-    background: rgba(99, 102, 241, 0.14);
+    background: rgba(255, 106, 26, 0.14);
   }
   60% {
     opacity: 1;
@@ -421,17 +420,17 @@ html.js .reveal[data-in] {
   margin-top: 6px;
   border-top: 0 !important;
   background: var(--accent-btn);
-  color: #fff;
+  color: var(--accent-btn-ink);
   font-weight: 500;
 }
 .menu-cta:hover {
-  background: var(--accent-btn);
-  color: #fff;
-  filter: brightness(1.12);
+  background: #fff;
+  color: var(--accent-btn-ink);
 }
 .menu-cta .mi-seq,
-.menu-cta .mi-arrow {
-  color: rgba(255, 255, 255, 0.75);
+.menu-cta .mi-arrow,
+.menu-cta:hover .mi-arrow {
+  color: #55524d;
 }
 .menu-foot {
   display: flex;
@@ -475,7 +474,7 @@ html.js .reveal[data-in] {
   right: 0;
   top: 0;
   height: 140px;
-  background: linear-gradient(180deg, transparent, rgba(99, 102, 241, 0.09) 70%, rgba(165, 180, 252, 0.22) 99%, transparent);
+  background: linear-gradient(180deg, transparent, rgba(255, 106, 26, 0.09) 70%, rgba(255, 179, 138, 0.22) 99%, transparent);
   mask-image: radial-gradient(ellipse 60% 100% at 50% 50%, #000 20%, transparent 70%);
   -webkit-mask-image: radial-gradient(ellipse 60% 100% at 50% 50%, #000 20%, transparent 70%);
   animation: scan 7s var(--ease) infinite;
@@ -562,7 +561,7 @@ html.js .reveal[data-in] {
   right: 12%;
   top: -40px;
   height: 240px;
-  background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.34), transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(255, 106, 26, 0.34), transparent 70%);
   filter: blur(30px);
   animation: glow 6s ease-in-out infinite;
 }
@@ -652,7 +651,7 @@ html.js .reveal[data-in] {
 .badge-cc {
   font: 500 11px var(--mono);
   color: var(--accent-ink);
-  background: rgba(99, 102, 241, 0.16);
+  background: rgba(255, 106, 26, 0.16);
   padding: 4px 9px;
   border-radius: 7px;
 }
@@ -702,7 +701,7 @@ html.js .reveal[data-in] {
 .turn-chip {
   font: 11px var(--mono);
   color: var(--accent-ink);
-  background: rgba(99, 102, 241, 0.14);
+  background: rgba(255, 106, 26, 0.14);
   padding: 3px 8px;
   border-radius: 6px;
 }
@@ -747,7 +746,7 @@ html.js .reveal[data-in] {
   from {
     opacity: 0;
     transform: translateY(-6px);
-    background: rgba(99, 102, 241, 0.16);
+    background: rgba(255, 106, 26, 0.16);
   }
   60% {
     opacity: 1;
@@ -776,7 +775,7 @@ html.js .reveal[data-in] {
 }
 .chip-edit {
   color: var(--accent-ink);
-  background: rgba(99, 102, 241, 0.16);
+  background: rgba(255, 106, 26, 0.16);
 }
 .step-text {
   font-family: var(--mono);
@@ -1072,8 +1071,8 @@ html.js .reveal[data-in] {
     opacity 0.8s var(--ease) !important;
 }
 .feature:hover {
-  border-color: rgba(129, 140, 248, 0.4);
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.06), transparent 60%), var(--s1);
+  border-color: rgba(255, 138, 76, 0.4);
+  background: linear-gradient(180deg, rgba(255, 106, 26, 0.06), transparent 60%), var(--s1);
 }
 .f-mark {
   width: 38px;
@@ -1273,7 +1272,7 @@ html.js .reveal[data-in] {
 .cta-glow {
   position: absolute !important;
   inset: 0;
-  background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(99, 102, 241, 0.24), transparent 70%);
+  background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(255, 106, 26, 0.24), transparent 70%);
 }
 .cta-card h2 {
   font-size: clamp(32px, 4.4vw, 56px);
@@ -1309,7 +1308,7 @@ html.js .reveal[data-in] {
 .wl-form input:focus {
   outline: none;
   border-color: var(--accent-ink);
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 4px rgba(255, 106, 26, 0.2);
 }
 .wl-form .btn {
   min-height: 50px;
@@ -1469,8 +1468,8 @@ html.js .reveal[data-in] {
   transform: rotate(90deg);
 }
 .faq-item[open] .faq-icon {
-  background: rgba(99, 102, 241, 0.16);
-  border-color: rgba(129, 140, 248, 0.45);
+  background: rgba(255, 106, 26, 0.16);
+  border-color: rgba(255, 138, 76, 0.45);
 }
 .faq-item[open] .faq-icon::after {
   transform: rotate(0deg);
@@ -1788,7 +1787,7 @@ html.js .reveal[data-in] {
 }
 .prose-page a {
   text-decoration: underline;
-  text-decoration-color: rgba(165, 180, 252, 0.35);
+  text-decoration-color: rgba(255, 179, 138, 0.35);
   text-underline-offset: 3px;
   overflow-wrap: anywhere;
 }
@@ -1863,7 +1862,7 @@ html.js .reveal[data-in] {
   height: 9px;
   border-radius: 3px;
   background: var(--accent-ink);
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 10px rgba(255, 106, 26, 0.6);
 }
 .step-list .step-n {
   font: 11px var(--mono);
@@ -1903,8 +1902,8 @@ html.js .reveal[data-in] {
 }
 .link-card:hover {
   color: var(--text);
-  border-color: rgba(129, 140, 248, 0.4);
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.06), transparent 60%), var(--s1);
+  border-color: rgba(255, 138, 76, 0.4);
+  background: linear-gradient(180deg, rgba(255, 106, 26, 0.06), transparent 60%), var(--s1);
 }
 .link-card h2,
 .link-card h3 {
@@ -1951,7 +1950,7 @@ html.js .reveal[data-in] {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 60% 90% at 0% 0%, rgba(99, 102, 241, 0.18), transparent 70%);
+  background: radial-gradient(ellipse 60% 90% at 0% 0%, rgba(255, 106, 26, 0.18), transparent 70%);
   pointer-events: none;
 }
 .page-cta > * {
@@ -2033,7 +2032,7 @@ html.js .reveal[data-in] {
 }
 .tag-new {
   color: var(--accent-ink);
-  background: rgba(99, 102, 241, 0.16);
+  background: rgba(255, 106, 26, 0.16);
 }
 .tag-improved {
   color: var(--teal);

@@ -19,23 +19,27 @@
   --text-secondary: #9AA0AE;
   --text-muted: #808797; /* 4.5:1 or better up to surface-2 (WCAG AA) */
 
-  /* Accent: indigo, interactive only */
-  --accent: #6366F1;
-  --accent-2: #818cf8;
-  --accent-dim: rgba(99, 102, 241, 0.14);
-  --accent-glow: rgba(99, 102, 241, 0.35);
+  /* Accent: signal orange, for marks and links only */
+  /* Palette D: orange marks things (logo, links, badges); primary buttons are warm white. */
+  --accent: #FF6A1A;
+  --accent-2: #FF8A4C;
+  --accent-dim: rgba(255, 106, 26, 0.14);
+  --accent-glow: rgba(255, 106, 26, 0.35);
+  --btn-primary: #ECE9E3;
+  --btn-primary-ink: #0B0C0F;
 
   /* Semantics: meaning only */
   --danger: #F0616D;
   --danger-bg: rgba(240, 97, 109, 0.12);
-  --warn: #E0A458;
-  --warn-bg: rgba(224, 164, 88, 0.12);
+  /* Yellow rather than amber, so warnings never read as the orange brand colour. */
+  --warn: #E5C04F;
+  --warn-bg: rgba(229, 192, 79, 0.12);
   --success: #3FCF8E;
   --success-bg: rgba(63, 207, 142, 0.12);
 
   /* Agent identity tints (badges only, never interactive) */
-  --cc-bg: rgba(99, 102, 241, 0.16);
-  --cc-fg: #a5b4fc;
+  --cc-bg: rgba(255, 106, 26, 0.14);
+  --cc-fg: #FFB38A;
   --cline-bg: rgba(94, 234, 212, 0.14);
   --cline-fg: #5EEAD4;
 
@@ -73,18 +77,18 @@
   --text-primary: #1F2937;
   --text-secondary: #6B7280;
   --text-muted: #9CA3AF;
-  --accent: #4F46E5;
-  --accent-2: #6366F1;
-  --accent-dim: rgba(79, 70, 229, 0.14);
-  --accent-glow: rgba(79, 70, 229, 0.35);
+  --accent: #C2410C;
+  --accent-2: #FF6A1A;
+  --accent-dim: rgba(194, 65, 12, 0.14);
+  --accent-glow: rgba(194, 65, 12, 0.35);
   --danger: #DC2626;
   --danger-bg: rgba(220, 38, 38, 0.12);
   --warn: #B45309;
   --warn-bg: rgba(180, 83, 9, 0.12);
   --success: #16A34A;
   --success-bg: rgba(22, 163, 74, 0.12);
-  --cc-bg: rgba(79, 70, 229, 0.16);
-  --cc-fg: #4F46E5;
+  --cc-bg: rgba(194, 65, 12, 0.16);
+  --cc-fg: #C2410C;
   --cline-bg: rgba(20, 184, 166, 0.14);
   --cline-fg: #0D9488;
 } */
