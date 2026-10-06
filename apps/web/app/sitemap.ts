@@ -18,7 +18,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/blog/",
     ...POSTS.filter((p) => !p.draft).map((p) => `/blog/${p.slug}/`),
     "/privacy/",
-    "/terms/",
   ];
   return paths.map((p) => ({ url: `${SITE}${p}` }));
 }

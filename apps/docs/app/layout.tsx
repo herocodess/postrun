@@ -53,7 +53,7 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
             <PrevNext />
             <footer className="doc-foot muted small">
               Found something wrong? These docs live in <code>apps/docs</code> of the postrun repo.{" "}
-              <a href={`${SITE}/privacy/`}>Privacy</a> · <a href={`${SITE}/terms/`}>Terms</a> · <a href={`${SITE}/security/`}>Security</a>
+              <a href={`${SITE}/privacy/`}>Privacy</a> · <a href={`${SITE}/security/`}>Security</a>
             </footer>
           </main>
           <Toc />

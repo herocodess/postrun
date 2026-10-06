@@ -26,11 +26,11 @@ Every animation starts when it scrolls into view and loops or holds. With the sy
 
 Security headers (CSP, HSTS, nosniff, frame and referrer rules) live in `vercel.json`. The CSP allows network requests to this origin only, so when you choose a waitlist provider add its origin to `connect-src` (the check above tells you the exact origin).
 
-- `NEXT_PUBLIC_WAITLIST_URL`: an endpoint that accepts a JSON POST with `email` (Formspree, Tally, a Worker). Until it's set, the form tells visitors sign-ups aren't open yet.
-- Legal placeholders in `/privacy` and `/terms`: [LEGAL ENTITY NAME], [REGISTERED ADDRESS], [PRIVACY EMAIL], [CONTACT EMAIL], [WAITLIST PROVIDER], [LOG RETENTION PERIOD], [SOFTWARE LICENCE], [LIABILITY CAP], [GOVERNING LAW], [JURISDICTION]. Have a lawyer review both pages before launch.
+- `NEXT_PUBLIC_WAITLIST_URL`: the Formspree form endpoint, `https://formspree.io/f/<form id>`, set in the Vercel project's environment variables. Formspree emails you each sign-up. Until it's set, the form tells visitors sign-ups aren't open yet.
+- Contact details (email, GitHub link) live in `content/site.ts`. The GitHub link points at the profile while the repo is private.
 - No cookie banner, on purpose: the site sets no cookies and no browser storage. Analytics is Vercel Web Analytics, which is cookieless, and it is described in `/privacy#website`.
 - Analytics: turn on Web Analytics for the project in the Vercel dashboard. It loads only on Vercel builds (`VERCEL=1`), so local builds have no tracking script. Clicks on anything with `data-track="Name"` (plus optional `data-track-where`) are sent as custom events by `components/ClickTracker.tsx`, and a successful waitlist sign-up sends `Waitlist signup`. Custom events need Vercel's Pro plan; on Hobby only page views are recorded.
-- `[SECURITY EMAIL]` and `[RESPONSE TIME]` on `/security` and in `public/.well-known/security.txt`. Renew the `Expires` date in `security.txt` before it passes.
+- Renew the `Expires` date in `public/.well-known/security.txt` before it passes (the build check fails once it has).
 - Draft blog posts appear in dev and previews only; production lists published posts.
-- Placeholders still in the copy: the install command (the Record terminal says "install ships with early access") and `[GITHUB OR CONTACT]` in the footer.
+- Placeholders still in the copy: the install command (the Record terminal says "install ships with early access").
 - The terminals show a `postrun` CLI (`postrun capture`, `postrun export`). Today those are `pnpm capture` and `pnpm export` in the repo.

@@ -25,8 +25,8 @@ export const RELEASES: Release[] = [
     items: [
       { kind: "new", text: "postrun.app, with an animated example session, the three steps of record, review and share, and an early access waitlist." },
       { kind: "new", text: "An example exported report you can open in your browser, the same file Postrun writes on export." },
-      { kind: "new", text: "FAQ, privacy policy, terms and a cookies statement. The site sets no cookies." },
-      { kind: "new", text: "Cookieless visit and click counts with Vercel Web Analytics, described in the privacy policy." },
+      { kind: "new", text: "FAQ and a plain-language privacy page. The site sets no cookies." },
+      { kind: "new", text: "Cookieless visit and click counts with Vercel Web Analytics, described on the privacy page." },
       { kind: "improved", text: "A translucent header that folds into a pill as you scroll, and layouts for foldable and dual-screen devices." },
     ],
   },

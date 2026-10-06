@@ -1632,6 +1632,22 @@ html.js .reveal[data-in] {
 .footer-note {
   margin-top: 18px;
   font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+.footer-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+  transition: color 0.2s var(--ease);
+}
+.footer-gh:hover {
+  color: var(--text);
 }
 .footer-brand {
   color: var(--text);
@@ -2407,4 +2423,13 @@ html.js .reveal[data-in] {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
+}
+
+/* Formspree honeypot: off screen for people, still in the form for bots. */
+.wl-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }

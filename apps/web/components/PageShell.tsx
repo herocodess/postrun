@@ -6,7 +6,6 @@ import { Reveal } from "./Reveal";
 /**
  * Shared layout for content pages (use cases, security, changelog, blog):
  * header with kicker, title and lede, then the page's own sections.
- * Like LegalPage, without the legal draft notice or contents list.
  * `meta` sits under the lede (dates, badges, notices).
  */
 export function PageShell({

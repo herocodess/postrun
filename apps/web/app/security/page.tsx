@@ -3,6 +3,7 @@ import { pageMeta } from "@/content/meta";
 import { PageCta } from "@/components/PageCta";
 import { PageShell } from "@/components/PageShell";
 import { Reveal } from "@/components/Reveal";
+import { CONTACT_EMAIL } from "@/content/site";
 
 export const metadata: Metadata = pageMeta("/security/", {
   title: "Security · postrun",
@@ -187,13 +188,14 @@ export default function Security() {
           <p>
             postrun.app sets no cookies and uses no local storage. Visits and button clicks are counted with Vercel Web Analytics, which is cookieless and shows us only aggregate
             numbers. If you join the waitlist, we keep your email address. Fonts are served from our own domain and there are no advertising or third-party scripts. The full
-            details are in the <a href="/privacy/#website">privacy policy</a>.
+            details are on the <a href="/privacy/#website">privacy page</a>.
           </p>
 
           <h2 id="report">Reporting a vulnerability</h2>
           <p>
-            If you find a security issue in Postrun or this website, email <b>[SECURITY EMAIL]</b>. Please include steps to reproduce, the version or commit you tested, and the
-            impact you see, and give us a chance to fix it before you disclose it publicly. We will acknowledge your report within [RESPONSE TIME].
+            If you find a security issue in Postrun or this website, email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. Please include steps to reproduce, the
+            version or commit you tested, and the impact you see, and give me a chance to fix it before you disclose it publicly. Postrun is a personal project, so I aim to reply
+            within a few days.
           </p>
           <p>
             Our contact details are also published at <a href="/.well-known/security.txt">/.well-known/security.txt</a>.

@@ -26,12 +26,12 @@ export default function IntroducingPostrun() {
             <time dateTime={post.date} className="mono muted small">
               {formatDate(post.date)}
             </time>
-            <span className="muted small">by [AUTHOR NAME]</span>
+            <span className="muted small">by Hero Momoh</span>
             {post.draft ? <span className="badge-draft">Draft</span> : null}
           </span>
           {post.draft ? (
             <p className="page-notice" role="note">
-              Draft, not yet published. This post is for the founder to edit before launch. Items in [BRACKETS] still need filling in.
+              Draft, not yet published. Edit it, then set draft to false in content/posts.ts to publish.
             </p>
           ) : null}
         </>

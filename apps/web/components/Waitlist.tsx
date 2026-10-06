@@ -4,8 +4,10 @@ import { track } from "@vercel/analytics";
 import { useState, type FormEvent } from "react";
 
 /**
- * Early-access form. Posts the email to NEXT_PUBLIC_WAITLIST_URL (any endpoint
- * that accepts a form POST with an `email` field: Formspree, Tally, a Worker).
+ * Early-access form. Posts the email as JSON to NEXT_PUBLIC_WAITLIST_URL, a
+ * Formspree form endpoint (https://formspree.io/f/<form id>), which emails each
+ * sign-up to the owner. vercel.json's CSP allows connections to formspree.io.
+ * `_gotcha` is Formspree's honeypot: people never see it, bots fill it in.
  * Until that is set, it says so instead of pretending to sign anyone up.
  */
 const ENDPOINT = process.env["NEXT_PUBLIC_WAITLIST_URL"] ?? "";
@@ -17,7 +19,9 @@ export function Waitlist() {
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const email = String(new FormData(e.currentTarget).get("email") ?? "").trim();
+    const data = new FormData(e.currentTarget);
+    const email = String(data.get("email") ?? "").trim();
+    const gotcha = String(data.get("_gotcha") ?? "");
     if (!ENDPOINT) {
       // Production builds refuse to ship without NEXT_PUBLIC_WAITLIST_URL (scripts/prod-check.mjs).
       setState({ kind: "error", message: "Sign-ups aren't open yet. Check back soon." });
@@ -25,7 +29,7 @@ export function Waitlist() {
     }
     setState({ kind: "sending" });
     try {
-      const res = await fetch(ENDPOINT, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ email }) });
+      const res = await fetch(ENDPOINT, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ email, _gotcha: gotcha }) });
       if (!res.ok) throw new Error(String(res.status));
       setState({ kind: "done" });
       track("Waitlist signup"); // the event only: the email is never sent to analytics
@@ -48,6 +52,7 @@ export function Waitlist() {
         Work email
       </label>
       <input id="wl-email" name="email" type="email" required placeholder="you@company.com" autoComplete="email" />
+      <input type="text" name="_gotcha" tabIndex={-1} autoComplete="off" aria-hidden="true" className="wl-trap" />
       <button type="submit" className="btn btn-primary" disabled={state.kind === "sending"}>
         {state.kind === "sending" ? "Sending…" : "Get early access"}
       </button>

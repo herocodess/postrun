@@ -1,160 +1,61 @@
 import type { Metadata } from "next";
+import { PageShell } from "@/components/PageShell";
 import { pageMeta } from "@/content/meta";
-import { LegalPage } from "@/components/LegalPage";
+import { CONTACT_EMAIL } from "@/content/site";
 
 export const metadata: Metadata = pageMeta("/privacy/", {
-  title: "Privacy policy · postrun",
-  description: "How Postrun handles your data: the app sends us nothing, the website keeps an email only if you join the waitlist, and visits are counted without cookies.",
+  title: "Privacy · postrun",
+  description: "What Postrun collects: the app sends nothing anywhere, the website keeps your email only if you join the waitlist, and visits are counted without cookies.",
 });
 
-const TOC = [
-  { id: "who", label: "Who we are" },
-  { id: "app", label: "The Postrun app" },
-  { id: "exports", label: "Reports you export" },
-  { id: "website", label: "This website" },
-  { id: "cookies", label: "Cookies" },
-  { id: "sharing", label: "Who we share data with" },
-  { id: "transfers", label: "International transfers" },
-  { id: "retention", label: "How long we keep data" },
-  { id: "rights", label: "Your rights" },
-  { id: "children", label: "Children" },
-  { id: "changes", label: "Changes to this policy" },
-  { id: "contact", label: "Contact" },
-];
-
+/**
+ * A plain privacy note for a personal project: what is collected, by whom,
+ * and how to have it removed. Section ids are linked from elsewhere
+ * (#website, #cookies), so keep them stable.
+ */
 export default function Privacy() {
   return (
-    <LegalPage
-      title="Privacy policy"
-      updated="6 October 2026"
-      toc={TOC}
-      summary={
-        <ul className="legal-points">
-          <li>
-            <b>The Postrun app sends us nothing.</b> It records your agent sessions on your own computer and never transmits them to us or anyone else.
-          </li>
-          <li>
-            <b>Sessions leave your machine only when you export one.</b> You choose the file and who gets it.
-          </li>
-          <li>
-            <b>This website keeps one thing:</b> your email address, if you join the waitlist.
-          </li>
-          <li>
-            <b>No cookies, and nothing that identifies you.</b> We count visits and button clicks anonymously, in aggregate.
-          </li>
-        </ul>
-      }
+    <PageShell
+      kicker="PRIVACY"
+      title="What Postrun collects, in plain words."
+      lede="Postrun is a personal project by Hero Momoh. The short version: the app sends nothing anywhere, and this website keeps your email only if you ask it to."
+      meta={<p className="mono muted small">Last updated 6 October 2026</p>}
     >
-      <h2 id="who">Who we are</h2>
-      <p>
-        Postrun is made by [LEGAL ENTITY NAME], [REGISTERED ADDRESS] (&ldquo;Postrun&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;). For the waitlist described below, we are the
-        controller of your personal data. You can reach us about anything in this policy at [PRIVACY EMAIL].
-      </p>
-      <p>
-        This policy covers the Postrun software (&ldquo;the app&rdquo;) and this website, postrun.app. We wrote it to meet the UK GDPR, the EU GDPR and the Nigeria Data Protection
-        Act 2023.
-      </p>
+      <div className="prose-page">
+        <h2 id="app">The Postrun app</h2>
+        <p>
+          The app records what your coding agents do on your computer: prompts, replies, commands and their output, and the files they read and edit. All of it stays in the{" "}
+          <code>~/.postrun</code> folder on your machine, readable only by your user account. The app listens on <code>127.0.0.1</code> only, has no telemetry or crash
+          reporting, and never contacts me or anyone else. Delete <code>~/.postrun</code> and everything it stored is gone.
+        </p>
 
-      <h2 id="app">The Postrun app</h2>
-      <p>
-        The app records what AI coding agents do on your computer: your prompts, the agent&rsquo;s replies, the commands it runs and their output, the files it reads and edits, and
-        related details such as timestamps, token counts and cost figures the agent reports.
-      </p>
-      <p>
-        All of this stays on your computer. It is stored in the <code>~/.postrun</code> folder, with files readable only by your user account. The recorder and the review app
-        listen on <code>127.0.0.1</code> only, so they cannot be reached from other machines. The app contains no telemetry, analytics or crash reporting, and does not contact our
-        servers.
-      </p>
-      <p>
-        Because we never receive this data, we don&rsquo;t process it and can&rsquo;t see, copy or delete it. You control it entirely: deleting the <code>~/.postrun</code> folder
-        removes everything the app has stored.
-      </p>
-      <p>
-        Sessions can contain personal data or confidential material that belongs to you, your employer or others (for example names in commit messages, or secrets a command
-        printed). You are responsible for using the app in line with your employer&rsquo;s policies and the law that applies to that data.
-      </p>
+        <h2 id="exports">Reports you export</h2>
+        <p>
+          Exporting a session writes one HTML file on your computer, with known secrets, credentials and home folder paths masked and every mask listed for you to check. Redaction
+          can miss things, so skim a report before you send it. Who receives it is up to you. The file has no scripts and makes no network requests when opened.
+        </p>
 
-      <h2 id="exports">Reports you export</h2>
-      <p>
-        When you export a session, the app writes one HTML file on your computer. Before writing it, the app masks known secret formats, credential values and home folder paths,
-        leaves out your machine name and local file locations, and shows you every value it masked. Redaction is automatic and helpful, but it can miss things, so please check a
-        report before sharing it.
-      </p>
-      <p>
-        You decide who receives an exported report. Once you send it, the recipient&rsquo;s use of it is governed by their own practices, not this policy. Exported reports contain
-        no scripts or tracking and make no network requests when opened.
-      </p>
-      <p>We plan to offer hosted share links in future. Before that launches, we will update this policy to explain exactly what is uploaded, where, and for how long.</p>
+        <h2 id="website">This website</h2>
+        <p>
+          <b>Waitlist.</b> If you join the waitlist, your email address is sent to Formspree, which forwards it to me. I use it only to tell you when Postrun is ready for your
+          agent, and never share or sell it.
+        </p>
+        <p>
+          <b>Visit counts.</b> The site is hosted on Vercel and uses Vercel Web Analytics to count visits, pages read and buttons clicked, in aggregate. It sets no cookies and I
+          never see who you are or your IP address. Anything you type, like your email, is never sent to analytics.
+        </p>
+        <p>There are no ads, social media widgets or other third-party scripts, and fonts are served from this domain.</p>
 
-      <h2 id="website">This website</h2>
-      <p>
-        <b>Waitlist.</b> If you join the waitlist, we collect your email address so we can tell you when Postrun is available for your agent. Our legal basis is your consent, which
-        you can withdraw at any time by emailing [PRIVACY EMAIL] or using the unsubscribe link in any email we send. Waitlist sign-ups are handled by [WAITLIST PROVIDER] on our
-        behalf.
-      </p>
-      <p>
-        <b>Hosting logs.</b> The site is served by Vercel Inc. Like any web server, it processes technical data such as your IP address, browser type and the pages
-        requested, so it can deliver the site and protect it against abuse. Our legal basis is our legitimate interest in running a secure website. We don&rsquo;t use these logs to
-        identify you or build a profile of you.
-      </p>
-      <p>
-        <b>Visit counts.</b> We use Vercel Web Analytics to see how many people visit, which pages they read, where they came from and which buttons they use (for example
-        &ldquo;Get early access&rdquo; or &ldquo;Example report&rdquo;). It does not use cookies. For each page view it records the page address, the referring site, your
-        country, region and city, your browser, operating system and device type, and the time. To count unique visitors without cookies, Vercel uses a hash created from the
-        request, which is discarded after 24 hours. We only see aggregated statistics, never individual visitors or their IP addresses, and we never send anything you type,
-        such as your email, to analytics. Our legal basis is our legitimate interest in understanding how the site is used.
-      </p>
-      <p>We don&rsquo;t use advertising, social media plugins or any other third-party scripts on this site. Fonts are served from our own domain.</p>
+        <h2 id="cookies">Cookies</h2>
+        <p>
+          This website sets no cookies and stores nothing in your browser, which is why there is no cookie banner. If that ever changes, this page will say so first.
+        </p>
 
-      <h2 id="cookies">Cookies</h2>
-      <p>
-        This website doesn&rsquo;t set any cookies, and doesn&rsquo;t use local storage or similar technologies to store information on your device, including for the
-        visit counts described above. That&rsquo;s why there&rsquo;s no cookie banner: there is nothing to consent to.
-      </p>
-      <p>
-        If that ever changes, we&rsquo;ll update this section first and, where the law requires it, ask for your consent before setting anything that isn&rsquo;t strictly
-        necessary.
-      </p>
-
-      <h2 id="sharing">Who we share data with</h2>
-      <p>
-        We don&rsquo;t sell personal data or share it for advertising. We only share it with the service providers named above, who process it on our instructions under data
-        processing agreements, or where the law requires us to.
-      </p>
-
-      <h2 id="transfers">International transfers</h2>
-      <p>
-        Our providers may process data outside the UK, the EU or Nigeria. When they do, we rely on safeguards recognised by the relevant law, such as the UK International Data
-        Transfer Agreement or Addendum, the EU Standard Contractual Clauses, or an adequacy decision.
-      </p>
-
-      <h2 id="retention">How long we keep data</h2>
-      <p>
-        We keep your waitlist email until you ask us to remove it or unsubscribe, or until we close the waitlist, whichever comes first. Hosting logs are kept for the period set
-        by Vercel, [LOG RETENTION PERIOD]. Visit counts are kept as aggregated statistics, and the hash used to count unique visitors is discarded after 24 hours.
-      </p>
-
-      <h2 id="rights">Your rights</h2>
-      <p>
-        Depending on where you live, you can ask to access, correct or delete your personal data, object to or restrict how we use it, receive a copy of it, and withdraw consent
-        at any time. Email [PRIVACY EMAIL] and we&rsquo;ll respond within one month.
-      </p>
-      <p>
-        You can also complain to a data protection authority: the Information Commissioner&rsquo;s Office (ico.org.uk) in the UK, the Nigeria Data Protection Commission
-        (ndpc.gov.ng) in Nigeria, or the authority in your EU country. We&rsquo;d appreciate the chance to fix things first.
-      </p>
-
-      <h2 id="children">Children</h2>
-      <p>Postrun is a tool for software developers and is not directed at children. We don&rsquo;t knowingly collect personal data from anyone under 16.</p>
-
-      <h2 id="changes">Changes to this policy</h2>
-      <p>
-        We&rsquo;ll update this page when our practices change and change the date at the top. If a change is significant, such as introducing hosted share links, we&rsquo;ll tell
-        waitlist members by email before it takes effect.
-      </p>
-
-      <h2 id="contact">Contact</h2>
-      <p>[LEGAL ENTITY NAME], [REGISTERED ADDRESS]. Email: [PRIVACY EMAIL].</p>
-    </LegalPage>
+        <h2 id="contact">Removing your email, or any question</h2>
+        <p>
+          Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and I&rsquo;ll delete your waitlist entry or answer your question.
+        </p>
+      </div>
+    </PageShell>
   );
 }
