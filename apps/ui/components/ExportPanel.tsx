@@ -6,8 +6,8 @@
  */
 
 import { useEffect, useState } from "react";
-import type { ExportReviewResponse, SecretKind } from "@postrun/core/server/api";
-import { api, apiFetch } from "@/lib/api";
+import type { AccountResponse, ApiError, ExportReviewResponse, SecretKind, ShareResponse } from "@postrun/core/server/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ExportReviewResponse };
 
@@ -69,6 +69,7 @@ export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose
       {state.kind === "loading" && <p className="muted">Checking what to redact…</p>}
       {state.kind === "error" && <p className="error">Could not prepare the export: {state.message}</p>}
       {state.kind === "ready" && <Review data={state.data} href={downloadUrl} />}
+      {state.kind === "ready" && <ShareLink sessionId={sessionId} />}
     </section>
   );
 }
@@ -103,5 +104,120 @@ function Review({ data, href }: { data: ExportReviewResponse; href: string }) {
         <span className="muted">Redaction is automatic, not a guarantee. Skim the report before you send it.</span>
       </div>
     </>
+  );
+}
+
+const EXPIRY = [1, 7, 30, 90] as const;
+
+type ShareState =
+  | { kind: "loading" }
+  | { kind: "demo" }
+  | { kind: "signed-out"; server: string }
+  | { kind: "ready"; account: AccountResponse }
+  | { kind: "making"; account: AccountResponse }
+  | { kind: "made"; account: AccountResponse; link: ShareResponse }
+  | { kind: "error"; account: AccountResponse; message: string };
+
+/**
+ * A link instead of a file: the same redacted report, uploaded to app.postrun.app by the
+ * background process with this computer's sign-in. Only on purpose, one session at a time.
+ */
+function ShareLink({ sessionId }: { sessionId: string }) {
+  const [s, setS] = useState<ShareState>(DEMO ? { kind: "demo" } : { kind: "loading" });
+  const [days, setDays] = useState<(typeof EXPIRY)[number]>(30);
+  const [copied, setCopied] = useState(false);
+
+  const load = () => {
+    if (DEMO) return;
+    apiFetch(api.account())
+      .then(async (r) => (r.ok ? ((await r.json()) as AccountResponse) : { signed_in: false, server: "https://app.postrun.app" }))
+      .then((a) => setS(a.signed_in ? { kind: "ready", account: a } : { kind: "signed-out", server: a.server }))
+      .catch(() => setS({ kind: "signed-out", server: "https://app.postrun.app" }));
+  };
+  useEffect(load, []);
+
+  async function make(account: AccountResponse) {
+    setS({ kind: "making", account });
+    try {
+      const r = await apiFetch(api.share(sessionId), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expires_days: days }) });
+      if (r.status === 409) return setS({ kind: "signed-out", server: account.server });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({ error: `${r.status}` }))) as ApiError;
+        return setS({ kind: "error", account, message: e.error });
+      }
+      setS({ kind: "made", account, link: (await r.json()) as ShareResponse });
+    } catch (e) {
+      setS({ kind: "error", account, message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function copy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard blocked: the link is selectable
+    }
+  }
+
+  const manage = (server: string) => `${server}/shares`;
+
+  return (
+    <div className="share-box">
+      <div className="share-box-head">
+        <h3>Share link</h3>
+        <span className="sub">the same redacted report, as an unlisted link that expires</span>
+      </div>
+      {s.kind === "loading" && <p className="muted">…</p>}
+      {s.kind === "demo" && <p className="muted">In your own Postrun, this uploads the report above and gives you a link to send.</p>}
+      {s.kind === "signed-out" && (
+        <div className="share-signin">
+          <p className="muted">
+            Connect this computer to a Postrun account once, in a terminal: <code>postrun login</code>
+          </p>
+          <button type="button" className="btn ghost" onClick={load}>
+            I&apos;ve done it
+          </button>
+        </div>
+      )}
+      {(s.kind === "ready" || s.kind === "making" || s.kind === "error") && (
+        <>
+          <div className="share-make">
+            <span className="muted">Link works for</span>
+            <div className="seg" role="group" aria-label="Link works for">
+              {EXPIRY.map((d) => (
+                <button key={d} type="button" className={d === days ? "on" : ""} aria-pressed={d === days} onClick={() => setDays(d)} disabled={s.kind === "making"}>
+                  {d === 1 ? "1 day" : `${d} days`}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="btn primary" onClick={() => void make(s.account)} disabled={s.kind === "making"}>
+              {s.kind === "making" ? "Uploading…" : "Create link"}
+            </button>
+          </div>
+          <p className="muted small-note">
+            Uploads to {s.account.server.replace(/^https?:\/\//, "")} as {s.account.email ?? "you"}. Anyone with the link can open it until it expires or you turn it off.
+          </p>
+          {s.kind === "error" && <p className="error">{s.message}</p>}
+        </>
+      )}
+      {s.kind === "made" && (
+        <div className="share-made">
+          <div className="share-url">
+            <input readOnly value={s.link.url} aria-label="Share link" onFocus={(e) => e.currentTarget.select()} />
+            <button type="button" className={`btn primary${copied ? " ok" : ""}`} onClick={() => void copy(s.link.url)}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className="muted small-note">
+            Expires {new Date(s.link.expires_at).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}.{" "}
+            <a href={manage(s.account.server)} target="_blank" rel="noreferrer">
+              See opens or turn it off
+            </a>
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

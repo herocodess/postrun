@@ -1,0 +1,107 @@
+export const metadata = {
+  title: "Share links",
+  description: "Send a redacted session report as a link: unlisted, expiring, and easy to turn off.",
+};
+
+# Share links
+
+A share link is the same redacted report that [export](/export/) writes, uploaded to `app.postrun.app` so you can send a link instead of a file. You choose to share one session at a time. Nothing else leaves your machine, and recording never needs an account.
+
+Each link is:
+
+- **Unlisted.** The address has a random 16-character id. Only people you send it to can open it, and search engines are told not to index it.
+- **Expiring.** It works for 1, 7, 30 or 90 days (30 by default), then stops, and the report is deleted soon after.
+- **Easy to turn off.** Turning a link off deletes the report straight away.
+- **Counted.** You can see how many times each link was opened.
+
+## Connect this computer, once
+
+Sharing needs a Postrun account. Sign in with GitHub or an email link: either one creates the account the first time. There are no passwords.
+
+```bash
+postrun login
+```
+
+Your browser opens `app.postrun.app`. Sign in if you need to, check the computer's name, and click **Connect**. The terminal then says who you are signed in as.
+
+Behind the scenes the browser hands the terminal a one-time code, never the sign-in itself. The terminal swaps the code for a token by proving it started the login, as OAuth apps do (PKCE). The code works once, within two minutes, so one left in your browser history is useless.
+
+The sign-in is saved in `~/.postrun/account.json`, readable only by you. It can upload share links and nothing else: it cannot read your other links or change your account. Each connected computer is listed in **Settings** at `app.postrun.app`, where you can sign it out.
+
+### A computer without a browser
+
+On a server you reach over SSH, make a token in **Settings → Computers → Connect a computer without a browser** at `app.postrun.app`. Then, on that computer:
+
+```bash
+postrun login --with-token
+```
+
+and paste the token when it asks. It is read from the terminal (or stdin), never the command line, so it stays out of your shell history. The token is shown once. Keep it out of chats and screenshots.
+
+## Make a link
+
+### From the review app
+
+1. Open the session and click **Export report**.
+2. Check what redaction masked, as you would for a file.
+3. Under **Share link**, choose how long it works and click **Create link**.
+4. Copy the link and send it.
+
+The background process uploads the report with this computer's sign-in. The page itself never sees the token.
+
+### From the terminal
+
+```bash
+postrun sessions                      # find the session id
+postrun share <session-id>            # asks before uploading
+postrun share <session-id> --expires 7 --yes
+```
+
+It lists what redaction masked, asks before uploading, and prints the link:
+
+```text
+Redaction: masked 1 value(s) and 14 home path(s):
+  anthropic-key   step 41 · command · stdout
+Upload this redacted report to app.postrun.app? Anyone with the link can open it for 30 days. [Y/n]
+
+  https://app.postrun.app/s/Xb3kP9qLmT2vR8wN
+
+Expires 5 Nov 2026. See opens or turn it off: https://app.postrun.app/shares
+```
+
+## See, turn off and remove links
+
+**Share links** at `app.postrun.app` lists every link you made: whether it is live, expired or turned off, when it expires, its size and how many times it was opened. Opens count each time the report loads, yours included.
+
+- **Turn off** stops the link at once and deletes the report.
+- **Remove** takes an expired or turned-off link off the list.
+- **Delete account** in Settings deletes every link and every computer's sign-in. Sessions on your machine are not touched.
+
+## What someone sees
+
+The link opens a page with a slim Postrun bar (the session title and when the link expires) above the report. Nothing about who shared it is shown. The reader does not need an account.
+
+The report is served the way an untrusted file should be. It runs in a sandbox with no scripts, forms, popups or network requests. The browser treats it as coming from nowhere (an opaque origin), so it cannot read `app.postrun.app` cookies or pages, or reach anything else. It is never cached.
+
+The email that signs you in opens a page with a **Sign in** button rather than signing you in straight away, because some mail scanners open every link in an email and would use up a one-time link before you click it.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Report size | 4 MB compressed (reports are sent gzipped; most are well under 1 MB) |
+| Links made per hour | 30 |
+| Live links at once | 200 |
+| Connected computers | 20 |
+
+<Callout type="warn" title="Redaction still applies">
+  A share link holds exactly what the exported file would. Redaction is a safety net, not a guarantee, so skim the report before you send the link. If you sent something you shouldn't have, turn the link off: the report is deleted at once.
+</Callout>
+
+## Sign out
+
+```bash
+postrun logout
+```
+
+Signs this computer out on `app.postrun.app` too, so its token stops working, and deletes `~/.postrun/account.json`. Links you already made keep working until they expire or you turn them off.

@@ -134,6 +134,14 @@ export const api = {
   deleteAll(): string {
     return "/api/data/delete";
   },
+  /** Whether this computer can make share links (postrun login). Not in the demo. */
+  account(): string {
+    return "/api/account";
+  },
+  /** POST { expires_days } to upload the redacted report and get its link. Not in the demo. */
+  share(id: string): string {
+    return `/api/sessions/${enc(id)}/share`;
+  },
   exportDownload(id: string): string {
     return DEMO ? `${BASE}/data/exports/${enc(id)}.html` : withKey(`/api/sessions/${enc(id)}/export`);
   },

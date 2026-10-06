@@ -7,3 +7,5 @@ packages:
 overrides:
   # GHSA-68fv-2mgg-jv7q, reached through next > postcss at build time.
   source-map-js: ">=1.2.2"
+  # GHSA-wq5f-xc86-pv6w (librsvg in sharp), reached through next > sharp in apps/app. Image optimisation is unused.
+  sharp: ">=0.35.5"

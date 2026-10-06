@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Wordmark } from "./Logo";
+import { LOGIN_URL } from "@/content/site";
 
 /**
  * Translucent header with three states:
@@ -86,10 +87,10 @@ export function Nav() {
             ))}
           </div>
           <span className="grow"></span>
-          <a href="/login/" className="nav-login" data-track="Log in" data-track-where="nav">
+          <a href={LOGIN_URL} className="nav-login" data-track="Log in" data-track-where="nav">
             Log in
           </a>
-          <a href="/login/?mode=signup" className="btn btn-primary btn-sm nav-cta" data-track="Get started" data-track-where="nav">
+          <a href={LOGIN_URL} className="btn btn-primary btn-sm nav-cta" data-track="Get started" data-track-where="nav">
             Get started
           </a>
           <button
@@ -113,8 +114,8 @@ export function Nav() {
             {/* Links arrive like steps in a session timeline. */}
             {[
               ...LINKS.map((l) => ({ ...l, cta: false })),
-              { href: "/login/", label: "Log in", cta: false, external: false, offsite: false },
-              { href: "/login/?mode=signup", label: "Get started", cta: true, external: false, offsite: false },
+              { href: LOGIN_URL, label: "Log in", cta: false, external: false, offsite: true },
+              { href: `${LOGIN_URL}?new=1`, label: "Get started", cta: true, external: false, offsite: true },
             ].map((l, i) => (
               <a
                 key={l.href}

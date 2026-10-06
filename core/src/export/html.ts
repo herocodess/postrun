@@ -40,6 +40,7 @@ export function renderExportHtml(doc: ExportDocument, redaction: RedactionReport
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="generator" content="postrun">
+<meta name="postrun:agent" content="${esc(doc.agent.kind.replace(/[^a-z0-9-]/gi, "").slice(0, 32))}">
 <title>${esc(clip(title, 80))} · postrun report</title>
 <style>${CSS}</style>
 </head>

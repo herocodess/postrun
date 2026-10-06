@@ -125,6 +125,23 @@ export interface DeleteAllResponse {
   deleted: number;
 }
 
+/** GET /api/account: whether this computer can make share links (postrun login). */
+export interface AccountResponse {
+  signed_in: boolean;
+  email?: string;
+  /** Where links are made and managed, e.g. https://app.postrun.app */
+  server: string;
+}
+
+/** POST /api/sessions/:id/share with { expires_days }: the link, and what redaction masked first. */
+export interface ShareResponse {
+  url: string;
+  title: string;
+  expires_at: string;
+  masked: number;
+  home_paths: number;
+}
+
 /** What the background process provides to the server for the app's own routes. */
 export interface AppControl {
   status(): Promise<AppStatus>;
@@ -133,6 +150,10 @@ export interface AppControl {
   setPaused(paused: boolean): Promise<AppStatus>;
   runSetup(): Promise<SetupResponse>;
   deleteAll(): Promise<DeleteAllResponse>;
+  /** Share links (absent in builds that can't make them). */
+  account?(): Promise<AccountResponse>;
+  /** Upload one already redacted report. Throws an Error with `code` "not_signed_in" when there is no account. */
+  share?(html: string, days: number): Promise<{ url: string; title: string; expires_at: string }>;
 }
 
 /**
@@ -174,6 +195,8 @@ export interface DeleteSessionResponse {
 
 export interface ApiError {
   error: string;
+  /** A machine-readable reason, when the caller can act on it (e.g. not_signed_in). */
+  code?: string;
 }
 
 /**

@@ -16,6 +16,7 @@ export const USAGE_EVENTS = {
   changes_viewed: "Opened the Changes tab",
   report_exported: "Exported a report",
   reports_zipped: "Exported several reports as a zip",
+  report_shared: "Made a share link",
   search: "Searched sessions",
   keyboard_used: "Used keyboard shortcuts",
   backup_saved: "Saved a backup",

@@ -8,6 +8,7 @@ import { Reveal } from "@/components/Reveal";
 import { Terminal, type TermLine } from "@/components/Terminal";
 import { Testimonials } from "@/components/Testimonials";
 import { Waitlist } from "@/components/Waitlist";
+import { LOGIN_URL } from "@/content/site";
 
 const RECORD: TermLine[] = [
   { kind: "comment", text: "# install ships with early access" },
@@ -79,7 +80,7 @@ export default function Home() {
               </p>
             </Reveal>
             <Reveal delay={240} className="cta-row">
-              <a href="/login/?mode=signup" className="btn btn-primary btn-lg" data-track="Get started" data-track-where="hero">
+              <a href={LOGIN_URL} className="btn btn-primary btn-lg" data-track="Get started" data-track-where="hero">
                 Get started
               </a>
               <a href="/demo/" className="btn btn-ghost btn-lg" data-track="Try the demo" data-track-where="hero">

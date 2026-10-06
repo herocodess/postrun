@@ -19,6 +19,7 @@ import { VERSION } from "./assets.js";
 import { installHook } from "./hook.js";
 import { loadOrCreateToken } from "../server/token.js";
 import { readConfig, writeConfig, type Paths } from "./paths.js";
+import { readAccount, ShareFailed, shareServer, uploadReport } from "../share/client.js";
 import { installService, removeService, serviceState } from "./service.js";
 
 export interface Recorder {
@@ -267,6 +268,18 @@ export function createControl(d: ControlDeps): AppControl & { startUpdateChecks(
       d.log(`deleted everything from the review app: ${deleted} session(s)`);
       if (!wasPaused) d.recorder.resume();
       return { deleted };
+    },
+    async account() {
+      const a = readAccount(p.home);
+      // Signed in: the server that sign-in belongs to, which is where share() uploads.
+      return { signed_in: !!a, server: a?.server ?? shareServer(process.env), ...(a?.email ? { email: a.email } : {}) };
+    },
+    async share(html: string, days: number) {
+      const a = readAccount(p.home);
+      if (!a) throw new ShareFailed("This computer isn't signed in to Postrun. Run postrun login in a terminal, then try again.", "not_signed_in");
+      const r = await uploadReport(a.server, a.token, html, days, `postrun/${VERSION} (${process.platform}; review app)`);
+      d.log(`shared a report: ${r.url.replace(/\/s\/.*/, "/s/…")} (expires ${r.expires_at})`);
+      return { url: r.url, title: r.title, expires_at: r.expires_at };
     },
     startUpdateChecks() {
       if (timer) return;

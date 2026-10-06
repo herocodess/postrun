@@ -20,6 +20,18 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "Share links and accounts",
+    summary: "Send a redacted session report as a link instead of a file. Recording still never needs an account.",
+    items: [
+      { kind: "new", text: "app.postrun.app: sign in with GitHub or an email link, no passwords. Either way creates your account the first time." },
+      { kind: "new", text: "Share link in the review app's export panel, and postrun share in the terminal: the same redacted report, as an unlisted link that works for 1, 7, 30 or 90 days." },
+      { kind: "new", text: "Share links at app.postrun.app lists every link with how many times it was opened. Turning one off deletes the report at once." },
+      { kind: "new", text: "postrun login connects a computer to your account through the browser; Settings lists connected computers and signs them out." },
+      { kind: "security", text: "Shared reports open in a sandbox with no scripts, forms or network access, on their own origin, and are never cached or indexed. Sign-in tokens are stored only as hashes." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "See how you use Postrun",
     summary: "Postrun counts how often you use each feature, on your computer only, and shows you.",
     items: [

@@ -39,6 +39,7 @@ export const NAV: DocSection[] = [
     pages: [
       { href: "/review/", title: "Reviewing sessions", description: "The session list, the session view, and live updates.", keywords: "timeline ui live" },
       { href: "/export/", title: "Exporting and redaction", description: "Share one session as a redacted HTML report.", keywords: "share report redact secrets" },
+      { href: "/share/", title: "Share links", description: "Send a redacted report as an unlisted link that expires.", keywords: "share link login account upload app.postrun.app" },
     ],
   },
   {

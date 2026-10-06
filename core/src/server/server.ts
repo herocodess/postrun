@@ -14,6 +14,8 @@
  *   DELETE /api/sessions/:id         delete a session and its raw capture files (same-origin only)
  *   GET  /api/sessions/:id/export    redacted, self-contained HTML report (download)
  *   GET  /api/sessions/:id/export/review   what that export would mask, as JSON
+ *   POST /api/sessions/:id/share     upload that export to app.postrun.app, return the link (same-origin only)
+ *   GET  /api/account                whether this computer is signed in for share links
  *   POST /api/ingest                 push a v1.2 batch (bearer token; see ingest.ts, token.ts)
  *   GET  /api/events[?session=id]    live change stream, server-sent events (see live.ts)
  *   GET  /                           the built UI (apps/ui/out)
@@ -32,6 +34,7 @@ import { BadCursorError, DeletedSessionError, MAX_PAGE, PostrunStore, type Sessi
 import { isLoopbackHost } from "../util/host.js";
 import { zip } from "../util/zip.js";
 import type {
+  AccountResponse,
   ApiError,
   AppControl,
   AppSettings,
@@ -47,6 +50,7 @@ import type {
   SessionDeltaResponse,
   SessionDetailResponse,
   SessionListResponse,
+  ShareResponse,
   StepResponse,
   UsageResponse,
 } from "./api.js";
@@ -671,8 +675,9 @@ const noControl = (res: ServerResponse) =>
 /** PUT and POST routes of the review app. Returns false when the path is not one of them. */
 async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: URL, method: string, ctx: Ctx): Promise<boolean> {
   const verdict = /^\/api\/sessions\/([^/]+)\/verdict$/.exec(url.pathname);
+  const share = /^\/api\/sessions\/([^/]+)\/share$/.exec(url.pathname);
   const routes = ["/api/settings", "/api/recording", "/api/setup", "/api/data/delete", "/api/usage"];
-  if (!verdict && !routes.includes(url.pathname)) return false;
+  if (!verdict && !share && !routes.includes(url.pathname)) return false;
   const want = verdict || url.pathname === "/api/settings" ? "PUT" : "POST";
   if (method !== want) {
     text(res, 405, "method not allowed\n", { allow: want });
@@ -731,6 +736,10 @@ async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: UR
     noControl(res);
     return true;
   }
+  if (share) {
+    await handleShare(res, decodeURIComponent(share[1] as string), body, ctx);
+    return true;
+  }
   try {
     if (url.pathname === "/api/settings") {
       const patch: Partial<AppSettings> = {};
@@ -767,6 +776,38 @@ async function handleAppWrite(req: IncomingMessage, res: ServerResponse, url: UR
     json(res, 500, { error: (err as Error).message } satisfies ApiError);
   }
   return true;
+}
+
+/**
+ * Make a share link: the same redacted report as the export, uploaded by the background
+ * process with this computer's sign-in (postrun login). The page never sees the token.
+ */
+async function handleShare(res: ServerResponse, id: string, body: Record<string, unknown>, ctx: Ctx): Promise<void> {
+  const control = ctx.control;
+  if (!control?.share) {
+    json(res, 501, { error: "share links aren't available in this build" } satisfies ApiError);
+    return;
+  }
+  const days = body["expires_days"] ?? 30;
+  if (typeof days !== "number" || ![1, 7, 30, 90].includes(days)) {
+    json(res, 400, { error: "expires_days must be 1, 7, 30 or 90" } satisfies ApiError);
+    return;
+  }
+  const session = ctx.store.getSession(id);
+  if (!session) {
+    json(res, 404, { error: `session ${id} not found` } satisfies ApiError);
+    return;
+  }
+  const r = exportSession(session);
+  try {
+    const link = await control.share(r.html, days);
+    count(ctx, "report_shared");
+    json(res, 200, { ...link, masked: r.redaction.findings.length, home_paths: r.redaction.home_paths } satisfies ShareResponse);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    // 409, not 401: a 401 here would read as "this browser lost its key" and lock the review app.
+    json(res, code === "not_signed_in" ? 409 : 502, { error: (err as Error).message, ...(code ? { code } : {}) } satisfies ApiError);
+  }
 }
 
 /** GET routes of the review app beyond sessions. Returns false when the path is not one of them. */
@@ -826,6 +867,15 @@ async function handleAppRead(req: IncomingMessage, res: ServerResponse, url: URL
         "content-disposition": `attachment; filename="postrun-${entries.length}-sessions-${new Date().toISOString().slice(0, 10)}.zip"`,
       });
       res.end(method === "HEAD" ? undefined : body);
+      return true;
+    }
+    case "/api/account": {
+      const control = ctx.control;
+      if (!control?.account) {
+        json(res, 200, { signed_in: false, server: "https://app.postrun.app" } satisfies AccountResponse);
+        return true;
+      }
+      json(res, 200, await control.account());
       return true;
     }
     case "/api/status":

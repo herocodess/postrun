@@ -95,7 +95,7 @@ Nothing is rate limited, because neither listener is reachable from the network.
 
 ## What never leaves your machine
 
-Postrun has no telemetry and never phones home. The recorder, the store and the review app all run locally. Nothing leaves your machine unless you export a session yourself, one session at a time. The one optional exception is **Check for new versions** in Settings, off until you turn it on, which asks the npm registry for the latest version number once a day.
+Postrun has no telemetry and never phones home. The recorder, the store and the review app all run locally. Nothing leaves your machine unless you export or share a session yourself, one session at a time. The one optional exception is **Check for new versions** in Settings, off until you turn it on, which asks the npm registry for the latest version number once a day.
 
 ### Your usage counts
 
@@ -113,6 +113,10 @@ Postrun counts how often you use its features (opening the app, marking a review
 The file has no scripts, makes no network requests, and carries a Content-Security-Policy that forbids scripts, frames, forms and fetches.
 
 The full rules are on [Exporting and redaction](/export/).
+
+### Share links
+
+A [share link](/share/) uploads that same redacted file, and nothing else, to `app.postrun.app`. It only happens when you click **Create link** or run `postrun share`. Links are unlisted, expire after 1 to 90 days, and turning one off deletes the report. The sign-in that uploads them (`~/.postrun/account.json`, owner only) can make links and nothing else, and you can sign any computer out from Settings. On `app.postrun.app` the report is shown in a sandbox with no scripts, forms or network access, with an opaque origin, so it cannot reach your account. The sign-in a computer gets from `postrun login` is handed over with a one-time code and PKCE, never in a URL, and is stored on the server only as a hash.
 
 <Callout type="warn" title="Redaction is a safety net, not a guarantee">
   Redaction catches the formats and patterns it knows. It can miss a secret in free text, a token with an unfamiliar prefix, or a value under a name that is not a credential word. Skim every report before you send it.
