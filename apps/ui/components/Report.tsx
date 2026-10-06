@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
 import { api } from "@/lib/api";
 import type { Step, Turn } from "@postrun/core/schema";
@@ -31,6 +31,8 @@ export function Report() {
   const id = params.get("id") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
   const [exporting, setExporting] = useState(false);
+  // Long sessions show their most recent turns; earlier ones load on request. A link to a step shows everything.
+  const [shownTurns, setShownTurns] = useState(() => (typeof window !== "undefined" && window.location.hash.startsWith("#step-") ? Infinity : RECENT_TURNS));
   // Bumps when this session is written (a running agent, a late hook record) and on reconnect.
   const live = useLiveVersion(id || undefined);
 
@@ -269,24 +271,23 @@ export function Report() {
           </span>
         </div>
 
-        {[...turns, ...orphanTurns].map((t) => {
-          const list = stepsByTurn.get(t.id) ?? [];
-          const prompt = list.find((s) => s.type === "message" && s.payload.role === "user");
-          const promptText = prompt && prompt.type === "message" ? prompt.payload.text : undefined;
-
+        {(() => {
+          const all = [...turns, ...orphanTurns];
+          const hidden = Math.max(0, all.length - shownTurns);
           return (
-            <div key={t.id} className="turn">
-              <div className="turn-h">
-                <span className="turn-n">turn {t.index}</span>
-                <span className="txt">{firstLine(promptText || "", 120)}</span>
-                <span className="mode">{t.mode || "no mode"}</span>
-              </div>
-              {list.map((s) => (
-                <StepRow key={s.id} step={s} sessionId={summary.id} />
+            <>
+              {hidden > 0 && (
+                <button type="button" className="more-turns" onClick={() => setShownTurns((n) => n + EARLIER_TURNS_STEP)}>
+                  Show {Math.min(hidden, EARLIER_TURNS_STEP)} earlier turn{Math.min(hidden, EARLIER_TURNS_STEP) === 1 ? "" : "s"}
+                  <span className="muted"> &middot; {hidden} hidden</span>
+                </button>
+              )}
+              {all.slice(hidden).map((t) => (
+                <TurnBlock key={t.id} turn={t} steps={stepsByTurn.get(t.id) ?? EMPTY} sessionId={summary.id} />
               ))}
-            </div>
+            </>
           );
-        })}
+        })()}
       </div>
 
       <div className="foot">
@@ -295,6 +296,42 @@ export function Report() {
     </>
   );
 }
+
+/** Turns shown when a session opens, and how many more each "earlier turns" click adds. */
+const RECENT_TURNS = 30;
+const EARLIER_TURNS_STEP = 50;
+const EMPTY: Step[] = [];
+
+/**
+ * One turn of the timeline. Memoized: a live update re-renders only turns whose steps changed
+ * (unchanged steps keep their object identity through a delta merge), so a long session does not
+ * redraw thousands of rows every time an agent finishes a turn.
+ */
+const TurnBlock = memo(
+  function TurnBlock({ turn, steps, sessionId }: { turn: Turn; steps: Step[]; sessionId: string }) {
+    const prompt = steps.find((s) => s.type === "message" && s.payload.role === "user");
+    const promptText = prompt && prompt.type === "message" ? prompt.payload.text : undefined;
+    return (
+      <div className="turn">
+        <div className="turn-h">
+          <span className="turn-n">turn {turn.index}</span>
+          <span className="txt">{firstLine(promptText || "", 120)}</span>
+          <span className="mode">{turn.mode || "no mode"}</span>
+        </div>
+        {steps.map((s) => (
+          <StepRow key={s.id} step={s} sessionId={sessionId} />
+        ))}
+      </div>
+    );
+  },
+  (a, b) =>
+    a.sessionId === b.sessionId &&
+    a.turn.id === b.turn.id &&
+    a.turn.index === b.turn.index &&
+    a.turn.mode === b.turn.mode &&
+    a.steps.length === b.steps.length &&
+    a.steps.every((s, i) => s === b.steps[i]),
+);
 
 /** Open or close every step in the timeline. Each step renders its body when it opens. */
 function setAllSteps(open: boolean): void {

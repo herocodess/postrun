@@ -20,6 +20,18 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "Light on a long day",
+    summary: "Postrun now stays in the background on a very heavy day: several agents in parallel for twelve hours cost about 1% of one CPU core.",
+    items: [
+      { kind: "fixed", text: "Recording no longer stops once Claude Code's log grows past 512 MB. Logs are read in small pieces and never whole." },
+      { kind: "improved", text: "Each session is recorded in its own folder, and each agent turn reads only what that turn added, so a turn costs about the same at hour twelve as at minute one, however much history you have." },
+      { kind: "improved", text: "Raw log files are removed 24 hours after a session goes quiet; everything you review and export stays in the store. Edits no longer keep a full copy of the file." },
+      { kind: "improved", text: "The review app opens long sessions quickly and downloads only what changed on each live update. Full output loads when you open a step, and the timeline shows recent turns first." },
+      { kind: "improved", text: "Very long Cline sessions are refreshed less often while busy, so they never slow your machine down." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "Every step, opened up",
     summary: "The review app now shows everything a step recorded, and no Claude Code session is lost when the recorder was not running.",
     items: [

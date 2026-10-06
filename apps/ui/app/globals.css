@@ -1288,3 +1288,29 @@ h1.title {
     margin-left: 12px;
   }
 }
+
+/* "Show earlier turns" above a long timeline. */
+.more-turns {
+  display: block;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: var(--surface-1);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: 12.5px var(--sans);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+.more-turns:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+.more-turns:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.more-turns .muted {
+  color: var(--text-muted);
+}

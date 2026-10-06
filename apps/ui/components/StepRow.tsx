@@ -15,7 +15,7 @@
  * step is opened, the full step is fetched once and shown in its place.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { Step } from "@postrun/core/schema";
 import type { StepPreview, StepResponse } from "@postrun/core/server/api";
 import { api } from "@/lib/api";
@@ -23,7 +23,8 @@ import { summarize } from "@/lib/summarize";
 
 const OUTPUT_LIMIT = 100_000;
 
-export function StepRow({ step, sessionId }: { step: StepPreview; sessionId: string }) {
+/** Memoized: a step whose object is unchanged after a live update is not re-rendered. */
+export const StepRow = memo(function StepRow({ step, sessionId }: { step: StepPreview; sessionId: string }) {
   const [open, setOpen] = useState(false);
   const [full, setFull] = useState<{ step: Step } | { error: string } | undefined>(undefined);
   const cut = step.truncated !== undefined;
@@ -90,7 +91,7 @@ export function StepRow({ step, sessionId }: { step: StepPreview; sessionId: str
       )}
     </details>
   );
-}
+});
 
 function StepBody({ step }: { step: Step }) {
   const when = new Date(step.at);

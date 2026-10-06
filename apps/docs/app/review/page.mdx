@@ -93,6 +93,12 @@ Click a step, or focus it and press Enter, to open everything it recorded:
 
 Each step also shows when it happened, the permission decision when one was recorded, and any error or flag. Output longer than 100,000 characters is cut, with a button to show all of it. **Expand all** and **Collapse all** sit next to the timeline heading. To link to one step, add `#step-<seq>` to the address: that step opens and scrolls into view. An open step stays open while the session updates live.
 
+Long sessions stay quick to open and to watch:
+
+- The timeline shows the 30 most recent turns. **Show earlier turns** above them adds 50 at a time. A link to a step shows every turn.
+- The session arrives with each step's first 2 KB of output; opening a step loads the rest.
+- A live update fetches only the steps that changed since the last one, at most once every two seconds, and redraws only the turns that changed.
+
 A Claude Code session recorded while `pnpm capture` was stopped shows `not recorded` for cost: see [Troubleshooting](/troubleshooting/).
 
 ## Live updates
