@@ -1,0 +1,72 @@
+/*
+ * @postrun/brand: the tokens, logo styles and motion every postrun surface
+ * shares (postrun.app, docs.postrun.app). Import once, before app styles.
+ * The session app in apps/ui uses the same palette.
+ */
+:root {
+  --bg: #08090c;
+  --bg-2: #0b0d11;
+  --s1: #0d0f14;
+  --s2: #11131a;
+  --s3: #151821;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --text: #eceef3;
+  --text-2: #a3a9b7;
+  --muted: #7d8496;
+  --faint: #6b7280;
+  --accent: #6366f1;
+  --accent-ink: #a5b4fc;
+  --accent-btn: #4f46e5;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --teal: #5eead4;
+  --sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius: 14px;
+}
+
+/* ---- logo ------------------------------------------------------------------ */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.mark-step {
+  transform-box: fill-box;
+}
+@keyframes step-play {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0.25;
+  }
+  45% {
+    opacity: 1;
+  }
+}
+@keyframes play-nudge {
+  0%,
+  100% {
+    transform: none;
+  }
+  55% {
+    transform: translateX(1.5px);
+  }
+}
+.mark-play {
+  transform-box: fill-box;
+}
+.brand:hover .mark-animated .mark-step {
+  animation: step-play 0.9s var(--ease);
+}
+.brand:hover .mark-animated .mark-play {
+  animation: play-nudge 0.9s var(--ease);
+}
