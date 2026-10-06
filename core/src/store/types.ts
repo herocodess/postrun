@@ -47,6 +47,12 @@ export interface SessionSummary {
   updated_at: string;
   steps_total: number;
   step_counts: Record<string, number>;
+  /**
+   * The session's shape, in order: up to 64 characters, one per slice of its
+   * steps. c command, e edit, r read, m message, o other; upper case when a
+   * step in that slice failed. Empty for a session with no steps.
+   */
+  strip: string;
   failed_count: number;
   reference_only_count: number;
   flag_count: number;

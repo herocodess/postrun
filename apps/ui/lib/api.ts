@@ -9,10 +9,9 @@ const BASE = process.env["NEXT_PUBLIC_BASE_PATH"] ?? "";
 const enc = encodeURIComponent;
 
 export const api = {
-  /** Session list. The demo serves every session and the caller filters by agent. */
-  sessions(agent: string): string {
-    if (DEMO) return `${BASE}/data/sessions.json`;
-    return `/api/sessions${agent ? `?agent=${enc(agent)}` : ""}`;
+  /** Session list (lib/sessions.ts adds the filters). The demo serves every session from one file. */
+  sessionsBase(): string {
+    return DEMO ? `${BASE}/data/sessions.json` : "/api/sessions";
   },
   session(id: string): string {
     return DEMO ? `${BASE}/data/sessions/${enc(id)}.json` : `/api/sessions/${enc(id)}`;

@@ -3,12 +3,14 @@
 import { useSearchParams } from "next/navigation";
 import { memo, useEffect, useRef, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
+import { stagger, useArrivals } from "@/lib/motion";
 import { api, DEMO } from "@/lib/api";
 import type { Step, Turn } from "@postrun/core/schema";
 import type { SessionDeltaResponse, SessionDetailResponse } from "@postrun/core/server/api";
 import { DeletePanel } from "@/components/DeletePanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import { StepRow } from "@/components/StepRow";
+import { Tape } from "@/components/Tape";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: SessionDetailResponse };
 
@@ -93,7 +95,10 @@ export function Report() {
     };
   }, [id, live]);
 
-  if (state.kind === "loading") return <p>Loading…</p>;
+  // Steps an agent writes while you watch get a brief highlight. Before the early returns: hooks run every render.
+  const arrived = useArrivals(state.kind === "ready" && state.data.summary.id === id ? state.data.steps.map((s) => s.id) : undefined, id);
+
+  if (state.kind === "loading") return <ReportSkeleton />;
   if (state.kind === "error")
     return /-> 404$/.test(state.message) ? (
       <p className="muted-block">
@@ -104,6 +109,23 @@ export function Report() {
     );
 
   const { summary, turns, steps, report, segments } = state.data;
+
+  /** Open a step in the timeline and bring it into view (from the tape). Shows every turn first if needed. */
+  const jumpTo = (seq: number) => {
+    setShownTurns(Infinity);
+    window.history.replaceState(null, "", `#step-${seq}`);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`step-${seq}`) as HTMLDetailsElement | null;
+        if (!el) return;
+        el.open = true;
+        el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+        el.classList.remove("jumped");
+        void el.offsetWidth; // restart the highlight
+        el.classList.add("jumped");
+      }),
+    );
+  };
   const stepsByTurn = new Map<string, Step[]>();
   for (const s of steps) {
     const list = stepsByTurn.get(s.turn_id) ?? [];
@@ -125,7 +147,7 @@ export function Report() {
   return (
     <>
       {/* HERO */}
-      <div className="hero">
+      <div className="hero enter">
         <div className="hero-glow"></div>
         <div className="hero-card">
           <div className="hero-top">
@@ -158,21 +180,31 @@ export function Report() {
             </div>
             <div className="stat">
               <div className="k">steps</div>
-              <div className="v mono">{summary.steps_total}</div>
+              <div className="v mono tick" key={summary.steps_total}>
+                {summary.steps_total}
+              </div>
             </div>
             <div className="stat">
               <div className="k">turns</div>
-              <div className="v mono">{turns.length}</div>
+              <div className="v mono tick" key={turns.length}>
+                {turns.length}
+              </div>
             </div>
             <div className="stat danger">
               <div className="k">failed</div>
-              <div className="v mono">{summary.failed_count}</div>
+              <div className="v mono tick" key={summary.failed_count}>
+                {summary.failed_count}
+              </div>
             </div>
             <div className="stat warn">
               <div className="k">reference-only</div>
-              <div className="v mono">{summary.reference_only_count}</div>
+              <div className="v mono tick" key={summary.reference_only_count}>
+                {summary.reference_only_count}
+              </div>
             </div>
           </div>
+
+          <Tape steps={steps} onPick={jumpTo} />
 
           <div className="meta-row">
             <span>
@@ -198,7 +230,7 @@ export function Report() {
       {deleting && <DeletePanel sessionId={summary.id} agent={summary.agent.kind} steps={summary.steps_total} onClose={() => setDeleting(false)} />}
 
       {/* FILES TOUCHED */}
-      <div className="sec">
+      <div className="sec enter" style={stagger(2, 12, 60)}>
         <div className="sec-h">
           <h2>Files touched</h2>
           <span className="count">
@@ -236,7 +268,7 @@ export function Report() {
       </div>
 
       {/* COMMANDS RUN */}
-      <div className="sec">
+      <div className="sec enter" style={stagger(3, 12, 60)}>
         <div className="sec-h">
           <h2>Commands run</h2>
           <span className="count">
@@ -272,7 +304,7 @@ export function Report() {
       </div>
 
       {/* TIMELINE */}
-      <div className="sec">
+      <div className="sec enter" style={stagger(4, 12, 60)}>
         <div className="sec-h">
           <h2>Timeline</h2>
           <span className="count">
@@ -299,8 +331,8 @@ export function Report() {
                   <span className="muted"> &middot; {hidden} hidden</span>
                 </button>
               )}
-              {all.slice(hidden).map((t) => (
-                <TurnBlock key={t.id} turn={t} steps={stepsByTurn.get(t.id) ?? EMPTY} sessionId={summary.id} />
+              {all.slice(hidden).map((t, i) => (
+                <TurnBlock key={t.id} turn={t} steps={stepsByTurn.get(t.id) ?? EMPTY} sessionId={summary.id} arrived={arrived} order={i} />
               ))}
             </>
           );
@@ -325,18 +357,18 @@ const EMPTY: Step[] = [];
  * redraw thousands of rows every time an agent finishes a turn.
  */
 const TurnBlock = memo(
-  function TurnBlock({ turn, steps, sessionId }: { turn: Turn; steps: Step[]; sessionId: string }) {
+  function TurnBlock({ turn, steps, sessionId, arrived, order }: { turn: Turn; steps: Step[]; sessionId: string; arrived: Set<string>; order: number }) {
     const prompt = steps.find((s) => s.type === "message" && s.payload.role === "user");
     const promptText = prompt && prompt.type === "message" ? prompt.payload.text : undefined;
     return (
-      <div className="turn">
+      <div className="turn enter" style={stagger(order, 8, 45)}>
         <div className="turn-h">
           <span className="turn-n">turn {turn.index}</span>
           <span className="txt">{firstLine(promptText || "", 120)}</span>
           <span className="mode">{turn.mode || "no mode"}</span>
         </div>
         {steps.map((s) => (
-          <StepRow key={s.id} step={s} sessionId={sessionId} />
+          <StepRow key={s.id} step={s} sessionId={sessionId} fresh={arrived.has(s.id)} />
         ))}
       </div>
     );
@@ -355,4 +387,27 @@ function setAllSteps(open: boolean): void {
   document.querySelectorAll<HTMLDetailsElement>("details.step-d").forEach((d) => {
     d.open = open;
   });
+}
+
+/** Placeholder while a session loads: the summary card and a few timeline rows. */
+function ReportSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading session">
+      <div className="hero">
+        <div className="hero-card skeleton-card">
+          <span className="sk sk-line" style={{ width: "46%" }}></span>
+          <div className="sk-stats">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <span key={i} className="sk sk-tile"></span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="sec">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className="sk sk-step" style={{ animationDelay: `${i * 90}ms` }}></span>
+        ))}
+      </div>
+    </div>
+  );
 }

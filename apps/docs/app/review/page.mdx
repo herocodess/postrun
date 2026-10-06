@@ -19,17 +19,30 @@ Sessions arrive from the recorders and from the [ingest API](/reference/ingest-a
 
 ## The session list
 
-The home page lists every stored session, newest first. Each row shows:
+The home page lists sessions newest first, grouped by the day they started. Each session shows its title (the first line of the first prompt), the project folder, the agent, how many steps failed, the step count, the reported cost and the start time.
 
-- The agent badge and version.
-- The session title (the first line of the first prompt) and the start of the session id.
-- The workspace folder name.
-- When it started, as a date and a relative time.
-- The step count, broken down by type, with failed and reference-only counts.
-- The cost the agent reported.
-- The number of flags.
+### The strip
 
-Above the list, the agent chips filter by agent kind (the address becomes `/?agent=<kind>`), and the total shows the number of sessions and their combined cost. Click a row to open the session.
+Every session has a strip: its steps in order, one bar per step, coloured by kind (command, edit, read, message, other). A failed step stands tall in red. A short session fills only part of the track, so the strip also shows how long the session was. Sessions with more than 64 steps are drawn in 64 slices; a slice shows the kind it holds most of, and turns red if any step in it failed.
+
+### Finding a session
+
+- **Search** matches the first prompt, the project path and the start of the session id. Press `/` to jump to it.
+- **Agent** tabs show one agent's sessions; the address becomes `/?agent=<kind>`.
+- **When:** any time, today, the last 7 or 30 days, or your own dates.
+- **Size:** any, 10 or more steps, or 100 or more.
+- **With failures** shows only sessions where a step failed.
+- **Empty sessions** (sessions that started but recorded no steps, such as a `claude` you opened and closed) are hidden unless you turn them on. The toggle shows how many there are.
+
+The summary under the title counts every session that matches, with their total cost. **Clear filters** resets everything except the agent tab and the empty-sessions choice.
+
+### List or grid
+
+Switch between a compact list and a grid of cards with the **List** and **Grid** buttons. Your choice, and whether empty sessions are shown, are remembered in this browser.
+
+### Long histories
+
+The list loads 50 sessions at a time and fetches the next 50 as you scroll near the end, or when you click **Show more**. Filters run in the store, not in the page, so a filtered list stays quick however many sessions you have. A session that starts while the list is open slides in at the top.
 
 ## The session view
 
@@ -37,7 +50,7 @@ A session opens at `/session?id=<id>`.
 
 ### Summary
 
-The top card shows the agent, the title and version, and:
+The top card shows the agent, the title and version, the session's tape, and:
 
 | Item | What it is |
 | --- | --- |
@@ -49,6 +62,8 @@ The top card shows the agent, the title and version, and:
 | when | Start and end time, or `open` while the session has no end, plus the number of segments |
 | owner | The owner id and the machine it was captured on |
 | tokens | Input and output tokens |
+
+The **tape** under the numbers is the session's strip at full resolution: one bar per step (very long sessions group a few steps per bar). Hover a bar to see the step, and click it to open that step in the timeline.
 
 ### Files touched
 
@@ -123,7 +138,7 @@ The review app uses these routes, which you can also call from scripts on the sa
 
 | Route | Returns |
 | --- | --- |
-| `GET /api/sessions` | `{ sessions, agents }`, newest first. Add `?agent=<kind>` to filter. |
+| `GET /api/sessions` | `{ sessions, agents, total, total_cost, empty_count, next_cursor? }`, newest first. Filters: `agent`, `q` (search), `from` and `to` (dates or times; `to` is exclusive), `min_steps`, `failed=1`, `empty=0`. Paging: `limit` (1 to 500) and `cursor` (the previous page's `next_cursor`). Without `limit`, every match is returned. A bad value returns `400`. |
 | `GET /api/sessions/<id>` | The full session (summary, segments, actors, turns, steps) plus `report` (files touched, commands run). `404` if not found. |
 | `GET /api/sessions/<id>/export` | The redacted HTML report, as a download. |
 | `GET /api/sessions/<id>/export/review` | What the export would mask, as JSON. |

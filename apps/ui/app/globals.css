@@ -225,7 +225,7 @@ body {
 
 .row {
   display: grid;
-  grid-template-columns: 150px 1fr 150px 210px 96px 54px;
+  grid-template-columns: 136px minmax(0, 1fr) 140px 190px 150px 70px 28px;
   gap: 16px;
   align-items: center;
   background: var(--surface-1);
@@ -1442,5 +1442,1000 @@ h1.title {
   }
   .empty-head {
     transform: translateX(120px);
+  }
+}
+
+/* ==== MOTION ===================================================================
+ * Small, quick and purposeful: things arrive, numbers tick, live data glows
+ * once. One easing curve, three durations. Everything here is switched off
+ * for prefers-reduced-motion (bottom of this block).
+ */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 160ms;
+  --t-mid: 280ms;
+  --t-slow: 520ms;
+}
+
+/* Entrances: fade and rise, staggered by --enter-delay (lib/motion.ts). */
+.enter {
+  animation: enter-rise var(--t-slow) var(--ease-out) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+@keyframes enter-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* A session that started while the list was open: slides in, glows once. */
+.srow.arrived,
+.scard.arrived {
+  animation:
+    enter-drop var(--t-slow) var(--ease-out) both,
+    arrived-glow 2.4s var(--ease-out) both;
+}
+@keyframes enter-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.99);
+  }
+}
+@keyframes arrived-glow {
+  0%,
+  30% {
+    border-color: var(--accent);
+    box-shadow:
+      0 0 0 1px var(--accent-dim),
+      0 10px 30px -14px var(--accent-glow);
+  }
+}
+
+/* Rows: an accent edge grows in on hover. */
+.srow::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transition: transform var(--t-mid) var(--ease-out);
+}
+.srow:hover::after,
+.srow:focus-visible::after {
+  transform: scaleY(1);
+}
+
+/* Numbers that change re-mount (keyed by value) and tick up into place. */
+.tick {
+  animation: tick-in var(--t-mid) var(--ease-out) both;
+}
+@keyframes tick-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(2px);
+  }
+}
+
+/* Live light: a ring goes out each time something is written. */
+.live .led {
+  position: relative;
+}
+.live .ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--success);
+  animation: ping 1.1s var(--ease-out) both;
+  pointer-events: none;
+}
+@keyframes ping {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+
+/* Filter chips. */
+.chip {
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast),
+    color var(--t-fast),
+    transform var(--t-fast) var(--ease-out);
+}
+.chip:active {
+  transform: scale(0.96);
+}
+
+/* Session summary: the glow behind the card breathes slowly while the session is open. */
+.hero-glow {
+  animation: glow-breathe 6s ease-in-out infinite;
+}
+@keyframes glow-breathe {
+  50% {
+    opacity: 0.32;
+  }
+}
+
+/* Steps: the caret turns smoothly; the body unfolds (height animates where the browser can). */
+:root {
+  interpolate-size: allow-keywords;
+}
+.st-caret {
+  transition: transform var(--t-mid) var(--ease-out);
+}
+.step-d::details-content {
+  height: 0;
+  overflow: clip;
+  transition:
+    height var(--t-mid) var(--ease-out),
+    content-visibility var(--t-mid) allow-discrete;
+}
+.step-d[open]::details-content {
+  height: auto;
+}
+.step-body {
+  animation: body-in var(--t-mid) var(--ease-out) both;
+}
+@keyframes body-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.step-d > summary {
+  transition: background var(--t-fast);
+}
+
+/* A step the agent just wrote: slides in and is tinted for a moment. */
+.step-d.arrived {
+  animation:
+    step-in var(--t-mid) var(--ease-out) both,
+    step-glow 2.2s ease-out both;
+}
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+@keyframes step-glow {
+  0%,
+  25% {
+    background: var(--accent-dim);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+}
+
+/* Export and delete panels open downward. */
+.export-panel {
+  animation: panel-in var(--t-mid) var(--ease-out) both;
+  transform-origin: top center;
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
+/* Buttons press in. */
+.btn,
+.more-turns,
+.link-btn {
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast),
+    color var(--t-fast),
+    transform var(--t-fast) var(--ease-out);
+}
+.btn:active,
+.more-turns:active {
+  transform: scale(0.97);
+}
+
+/* Loading: placeholder shapes with a soft sheen instead of "Loading…". */
+.sk {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 40%, var(--surface-2) 80%);
+  background-size: 200% 100%;
+  animation: sheen 1.4s linear infinite;
+}
+@keyframes sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.skeleton-row {
+  pointer-events: none;
+  min-height: 64px;
+  animation: enter-rise var(--t-slow) var(--ease-out) both;
+}
+.sk-badge {
+  width: 84px;
+  height: 20px;
+}
+.sk-line {
+  width: 70%;
+}
+.sk-short {
+  width: 60%;
+}
+.sk-num {
+  width: 40px;
+}
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sk-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+.sk-tile {
+  height: 52px;
+  border-radius: 10px;
+}
+.sk-step {
+  height: 38px;
+  margin-bottom: 8px;
+  border-radius: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter,
+  .srow.arrived,
+  .scard.arrived,
+  .strip .sb,
+  .tick,
+  .step-body,
+  .step-d.arrived,
+  .export-panel,
+  .skeleton-row,
+  .hero-glow,
+  .sk {
+    animation: none;
+  }
+  .live .ping {
+    display: none;
+  }
+  .srow::after,
+  .scard,
+  .st-caret,
+  .step-d::details-content {
+    transition: none;
+  }
+  .scard:hover,
+  .btn:active,
+  .chip:active,
+  .more-turns:active {
+    transform: none;
+  }
+}
+
+/* ==== SESSION LIST ==============================================================
+ * Days, then sessions. Each session's strip is the one loud thing on the page:
+ * its steps in order, coloured by kind, failures standing tall in red.
+ */
+:root {
+  --k-command: #5eead4;
+  --k-edit: #ff8a4c;
+  --k-read: #7f8aa3;
+  --k-message: #c7ccd6;
+  --k-other: #4a5163;
+  --k-failed: #f0616d;
+}
+
+.list-head {
+  margin-top: 34px;
+}
+.list-head h1 {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.list-sum {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 22px 0 10px;
+}
+.toolbar .grow {
+  flex: 1;
+}
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(340px, 100%);
+  height: 36px;
+  padding: 0 10px 0 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  transition:
+    border-color var(--t-fast),
+    box-shadow var(--t-fast);
+}
+.search:focus-within {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  color: var(--text-secondary);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text-primary);
+  font: 13.5px var(--sans);
+}
+.search input::placeholder {
+  color: var(--text-muted);
+}
+.search input::-webkit-search-cancel-button {
+  filter: grayscale(1) brightness(1.6);
+}
+.search kbd {
+  font: 11px var(--mono);
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+/* Segmented controls: the agent filter and the view switch. */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.seg a,
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-secondary);
+  font: 500 12.5px var(--sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
+}
+.seg a:hover,
+.seg button:hover {
+  color: var(--text-primary);
+}
+.seg .on {
+  background: var(--surface-3);
+  color: var(--text-primary);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+.seg-icons button {
+  padding: 0 8px;
+}
+.seg a:focus-visible,
+.seg button:focus-visible,
+.toggle:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px 0 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font: 500 12.5px var(--sans);
+  cursor: pointer;
+}
+.toggle:hover {
+  color: var(--text-primary);
+}
+.toggle .knob {
+  position: relative;
+  width: 26px;
+  height: 16px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  transition: background var(--t-mid) var(--ease-out);
+}
+.toggle .knob::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition:
+    transform var(--t-mid) var(--ease-out),
+    background var(--t-mid);
+}
+.toggle.on .knob {
+  background: var(--accent-dim);
+  border-color: var(--accent-2);
+}
+.toggle.on .knob::after {
+  transform: translateX(10px);
+  background: var(--accent-2);
+}
+.toggle .count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.strip-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.strip-legend .sb {
+  display: inline-block;
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+}
+
+/* Days */
+.day {
+  margin-top: 26px;
+}
+.day-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.day-meta {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* List view: one surface per day, sessions divided by hairlines. */
+.rows {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.srow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) 208px 78px 92px 64px;
+  align-items: center;
+  gap: 18px;
+  padding: 13px 18px;
+  color: inherit;
+  text-decoration: none;
+  border-top: 1px solid var(--border);
+  transition: background var(--t-fast);
+}
+.srow:first-child {
+  border-top: 0;
+}
+.srow:hover {
+  background: var(--surface-2);
+}
+.srow:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: -2px;
+}
+.agent-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cc-fg);
+  box-shadow: 0 0 0 3px var(--cc-bg);
+}
+.agent-dot.cline {
+  background: var(--cline-fg);
+  box-shadow: 0 0 0 3px var(--cline-bg);
+}
+.srow-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.srow-title {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.untitled {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.srow-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.proj {
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.srow-sub .fail,
+.scard-foot .fail {
+  color: var(--danger);
+}
+.srow-sub .flag {
+  color: var(--warn);
+}
+.srow-num {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.srow-num b,
+.scard-foot b {
+  display: inline-block;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.srow .cost,
+.scard .cost {
+  font: 600 13px var(--mono);
+  text-align: right;
+  white-space: nowrap;
+}
+.srow .cost.none,
+.scard .cost.none {
+  font: 400 11.5px var(--sans);
+  color: var(--text-muted);
+}
+.srow-time {
+  font: 12px var(--mono);
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The strip */
+.strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 20px;
+  width: 100%;
+  position: relative;
+}
+.strip::before {
+  /* the empty track: what a full 64-slice session would fill */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 2px, transparent 2px 4px);
+}
+.strip-card {
+  height: 34px;
+}
+.strip .sb {
+  position: relative;
+  flex: 0 0 calc((100% - 63px) / 64);
+  border-radius: 1px;
+  transform-origin: bottom;
+}
+.sb-command {
+  background: var(--k-command);
+  height: 100%;
+}
+.sb-edit {
+  background: var(--k-edit);
+  height: 82%;
+}
+.sb-read {
+  background: var(--k-read);
+  height: 56%;
+}
+.sb-message {
+  background: var(--k-message);
+  height: 38%;
+  opacity: 0.7;
+}
+.sb-other {
+  background: var(--k-other);
+  height: 30%;
+}
+.sb.sb-failed,
+.strip-legend .sb-failed {
+  background: var(--k-failed);
+  height: 100%;
+  opacity: 1;
+  box-shadow: 0 0 4px rgba(240, 97, 109, 0.35);
+}
+/* The page-load moment: each strip records itself, left to right. */
+.enter .strip .sb,
+.arrived .strip .sb {
+  animation: bar-in 420ms var(--ease-out) both;
+  animation-delay: calc(var(--enter-delay, 0ms) + 120ms + var(--i) * 9ms);
+}
+@keyframes bar-in {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* Grid view */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.scard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 14px;
+  min-height: 176px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--t-fast),
+    background var(--t-fast),
+    transform var(--t-mid) var(--ease-out);
+}
+.scard:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
+.scard:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.scard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.scard-top .badge {
+  font-family: var(--sans);
+  font-weight: 500;
+}
+.scard-title {
+  flex: 1;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.scard-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.scard-foot .grow {
+  flex: 1;
+}
+
+.no-match {
+  margin: 40px 0;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 980px) {
+  .srow {
+    grid-template-columns: 10px minmax(0, 1fr) 150px 70px 80px;
+  }
+  .srow-time {
+    display: none;
+  }
+}
+@media (max-width: 680px) {
+  .srow {
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "dot main cost"
+      ". strip strip"
+      ". num num";
+    row-gap: 8px;
+    gap: 8px 12px;
+    padding: 12px 14px;
+  }
+  .srow .agent-dot {
+    grid-area: dot;
+    align-self: start;
+    margin-top: 5px;
+  }
+  .srow-main {
+    grid-area: main;
+  }
+  .srow .strip {
+    grid-area: strip;
+  }
+  .srow-num {
+    grid-area: num;
+    text-align: left;
+  }
+  .srow .cost {
+    grid-area: cost;
+    align-self: start;
+  }
+  .toolbar .grow {
+    display: none;
+  }
+  .search {
+    width: 100%;
+  }
+  .strip-legend {
+    gap: 10px;
+  }
+}
+
+/* ==== SESSION TAPE ============================================================ */
+.tape-wrap {
+  margin-top: 18px;
+}
+.tape {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 44px;
+  cursor: pointer;
+}
+.tape::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border-strong);
+}
+.tape .sb {
+  flex: 1 1 0;
+  max-width: 10px;
+  min-width: 1px;
+  border-radius: 1px;
+  transform-origin: bottom;
+  transition:
+    filter var(--t-fast),
+    transform var(--t-fast) var(--ease-out);
+  animation: bar-in 420ms var(--ease-out) both;
+  animation-delay: calc(200ms + var(--i) * 3ms);
+}
+.tape .sb.hot {
+  filter: brightness(1.35);
+  transform: scaleY(1.08);
+}
+.tape-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 300px;
+  padding: 8px 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lift);
+  font-size: 12px;
+  color: var(--text-secondary);
+  pointer-events: none;
+  z-index: 5;
+  animation: panel-in var(--t-fast) var(--ease-out) both;
+}
+.tape-tip b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.tape-tip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.tape-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* A step reached from the tape glows briefly. */
+.step-d.jumped > summary {
+  animation: jumped 1.6s var(--ease-out) both;
+}
+@keyframes jumped {
+  0%,
+  30% {
+    background: var(--accent-dim);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tape .sb,
+  .tape-tip,
+  .step-d.jumped > summary {
+    animation: none;
+  }
+}
+@media (max-width: 680px) {
+  .tape-scale span:nth-child(2) {
+    display: none;
+  }
+}
+
+/* ==== LIST FILTERS AND PAGING ================================================== */
+.filterbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 0 0 4px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.filterbar .grow {
+  flex: 1;
+}
+.filterbar .strip-legend {
+  margin: 0;
+}
+.dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  animation: panel-in var(--t-mid) var(--ease-out) both;
+}
+.dates input,
+.select select {
+  height: 34px;
+  padding: 0 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-primary);
+  font: 12.5px var(--sans);
+  color-scheme: dark;
+}
+.select select {
+  padding-right: 28px;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 15px,
+    calc(100% - 10px) 15px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.dates input:focus,
+.select select:focus {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.link-btn.clear {
+  font-size: 12.5px;
+}
+.results {
+  transition: opacity var(--t-mid);
+}
+.results.stale {
+  opacity: 0.55;
+}
+.more {
+  margin-top: 12px;
+}
+.more-btn {
+  display: block;
+  width: 100%;
+  height: 44px;
+  background: var(--surface-1);
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font: 500 13px var(--sans);
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
+}
+.more-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.scard.skeleton-row {
+  min-height: 176px;
+}
+@media (max-width: 680px) {
+  .filterbar .grow {
+    display: none;
   }
 }

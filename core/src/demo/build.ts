@@ -25,8 +25,9 @@ mkdirSync(join(out, "exports"), { recursive: true });
 const store = new PostrunStore({ path: ":memory:", ownerId: "you", capturedOn: "your machine" });
 for (const r of demoSessions()) store.ingest(r);
 
-const sessions = store.listSessions();
-const list: SessionListResponse = { sessions, agents: [...new Set(sessions.map((s) => s.agent.kind))].sort() };
+const page = store.querySessions();
+const sessions = page.sessions;
+const list: SessionListResponse = { ...page, agents: store.agentKinds() };
 writeFileSync(join(out, "sessions.json"), JSON.stringify(list));
 
 for (const s of sessions) {

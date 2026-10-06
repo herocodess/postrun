@@ -24,7 +24,7 @@ import { summarize } from "@/lib/summarize";
 const OUTPUT_LIMIT = 100_000;
 
 /** Memoized: a step whose object is unchanged after a live update is not re-rendered. */
-export const StepRow = memo(function StepRow({ step, sessionId }: { step: StepPreview; sessionId: string }) {
+export const StepRow = memo(function StepRow({ step, sessionId, fresh = false }: { step: StepPreview; sessionId: string; fresh?: boolean }) {
   const [open, setOpen] = useState(false);
   const [full, setFull] = useState<{ step: Step } | { error: string } | undefined>(undefined);
   const cut = step.truncated !== undefined;
@@ -73,7 +73,7 @@ export const StepRow = memo(function StepRow({ step, sessionId }: { step: StepPr
   }
 
   return (
-    <details ref={ref} id={anchor} className={`step-d${step.outcome === "failed" ? " failed" : ""}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details ref={ref} id={anchor} className={`step-d${step.outcome === "failed" ? " failed" : ""}${fresh ? " arrived" : ""}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="step">
         <span className="st-caret" aria-hidden="true"></span>
         <span className="st-seq">{step.seq}</span>

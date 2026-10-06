@@ -27,7 +27,7 @@ import { gunzipSync } from "node:zlib";
 import { exportSession } from "../export/index.js";
 import { sessionReport } from "../report/index.js";
 import { isSafeId, sessionDir } from "../capture/layout.js";
-import { DeletedSessionError, PostrunStore } from "../store/index.js";
+import { BadCursorError, DeletedSessionError, MAX_PAGE, PostrunStore, type SessionQuery } from "../store/index.js";
 import { isLoopbackHost } from "../util/host.js";
 import type {
   ApiError,
@@ -260,10 +260,24 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
   }
 
   if (url.pathname === "/api/sessions") {
-    const agent = url.searchParams.get("agent");
-    const sessions = store.listSessions(agent ? { agent } : {});
-    const agents = [...new Set(store.listSessions().map((s) => s.agent.kind))].sort();
-    const body: SessionListResponse = { sessions, agents };
+    let query: SessionQuery;
+    try {
+      query = sessionQuery(url.searchParams);
+    } catch (err) {
+      json(res, 400, { error: (err as Error).message } satisfies ApiError);
+      return;
+    }
+    let page;
+    try {
+      page = store.querySessions(query);
+    } catch (err) {
+      if (err instanceof BadCursorError) {
+        json(res, 400, { error: "invalid cursor" } satisfies ApiError);
+        return;
+      }
+      throw err;
+    }
+    const body: SessionListResponse = { ...page, agents: store.agentKinds() };
     json(res, 200, body);
     return;
   }
@@ -515,4 +529,44 @@ function serveStatic(pathname: string, res: ServerResponse, uiRoot: string, head
     "content-length": body.byteLength,
   });
   res.end(headOnly ? undefined : body);
+}
+
+/** Read the session list's filters from the query string. Throws with a message for the client on a bad value. */
+export function sessionQuery(p: URLSearchParams): SessionQuery {
+  const q: SessionQuery = {};
+  const str = (k: string) => {
+    const v = p.get(k);
+    return v === null || v === "" ? undefined : v;
+  };
+  const int = (k: string, min: number, max: number) => {
+    const v = str(k);
+    if (v === undefined) return undefined;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${k} must be a whole number from ${min} to ${max}`);
+    return n;
+  };
+  const time = (k: string) => {
+    const v = str(k);
+    if (v === undefined) return undefined;
+    const t = Date.parse(v);
+    if (Number.isNaN(t)) throw new Error(`${k} must be a date or time, such as 2026-10-06 or 2026-10-06T09:00:00Z`);
+    return new Date(t).toISOString();
+  };
+  const agent = str("agent");
+  if (agent) q.agent = agent;
+  const text = str("q");
+  if (text) q.q = text.slice(0, 200);
+  const from = time("from");
+  if (from) q.from = from;
+  const to = time("to");
+  if (to) q.to = to;
+  const minSteps = int("min_steps", 0, 1_000_000);
+  if (minSteps !== undefined) q.minSteps = minSteps;
+  if (str("failed") === "1") q.failedOnly = true;
+  if (str("empty") === "0") q.includeEmpty = false;
+  const limit = int("limit", 1, MAX_PAGE);
+  if (limit !== undefined) q.limit = limit;
+  const cursor = str("cursor");
+  if (cursor) q.cursor = cursor;
+  return q;
 }

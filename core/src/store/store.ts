@@ -30,7 +30,7 @@ export const LOCAL_OWNER_ID = "local";
  * for live views); per-session counts kept on the session row; edits no longer
  * hold a full copy of the original file.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export interface StoreOptions {
   /** SQLite file path. ":memory:" for tests. Default ~/.postrun/postrun.db or POSTRUN_DB. */
@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   flag_count           INTEGER NOT NULL DEFAULT 0,
   turn_count           INTEGER NOT NULL DEFAULT 0,
   step_counts          TEXT NOT NULL DEFAULT '{}',
+  strip                TEXT NOT NULL DEFAULT '',
   -- when a write last removed steps: a live view older than this reloads instead of applying a delta
   pruned_at            TEXT
 );
@@ -146,7 +147,8 @@ CREATE INDEX IF NOT EXISTS steps_session_turn ON steps(session_id, turn_id, seq)
 `;
 
 /** Indexes on columns that version 1 stores gain by ALTER TABLE, so they run after the upgrade. */
-const DDL_V2_INDEXES = `CREATE INDEX IF NOT EXISTS steps_session_written ON steps(session_id, written_at);`;
+const DDL_V2_INDEXES = `CREATE INDEX IF NOT EXISTS steps_session_written ON steps(session_id, written_at);
+CREATE INDEX IF NOT EXISTS sessions_started ON sessions(started_at DESC, id);`;
 
 /** Columns added in version 2, for upgrading a version 1 store in place. */
 const V2_COLUMNS: Array<[table: string, column: string, decl: string]> = [
@@ -158,10 +160,90 @@ const V2_COLUMNS: Array<[table: string, column: string, decl: string]> = [
   ["sessions", "turn_count", "INTEGER NOT NULL DEFAULT 0"],
   ["sessions", "step_counts", "TEXT NOT NULL DEFAULT '{}'"],
   ["sessions", "pruned_at", "TEXT"],
+  ["sessions", "strip", "TEXT NOT NULL DEFAULT ''"],
   ["steps", "hash", "TEXT"],
   ["steps", "meta_hash", "TEXT"],
   ["steps", "written_at", "TEXT NOT NULL DEFAULT ''"],
 ];
+
+/** One character per step type for the session strip: c command, e edit, r read, m message, o other. */
+const STRIP_CHAR = `CASE st.type WHEN 'command' THEN 'c' WHEN 'edit' THEN 'e' WHEN 'read' THEN 'r' WHEN 'message' THEN 'm' ELSE 'o' END`;
+
+/** Largest page querySessions returns. */
+export const MAX_PAGE = 500;
+
+export interface SessionQuery {
+  agent?: string;
+  owner_id?: string;
+  /** Matches the first prompt or the workspace path (anywhere), or the session id (from the start). Case-insensitive. */
+  q?: string;
+  /** Started at or after this ISO time. */
+  from?: string;
+  /** Started before this ISO time. */
+  to?: string;
+  minSteps?: number;
+  failedOnly?: boolean;
+  /** False leaves out sessions with no steps. Default true. */
+  includeEmpty?: boolean;
+  /** Page size, 1 to MAX_PAGE. Without it, every match is returned. */
+  limit?: number;
+  /** next_cursor from the previous page. */
+  cursor?: string;
+}
+
+export interface SessionPage {
+  sessions: SessionSummary[];
+  /** Every session matching the filters, across all pages. */
+  total: number;
+  total_cost: number;
+  /** Sessions with no steps that match the other filters (shown or not). */
+  empty_count: number;
+  next_cursor?: string;
+}
+
+export class BadCursorError extends Error {}
+
+function encodeCursor(at: string, id: string): string {
+  return Buffer.from(JSON.stringify([at, id])).toString("base64url");
+}
+
+function decodeCursor(cursor: string): { at: string; id: string } {
+  try {
+    const v = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as unknown;
+    if (Array.isArray(v) && typeof v[0] === "string" && typeof v[1] === "string") return { at: v[0], id: v[1] };
+  } catch {
+    // fall through
+  }
+  throw new BadCursorError("invalid cursor");
+}
+
+/** Slices in the strip a summary carries: enough to draw, small enough for a list of hundreds. */
+export const STRIP_SLICES = 64;
+
+/**
+ * Shrink a session's full strip to at most STRIP_SLICES characters. Each slice
+ * shows the step type it holds most of, in upper case when any step in it
+ * failed, so one failure in a long session still shows.
+ */
+export function sliceStrip(full: string, slices = STRIP_SLICES): string {
+  if (full.length <= slices) return full;
+  let out = "";
+  for (let b = 0; b < slices; b++) {
+    const part = full.slice(Math.floor((b * full.length) / slices), Math.floor(((b + 1) * full.length) / slices));
+    const counts = new Map<string, number>();
+    let failed = false;
+    for (const ch of part) {
+      const lower = ch.toLowerCase();
+      if (ch !== lower) failed = true;
+      counts.set(lower, (counts.get(lower) ?? 0) + 1);
+    }
+    let best = "o";
+    let n = -1;
+    for (const [k, v] of counts) if (v > n) [best, n] = [k, v];
+    out += failed ? best.toUpperCase() : best;
+  }
+  return out;
+}
 
 /** Recompute one session's stored counts from its steps and turns. */
 const REFRESH_SUMMARY = `
@@ -175,7 +257,10 @@ UPDATE sessions SET
   reference_only_count = (SELECT count(*) FROM steps st WHERE st.session_id = sessions.id AND st.content_status = 'reference_only'),
   flag_count = (SELECT coalesce(sum(json_array_length(st.flags)), 0) FROM steps st WHERE st.session_id = sessions.id),
   turn_count = (SELECT count(*) FROM turns t WHERE t.session_id = sessions.id),
-  step_counts = (SELECT coalesce(json_group_object(type, n), '{}') FROM (SELECT type, count(*) AS n FROM steps st WHERE st.session_id = sessions.id GROUP BY type))
+  step_counts = (SELECT coalesce(json_group_object(type, n), '{}') FROM (SELECT type, count(*) AS n FROM steps st WHERE st.session_id = sessions.id GROUP BY type)),
+  strip = (SELECT coalesce(group_concat(
+             CASE WHEN st.outcome = 'failed' THEN upper(${STRIP_CHAR}) ELSE ${STRIP_CHAR} END, '' ORDER BY st.seq), '')
+           FROM steps st WHERE st.session_id = sessions.id)
 WHERE id = ?`;
 
 interface SessionRow {
@@ -209,6 +294,7 @@ interface SessionRow {
   flag_count: number;
   turn_count: number;
   step_counts: string;
+  strip: string;
   pruned_at: string | null;
 }
 
@@ -609,19 +695,77 @@ export class PostrunStore {
   // ---- query ----------------------------------------------------------------
 
   listSessions(filter: { agent?: string; owner_id?: string } = {}): SessionSummary[] {
+    return this.querySessions(filter).sessions;
+  }
+
+  /**
+   * Sessions, newest first, filtered and optionally a page at a time. With a
+   * `limit`, the result carries `next_cursor` when there is more; pass it back
+   * as `cursor` for the next page. Totals cover every match, not just the page.
+   */
+  querySessions(query: SessionQuery = {}): SessionPage {
     const where: string[] = [];
-    const params: Record<string, string> = {};
-    if (filter.agent) {
+    const params: Record<string, string | number> = {};
+    if (query.agent) {
       where.push("s.agent_kind = @agent");
-      params["agent"] = filter.agent;
+      params["agent"] = query.agent;
     }
-    if (filter.owner_id) {
+    if (query.owner_id) {
       where.push("s.owner_id = @owner_id");
-      params["owner_id"] = filter.owner_id;
+      params["owner_id"] = query.owner_id;
     }
-    const sql = `${SESSION_SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY s.started_at DESC, s.id`;
+    if (query.q && query.q.trim()) {
+      where.push("(lower(coalesce(s.title, '')) LIKE @q ESCAPE '\\' OR lower(s.workspace_root) LIKE @q ESCAPE '\\' OR s.id LIKE @qp ESCAPE '\\')");
+      const esc = query.q.trim().toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`);
+      params["q"] = `%${esc}%`;
+      params["qp"] = `${esc}%`;
+    }
+    if (query.from) {
+      where.push("s.started_at >= @from");
+      params["from"] = query.from;
+    }
+    if (query.to) {
+      where.push("s.started_at < @to");
+      params["to"] = query.to;
+    }
+    if (query.minSteps !== undefined && query.minSteps > 0) {
+      where.push("s.steps_total >= @min_steps");
+      params["min_steps"] = query.minSteps;
+    }
+    if (query.failedOnly) where.push("s.failed_count > 0");
+    // Empty sessions are counted separately, so the list can say how many it is hiding.
+    const beforeEmpty = [...where];
+    if (query.includeEmpty === false) where.push("s.steps_total > 0");
+
+    const clause = (w: string[]) => (w.length ? ` WHERE ${w.join(" AND ")}` : "");
+    const totals = this.db.prepare(`SELECT count(*) AS n, coalesce(sum(s.cost_usd), 0) AS cost FROM sessions s${clause(where)}`).get(params) as { n: number; cost: number };
+    const empty = this.db.prepare(`SELECT count(*) AS n FROM sessions s${clause([...beforeEmpty, "s.steps_total = 0"])}`).get(params) as { n: number };
+
+    const page = [...where];
+    if (query.cursor) {
+      const c = decodeCursor(query.cursor);
+      page.push("(s.started_at < @c_at OR (s.started_at = @c_at AND s.id > @c_id))");
+      params["c_at"] = c.at;
+      params["c_id"] = c.id;
+    }
+    const limit = query.limit !== undefined ? Math.max(1, Math.min(query.limit, MAX_PAGE)) : undefined;
+    const sql = `${SESSION_SELECT}${clause(page)} ORDER BY s.started_at DESC, s.id${limit !== undefined ? ` LIMIT ${limit + 1}` : ""}`;
     const rows = this.db.prepare(sql).all(params) as SessionRow[];
-    return rows.map((row) => this.toSummary(row));
+    const more = limit !== undefined && rows.length > limit;
+    const sessions = (more ? rows.slice(0, limit) : rows).map((row) => this.toSummary(row));
+    const last = sessions[sessions.length - 1];
+    return {
+      sessions,
+      total: totals.n,
+      total_cost: totals.cost,
+      empty_count: empty.n,
+      ...(more && last ? { next_cursor: encodeCursor(last.started_at, last.id) } : {}),
+    };
+  }
+
+  /** Agent kinds that have at least one session. */
+  agentKinds(): string[] {
+    return (this.db.prepare("SELECT DISTINCT agent_kind AS k FROM sessions ORDER BY agent_kind").all() as Array<{ k: string }>).map((r) => r.k);
   }
 
   getSession(id: string): StoredSession | undefined {
@@ -821,6 +965,7 @@ export class PostrunStore {
       updated_at: row.updated_at,
       steps_total: row.steps_total,
       step_counts: JSON.parse(row.step_counts || "{}") as Record<string, number>,
+      strip: sliceStrip(row.strip ?? ""),
       failed_count: row.failed_count,
       reference_only_count: row.reference_only_count,
       flag_count: row.flag_count,
