@@ -22,6 +22,17 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    version: "0.3.2",
+    title: "Small fixes",
+    summary: "The session tape points at the right step, and a few rough edges are smoothed off.",
+    items: [
+      { kind: "fixed", text: "On short sessions, hovering or clicking a bar on the session tape showed or jumped to an earlier step than the one under the pointer. It now picks the bar you point at." },
+      { kind: "fixed", text: "Counts that animate, like the number of sessions in the sidebar, could flash a negative number for a moment as they changed." },
+      { kind: "improved", text: "After you approve a computer in the browser, the page says you can close the tab, which fits both Connect account in the review app and postrun login." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     version: "0.3.1",
     title: "Clearer paths through Postrun",
     summary: "Fewer places to get lost: sharing starts from the session, and every part of Postrun says what it's for.",
