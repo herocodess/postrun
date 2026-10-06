@@ -6,8 +6,8 @@ import { useLiveVersion } from "@/lib/live";
 import { api } from "@/lib/api";
 import type { Step, Turn } from "@postrun/core/schema";
 import type { SessionDetailResponse } from "@postrun/core/server/api";
-import { summarize } from "@/lib/summarize";
 import { ExportPanel } from "@/components/ExportPanel";
+import { StepRow } from "@/components/StepRow";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: SessionDetailResponse };
 
@@ -88,7 +88,7 @@ export function Report() {
           <div className="hero-top">
             <span className={`badge ${summary.agent.kind === "cline" ? "cline" : "cc"}`}>{summary.agent.kind}</span>
             <h1 className="title">{firstLine(summary.title, 140) || summary.id}</h1>
-            <span className="ver">v{summary.agent.version}</span>
+            {summary.agent.version && summary.agent.version !== "unknown" ? <span className="ver">v{summary.agent.version}</span> : null}
             <button type="button" className="btn" onClick={() => setExporting((v) => !v)} aria-expanded={exporting}>
               Export report
             </button>
@@ -159,7 +159,7 @@ export function Report() {
         {report.files.length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>No files were created, edited, or read.</p>
         ) : (
-          <div className="table-scroll">
+          <div className="table-scroll" tabIndex={0}>
           <table className="table">
             <thead>
               <tr>
@@ -197,7 +197,7 @@ export function Report() {
         {report.commands.length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>No commands were run.</p>
         ) : (
-          <div className="table-scroll">
+          <div className="table-scroll" tabIndex={0}>
           <table className="table">
             <thead>
               <tr>
@@ -229,6 +229,14 @@ export function Report() {
           <span className="count">
             {turns.length} turns &middot; {summary.steps_total} steps
           </span>
+          <span className="sec-actions">
+            <button type="button" className="link-btn" onClick={() => setAllSteps(true)}>
+              Expand all
+            </button>
+            <button type="button" className="link-btn" onClick={() => setAllSteps(false)}>
+              Collapse all
+            </button>
+          </span>
         </div>
 
         {[...turns, ...orphanTurns].map((t) => {
@@ -244,7 +252,7 @@ export function Report() {
                 <span className="mode">{t.mode || "no mode"}</span>
               </div>
               {list.map((s) => (
-                <Step key={s.id} step={s} />
+                <StepRow key={s.id} step={s} />
               ))}
             </div>
           );
@@ -258,31 +266,9 @@ export function Report() {
   );
 }
 
-function Step({ step }: { step: Step }) {
-  const sum = summarize(step);
-
-  let typeClass = "message";
-  if (step.type === "command") typeClass = "command";
-  else if (step.type === "edit") typeClass = "edit";
-  else if (step.type === "read") typeClass = "read";
-
-  let statusClass = "";
-  let statusText = "ok";
-  if (step.outcome === "failed") {
-    statusClass = "fail";
-    statusText = "failed";
-    if (step.error) statusText += ` · ${step.error.type}`;
-  } else if (sum.referenceOnly) {
-    statusClass = "refonly";
-    statusText = "reference-only";
-  }
-
-  return (
-    <div className="step">
-      <span className="st-seq">{step.seq}</span>
-      <span className={`st-type ${typeClass}`}>{step.type}</span>
-      <span className="st-body">{sum.text}</span>
-      <span className={`st-status ${statusClass}`}>{statusText}</span>
-    </div>
-  );
+/** Open or close every step in the timeline. Each step renders its body when it opens. */
+function setAllSteps(open: boolean): void {
+  document.querySelectorAll<HTMLDetailsElement>("details.step-d").forEach((d) => {
+    d.open = open;
+  });
 }

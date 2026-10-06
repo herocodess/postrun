@@ -540,6 +540,156 @@ body {
   color: var(--text-muted);
 }
 
+.sec-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+}
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: 12px var(--sans);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.link-btn:hover {
+  color: var(--text-primary);
+}
+.link-btn:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ---- STEP DETAIL ---- */
+.step-body {
+  padding: 4px 14px 16px 66px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.sb-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sb-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.sb-kv .mono {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.sb-kv .bad {
+  color: var(--danger);
+}
+.sb-label {
+  font: 10.5px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.sb-code {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 12px/1.55 var(--mono);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.sb-scroll {
+  max-height: 420px;
+  overflow: auto;
+}
+.sb-cmd {
+  color: var(--text-primary);
+}
+.sb-prompt {
+  color: var(--accent);
+  user-select: none;
+}
+.sb-stderr {
+  border-color: rgba(240, 97, 109, 0.3);
+}
+.sb-diff .del {
+  display: block;
+  color: #f5a3aa;
+  background: rgba(240, 97, 109, 0.1);
+}
+.sb-diff .add {
+  display: block;
+  color: #8ee6b8;
+  background: rgba(63, 207, 142, 0.1);
+}
+.sb-msg {
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 520px;
+  overflow: auto;
+}
+.sb-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.sb-empty .mono {
+  overflow-wrap: anywhere;
+}
+.sb-error {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--danger-bg);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.sb-error b {
+  color: var(--danger);
+  font-family: var(--mono);
+  font-weight: 500;
+  margin-right: 6px;
+}
+.sb-flags {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.sb-flags b {
+  color: var(--warn);
+  font-weight: 500;
+}
+.sb-more {
+  justify-self: start;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  font: 12px var(--sans);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.sb-more:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
 /* ---- DATA TABLES: clean, flat, legible ---- */
 .table {
   width: 100%;
@@ -710,15 +860,58 @@ tr.failed:hover td {
   align-items: baseline;
   gap: 11px;
   padding: 8px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.step:last-child {
+/* A step row is the <summary> of a <details>; the body opens beneath it. */
+.step-d {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.step-d:last-child {
   border-bottom: none;
+}
+.step-d > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.step-d > summary::-webkit-details-marker {
+  display: none;
+}
+.step-d > summary:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: -2px;
+}
+.step-d[open] > summary {
+  background: rgba(255, 255, 255, 0.03);
+}
+.step-d.failed > summary {
+  box-shadow: inset 2px 0 0 var(--danger);
 }
 
 .step:hover {
   background: rgba(255, 255, 255, 0.02);
+}
+
+.st-caret {
+  width: 8px;
+  flex: none;
+  align-self: center;
+  height: 8px;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  margin-right: -3px;
+}
+.step-d[open] .st-caret {
+  transform: rotate(45deg);
+}
+.st-flag {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+  align-self: center;
 }
 
 .st-seq {
@@ -1031,6 +1224,23 @@ tr.failed:hover td {
   .demo-banner {
     font-size: 12px;
   }
+  .sec-h {
+    flex-wrap: wrap;
+  }
+  .step {
+    gap: 8px;
+    padding: 9px 12px;
+  }
+  .st-seq {
+    width: auto;
+    min-width: 18px;
+  }
+  .st-type {
+    width: auto;
+  }
+  .step-body {
+    padding: 4px 12px 14px;
+  }
 }
 @media (max-width: 420px) {
   .live {
@@ -1058,4 +1268,12 @@ h1.title {
 .stat .v.muted-v {
   color: var(--text-muted);
   font-size: 15px;
+}
+
+/* Scrollable boxes are focusable for keyboard scrolling; show where focus is. */
+.sb-code:focus-visible,
+.sb-msg:focus-visible,
+.table-scroll:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
 }

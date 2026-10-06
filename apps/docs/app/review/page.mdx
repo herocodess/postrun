@@ -81,6 +81,20 @@ The timeline groups steps by turn. Each turn shows its number, the prompt that s
 - `failed`, followed by the error type when the agent reported one
 - `reference-only`, when the content is a pointer rather than inline
 
+Click a step, or focus it and press Enter, to open everything it recorded:
+
+| Step | What opens |
+| --- | --- |
+| `command` | The command, its working directory and exit code, then stdout and stderr |
+| `edit` | The file and the change as a diff: removed lines in red, added lines in green |
+| `read` | The file and the line range read |
+| `message` | The full prompt or reply |
+| `other` | The tool name and everything recorded for it |
+
+Each step also shows when it happened, the permission decision when one was recorded, and any error or flag. Output longer than 100,000 characters is cut, with a button to show all of it. **Expand all** and **Collapse all** sit next to the timeline heading. To link to one step, add `#step-<seq>` to the address: that step opens and scrolls into view. An open step stays open while the session updates live.
+
+A Claude Code session recorded while `pnpm capture` was stopped shows `not recorded` for cost: see [Troubleshooting](/troubleshooting/).
+
 ## Live updates
 
 The app keeps one connection per browser tab to the [live events stream](/reference/events-api/). When a session is written, the list and the open session refetch in place. The pill in the top bar shows the connection state:

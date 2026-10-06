@@ -56,7 +56,7 @@ export function renderExportHtml(doc: ExportDocument, redaction: RedactionReport
     <div class="hero-head">
       <span class="badge ${agentClass(doc.agent.kind)}">${esc(doc.agent.kind)}</span>
       <h1>${esc(title)}</h1>
-      <span class="ver">v${esc(doc.agent.version)}</span>
+      ${doc.agent.version && doc.agent.version !== "unknown" ? `<span class="ver">v${esc(doc.agent.version)}</span>` : ""}
     </div>
     <div class="stats">
       ${stats.map(([k, v, sub]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v${k === "failed steps" && counts.steps_failed ? " bad" : ""}">${esc(v)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>`).join("")}
@@ -171,7 +171,7 @@ function stepBlock(s: Step): string {
   return `<details class="step${failed ? " failed" : ""}">
     <summary><span class="seq">${s.seq}</span><span class="chip t-${esc(s.type)}">${esc(s.type)}</span><span class="sum mono">${esc(summaryLine(s))}</span>${flags}<span class="out">${ref ? `<span class="ref">not inline</span> · ` : ""}${outcome}</span></summary>
     <div class="body">
-      <div class="when mono">${esc(date(s.at, true))}${s.decision !== "n/a" ? ` · ${esc(s.decision)}` : ""}${s.channels.length ? ` · via ${esc(s.channels.join(", "))}` : ""}</div>
+      <div class="when mono">${esc(date(s.at, true))}${s.decision !== "n/a" && s.decision !== "unknown" ? ` · ${esc(s.decision)}` : ""}${s.channels.length ? ` · via ${esc(s.channels.join(", "))}` : ""}</div>
       ${stepBody(s)}
       ${s.error ? `<div class="err"><b>${esc(s.error.type)}</b> ${esc(s.error.message)}</div>` : ""}
       ${s.flags.length ? `<ul class="flags">${s.flags.map((f) => `<li class="sev-${esc(f.severity)}"><b>${esc(f.kind.replace(/_/g, " "))}</b> ${esc(f.reason)}</li>`).join("")}</ul>` : ""}

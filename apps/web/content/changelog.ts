@@ -20,6 +20,16 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     date: "2026-10-06",
+    title: "Every step, opened up",
+    summary: "The review app now shows everything a step recorded, and no Claude Code session is lost when the recorder was not running.",
+    items: [
+      { kind: "new", text: "Click any step in the timeline to open it: the command with its output, the edit as a diff, the full prompt or reply, and any error. Expand or collapse a whole session at once, and link straight to a step." },
+      { kind: "fixed", text: "Claude Code sessions recorded while the recorder was stopped are no longer lost. They are rebuilt from Claude Code's own hook log, with every prompt, command, edit and reply. Only cost and token counts are missing, and the app says so." },
+      { kind: "improved", text: "When the recorder starts, it catches up on every session it missed, including ones that never ended cleanly." },
+    ],
+  },
+  {
+    date: "2026-10-06",
     title: "postrun.app goes up",
     summary: "The website you are reading, with a live demo of a recorded session and a real exported report.",
     items: [
