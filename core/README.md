@@ -4,7 +4,7 @@ The logic package. Node 20+, ESM, strict TypeScript.
 
 ```
 src/
-  schema/               v1.1 types (Session, Segment, Actor, Turn, Step, payloads, Flag, Verdict)
+  schema/               v1.2 types and runtime validator (Session, Segment, Actor, Turn, Step, payloads, Flag, Verdict)
   adapters/claude-code/ otlp-logs.ndjson + hooks.ndjson -> Step[] (read only)
   adapters/cline/       ~/.cline/data/sessions/<id> -> Step[], Turn[] with plan/act mode, one root actor (read only)
   store/                SQLite store (better-sqlite3): ingest adapter output idempotently, list and load sessions

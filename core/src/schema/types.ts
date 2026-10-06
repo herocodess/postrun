@@ -1,5 +1,5 @@
 /**
- * Postrun v1.1 Event Schema
+ * Postrun v1.2 Event Schema
  *
  * Type definitions for session capture, normalized from agent-specific formats.
  * All timestamps are ISO 8601 strings. Costs and tokens are parsed numbers.

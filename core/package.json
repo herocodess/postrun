@@ -63,7 +63,8 @@
     "capture:cc:setup": "tsx src/capture/cli.ts setup",
     "serve": "tsx src/server/cli.ts",
     "start": "node dist/server/cli.js",
-    "export": "tsx src/export/cli.ts"
+    "export": "tsx src/export/cli.ts",
+    "demo:data": "tsx src/demo/build.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

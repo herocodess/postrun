@@ -40,5 +40,5 @@ Segments are PROVISIONAL, from checkpoint `runCount` in the metadata. Ordering i
 ```bash
 pnpm -s adapter:cline 1788568010939_qp82o > steps.json          # by id
 pnpm -s adapter:cline ~/.cline/data/sessions/<id> > steps.json  # by directory or messages file
-pnpm serve --agent cline --captures 1788568010939_qp82o          # same timeline UI
+pnpm ingest --agent cline 1788568010939_qp82o && pnpm serve   # store it, then open the timeline UI
 ```
