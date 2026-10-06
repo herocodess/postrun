@@ -2,8 +2,8 @@
 /**
  * Release the `postrun` npm package in one command, from a clean, up-to-date main:
  *
- *   pnpm release 0.3.0          (or: patch, minor)
- *   pnpm release 0.3.0 --dry    check everything, change nothing
+ *   pnpm run release 0.3.0      (or: patch, minor; same as node scripts/release.mjs 0.3.0)
+ *   pnpm run release 0.3.0 --dry   check everything, change nothing
  *
  * 1. Checks you're on main, with nothing uncommitted, level with origin.
  * 2. Checks the website changelog's newest entry is marked with this version,
@@ -35,7 +35,7 @@ const run = (cmd, a, cwd = root) => {
   if (r.status !== 0) fail(`${cmd} ${a.join(" ")} failed`);
 };
 
-if (!want) fail("Say which version: pnpm release 0.3.0 (or patch, minor).");
+if (!want) fail("Say which version: pnpm run release 0.3.0 (or patch, minor).");
 
 const pkg = JSON.parse(readFileSync(pkgFile, "utf8"));
 const published = (() => {
