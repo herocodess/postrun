@@ -86,9 +86,11 @@ export function Nav() {
             ))}
           </div>
           <span className="grow"></span>
-          <a href="/#waitlist" className="btn btn-primary btn-sm nav-cta" data-track="Get early access" data-track-where="nav">
-            <span className="cta-long">Get early access</span>
-            <span className="cta-short">Early access</span>
+          <a href="/login/" className="nav-login" data-track="Log in" data-track-where="nav">
+            Log in
+          </a>
+          <a href="/login/?mode=signup" className="btn btn-primary btn-sm nav-cta" data-track="Get started" data-track-where="nav">
+            Get started
           </a>
           <button
             type="button"
@@ -109,12 +111,16 @@ export function Nav() {
           </button>
           <div id="nav-menu" className="nav-menu" hidden={!menuOpen}>
             {/* Links arrive like steps in a session timeline. */}
-            {[...LINKS.map((l) => ({ ...l, cta: false })), { href: "/#waitlist", label: "Get early access", cta: true, external: false, offsite: false }].map((l, i) => (
+            {[
+              ...LINKS.map((l) => ({ ...l, cta: false })),
+              { href: "/login/", label: "Log in", cta: false, external: false, offsite: false },
+              { href: "/login/?mode=signup", label: "Get started", cta: true, external: false, offsite: false },
+            ].map((l, i) => (
               <a
                 key={l.href}
                 href={l.href}
                 className={l.cta ? "menu-item menu-cta" : "menu-item"}
-                data-track={l.cta ? "Get early access" : `Nav: ${l.label}`}
+                data-track={l.cta ? "Get started" : `Nav: ${l.label}`}
                 data-track-where="menu"
                 style={{ ["--i" as string]: i }}
                 onClick={() => setMenuOpen(false)}

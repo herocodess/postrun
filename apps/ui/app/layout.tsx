@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <span>
                 <b>Demo:</b> the real Postrun review app with three example sessions. In real use it runs on your machine and nothing leaves it.
               </span>
-              <a href="/#waitlist">Get early access →</a>
+              <a href="/login/?mode=signup">Get started →</a>
             </aside>
           )}
           <TopBar port={port} />

@@ -79,8 +79,8 @@ export default function Home() {
               </p>
             </Reveal>
             <Reveal delay={240} className="cta-row">
-              <a href="#waitlist" className="btn btn-primary btn-lg" data-track="Get early access" data-track-where="hero">
-                Get early access
+              <a href="/login/?mode=signup" className="btn btn-primary btn-lg" data-track="Get started" data-track-where="hero">
+                Get started
               </a>
               <a href="/demo/" className="btn btn-ghost btn-lg" data-track="Try the demo" data-track-where="hero">
                 Try the demo <span aria-hidden="true">→</span>

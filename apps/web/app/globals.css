@@ -284,6 +284,16 @@ html.js .reveal[data-in] {
 .nav-cta {
   flex: none;
 }
+.nav-login {
+  flex: none;
+  margin-right: 14px;
+  font-size: 14px;
+  color: var(--text-2);
+  transition: color 0.2s;
+}
+.nav-login:hover {
+  color: var(--text);
+}
 .nav[data-state="folded"] .nav-cta {
   border-radius: 999px;
 }
@@ -2155,6 +2165,9 @@ html.js .reveal[data-in] {
 
 /* ---- small screens --------------------------------------------------------- */
 @media (max-width: 1000px) {
+  .nav-login {
+    display: none;
+  }
   .nav-links {
     display: none;
   }
@@ -2431,4 +2444,189 @@ html.js .reveal[data-in] {
   width: 1px;
   height: 1px;
   opacity: 0;
+}
+
+/* ---- log in / sign up ------------------------------------------------------- */
+.auth {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(700px 420px at 50% -10%, rgba(255, 106, 26, 0.1), transparent 65%),
+    var(--bg);
+}
+.auth-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px max(24px, env(safe-area-inset-left));
+}
+.auth-back {
+  font-size: 14px;
+  color: var(--text-2);
+}
+.auth-back:hover {
+  color: var(--text);
+}
+.auth-main {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px 40px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: center;
+  padding: 36px 32px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(13, 15, 20, 0.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 30px 80px -40px rgba(0, 0, 0, 0.9);
+}
+.auth-card > svg {
+  align-self: center;
+  margin-bottom: 18px;
+}
+.auth-card h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.auth-sub {
+  margin: 0 0 26px;
+  color: var(--text-2);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.auth-github {
+  width: 100%;
+  min-height: 48px;
+}
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: var(--faint);
+  font: 12px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.auth-or::before,
+.auth-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.auth-form label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.auth-form input {
+  min-height: 48px;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 0 14px;
+  color: var(--text);
+  font: 15px var(--sans);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--accent-ink);
+  box-shadow: 0 0 0 4px rgba(255, 106, 26, 0.2);
+}
+.auth-form .btn {
+  min-height: 48px;
+  margin-top: 4px;
+}
+.auth-card .btn:disabled {
+  cursor: progress;
+  opacity: 0.75;
+  transform: none;
+}
+.auth-hint {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-align: center;
+}
+.auth-notice {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: rgba(251, 191, 36, 0.07);
+  color: #f3d58a;
+  font-size: 13.5px;
+  line-height: 1.5;
+  text-align: left;
+}
+.auth-switch {
+  margin: 22px 0 0;
+  font-size: 14px;
+  color: var(--text-2);
+}
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+.auth-install {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.auth-install code {
+  font: 12.5px var(--mono);
+  color: var(--text);
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.auth-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px 28px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+@media (max-width: 420px) {
+  .auth-card {
+    padding: 28px 20px 22px;
+  }
+  .auth-top {
+    padding: 16px;
+  }
 }
