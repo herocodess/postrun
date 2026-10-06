@@ -16,7 +16,7 @@ import { Strip, StripLegend, stripOf } from "@/components/Strip";
 import { useLiveVersion } from "@/lib/live";
 import { stagger, useArrivals } from "@/lib/motion";
 import { activeFilters, fetchSessions, NO_FILTERS, PAGE_SIZE, type ListFilters, type Review, type Size } from "@/lib/sessions";
-import { api, DEMO } from "@/lib/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 import type { SessionListResponse } from "@postrun/core/server/api";
 import type { SessionSummary } from "@postrun/core/store";
 
@@ -224,7 +224,7 @@ export function SessionList({ workspace = "" }: { workspace?: string } = {}) {
     setBulk(`Marking ${ids.length}…`);
     let done = 0;
     for (const id of ids) {
-      const r = await fetch(api.verdict(id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: "approved" }) }).catch(() => undefined);
+      const r = await apiFetch(api.verdict(id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: "approved" }) }).catch(() => undefined);
       if (r?.ok) done++;
     }
     setBulk(`Marked ${done} as looks good`);

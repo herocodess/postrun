@@ -87,7 +87,7 @@ async function main(): Promise<number> {
 
   let app;
   try {
-    app = createPostrunServer({ port: args.port, dbPath: args.dbPath, uiDir: args.uiDir, ingestToken });
+    app = createPostrunServer({ port: args.port, dbPath: args.dbPath, uiDir: args.uiDir, ingestToken, requireKey: true });
   } catch (err) {
     process.stderr.write(`postrun serve: could not open store ${args.dbPath}: ${(err as Error).message}\n`);
     return 1;
@@ -102,6 +102,7 @@ async function main(): Promise<number> {
     process.stdout.write(`serving UI from ${args.uiDir}\n`);
     process.stdout.write(`ingest: POST ${url}api/ingest  (bearer token in ${tokenPath})\n`);
     process.stdout.write(`listening on ${url}  (127.0.0.1 only; ctrl-c to stop)\n`);
+    process.stdout.write(`open the app with its key: ${url}#key=${ingestToken}\n`);
   } catch (err) {
     if (err instanceof PortInUseError) {
       process.stderr.write(`postrun serve: ${err.message}\n`);

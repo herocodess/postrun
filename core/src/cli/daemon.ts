@@ -14,6 +14,7 @@ import { createClineWatcher } from "../capture/cline-watcher.js";
 import { createOtlpReceiver, OtlpPortInUseError } from "../capture/receiver.js";
 import { PAUSED_FILE } from "../capture/layout.js";
 import { installHook } from "./hook.js";
+import { configureClaudeCode, OTLP_KEY_HEADER, readSettingsEnv } from "../capture/setup.js";
 import { join } from "node:path";
 import { createPostrunServer, LOCALHOST, PortInUseError } from "../server/server.js";
 import { loadOrCreateToken } from "../server/token.js";
@@ -137,6 +138,21 @@ export async function run(p: Paths): Promise<number> {
     }
   }
 
+  // The telemetry key. Installs from before it existed get it added to Claude Code's settings here,
+  // only where those settings already point at Postrun's receiver (Postrun's own keys, nothing else).
+  const otlpKey = loadOrCreateToken(p.otlpKey);
+  if (config.telemetry) {
+    try {
+      const env = readSettingsEnv(p.claudeSettings);
+      if (typeof env["OTEL_EXPORTER_OTLP_ENDPOINT"] === "string" && env["OTEL_EXPORTER_OTLP_ENDPOINT"] === `http://${LOCALHOST}:${config.otlpPort}` && env["OTEL_EXPORTER_OTLP_HEADERS"] !== `${OTLP_KEY_HEADER}=${otlpKey}`) {
+        const r = configureClaudeCode({ captureDir: p.captures, otlpPort: config.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: true, otlpKey });
+        if (r.changed) log("added the telemetry key to Claude Code's settings; Claude Code sessions started before now send no cost data until restarted");
+      }
+    } catch (err) {
+      log(`could not add the telemetry key to Claude Code's settings: ${(err as Error).message}. Run: postrun setup`);
+    }
+  }
+
   const store = new PostrunStore({ path: p.db });
   const healthInfo: Record<string, unknown> = { version: VERSION, pid: process.pid, telemetry: config.telemetry ? "starting" : "off (hooks only)", catching_up: true, paused: false };
 
@@ -201,6 +217,7 @@ export async function run(p: Paths): Promise<number> {
     uiDir: uiDir(),
     captureDir: p.captures,
     ingestToken: loadOrCreateToken(p.token),
+    requireKey: true,
     health: healthInfo,
     control,
   });
@@ -216,7 +233,7 @@ export async function run(p: Paths): Promise<number> {
   ensurePrivateFile(p.pid);
   log(`postrun ${VERSION} started (pid ${process.pid}); review app on http://${LOCALHOST}:${config.port}/`);
 
-  const receiver = config.telemetry ? createOtlpReceiver({ captureDir: p.captures, port: config.otlpPort, log: (l) => log(`telemetry: ${l}`), paused: () => paused }) : undefined;
+  const receiver = config.telemetry ? createOtlpReceiver({ captureDir: p.captures, port: config.otlpPort, log: (l) => log(`telemetry: ${l}`), paused: () => paused, key: otlpKey }) : undefined;
   if (receiver) {
     try {
       await receiver.start();

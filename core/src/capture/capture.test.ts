@@ -42,6 +42,34 @@ try {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("otlp receiver", () => {
+  it("only accepts telemetry from Claude Code: the key, no browser requests, exactly JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "postrun-cap-key-"));
+    let paused = false;
+    const r = createOtlpReceiver({ captureDir: dir, port: 0, key: "the-key-1234567890", paused: () => paused });
+    const { url } = await r.start();
+    const body = (sid: string) => JSON.stringify({ resourceLogs: [{ scopeLogs: [{ logRecords: [{ body: { stringValue: "x" }, attributes: [{ key: "session.id", value: { stringValue: sid } }] }] }] }] });
+    const post = (headers: Record<string, string>, sid: string) => fetch(`${url}/v1/logs`, { method: "POST", headers, body: body(sid) });
+    const ok = { "content-type": "application/json", "x-postrun-key": "the-key-1234567890" };
+
+    // A page on another site (no-cors POST): it carries Origin and Sec-Fetch-Site.
+    expect((await post({ ...ok, origin: "https://evil.example" }, "s-web")).status).toBe(403);
+    expect((await post({ ...ok, "sec-fetch-site": "cross-site" }, "s-web2")).status).toBe(403);
+    // A content type that merely contains application/json is the no-preflight trick.
+    expect((await post({ ...ok, "content-type": "text/plain; application/json" }, "s-ct")).status).toBe(415);
+    // No key, or the wrong one: acknowledged (no errors in Claude Code) but not written.
+    expect((await post({ "content-type": "application/json" }, "s-nokey")).status).toBe(200);
+    expect((await post({ ...ok, "x-postrun-key": "wrong" }, "s-badkey")).status).toBe(200);
+    expect(r.counts["rejected"]).toBe(2);
+    // Paused: acknowledged and dropped.
+    paused = true;
+    expect((await post(ok, "s-paused")).status).toBe(200);
+    paused = false;
+    // Claude Code itself.
+    expect((await post({ ...ok, "content-type": "application/json; charset=utf-8" }, "s-good")).status).toBe(200);
+    await r.stop();
+    expect(readdirSync(join(dir, "sessions"))).toEqual(["s-good"]);
+  });
+
   it("binds to 127.0.0.1, splits each logs export by session into its own folder, drops metrics and traces", async () => {
     const dir = mkdtempSync(join(tmpdir(), "postrun-cap-"));
     const r = createOtlpReceiver({ captureDir: dir, port: 0 });
@@ -108,6 +136,19 @@ describe("otlp receiver", () => {
 });
 
 describe("setup helper", () => {
+  it("puts the telemetry key in the export headers, and takes back only Postrun's own headers", () => {
+    const env = captureEnv("/c", 4318, "k_123");
+    expect(env["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-postrun-key=k_123");
+    const { settings } = mergeCaptureSettings({}, "/c", 4318, "/s.sh", true, "k_123");
+    expect((settings["env"] as Record<string, string>)["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-postrun-key=k_123");
+    // Switching to hooks only removes Postrun's headers value, never a user's own.
+    const ours = mergeCaptureSettings(settings, "/c", 4318, "/s.sh", false).settings["env"] as Record<string, string>;
+    expect(ours["OTEL_EXPORTER_OTLP_HEADERS"]).toBeUndefined();
+    const mixed = { ...(settings["env"] as Record<string, string>), OTEL_EXPORTER_OTLP_HEADERS: "x-postrun-key=k_123,authorization=Bearer theirs" };
+    const kept = mergeCaptureSettings({ env: mixed }, "/c", 4318, "/s.sh", false).settings["env"] as Record<string, string>;
+    expect(kept["OTEL_EXPORTER_OTLP_HEADERS"]).toBe("x-postrun-key=k_123,authorization=Bearer theirs");
+  });
+
   it("renders env and hooks pointing at the repo hook script", () => {
     const s = captureSettings("/tmp/cap", 4318) as { env: Record<string, string>; hooks: Record<string, unknown> };
     expect(s.env["OTEL_EXPORTER_OTLP_ENDPOINT"]).toBe("http://127.0.0.1:4318");

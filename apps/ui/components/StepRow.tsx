@@ -18,7 +18,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type { Step } from "@postrun/core/schema";
 import type { StepPreview, StepResponse } from "@postrun/core/server/api";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import { summarize } from "@/lib/summarize";
 
 const OUTPUT_LIMIT = 100_000;
@@ -34,7 +34,7 @@ export const StepRow = memo(function StepRow({ step, sessionId, fresh = false }:
   useEffect(() => {
     if (!open || !cut || full) return;
     let cancelled = false;
-    fetch(api.step(sessionId, step.id))
+    apiFetch(api.step(sessionId, step.id))
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
         return ((await res.json()) as StepResponse).step;

@@ -54,11 +54,22 @@ import { checkIngest, MAX_INGEST_BYTES } from "./ingest.js";
 import { LiveFeed, SSE_HEADERS, type LiveFeedOptions } from "./live.js";
 import { bearerMatches, loadOrCreateToken } from "./token.js";
 
+/**
+ * The review app's content security policy. Next's static export needs inline scripts and styles;
+ * everything else comes from this origin only. frame-ancestors 'none' stops other sites framing
+ * the app to trick a click (pausing recording, say).
+ */
+export const UI_CSP =
+  "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; " +
+  "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+
 /** Sent on every response. No CORS headers are ever set: only same-origin pages may read the API. */
 const BASE_HEADERS = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
   "cache-control": "no-store",
+  "x-frame-options": "DENY",
+  "content-security-policy": UI_CSP,
 } as const;
 
 export const LOCALHOST = "127.0.0.1";
@@ -75,6 +86,13 @@ export interface ServerOptions {
   dbPath?: string;
   /** Bearer token for POST /api/ingest. Default: read or create ~/.postrun/ingest-token. */
   ingestToken?: string;
+  /**
+   * When true, every /api route except /api/health and /api/ingest also needs the token, as
+   * `Authorization: Bearer <token>` or `?key=<token>` (downloads and the live stream, which cannot
+   * set headers). Keeps other accounts on a shared computer out. The background process and
+   * `postrun serve` turn it on; `postrun open` hands the key to the browser in the URL fragment.
+   */
+  requireKey?: boolean;
   /** Live feed tuning (poll interval, heartbeat, client cap). Tests shorten these. */
   live?: LiveFeedOptions;
   /** Capture folder whose per-session raw files a delete also removes. Default POSTRUN_CAPTURE_DIR or ~/.postrun/captures. */
@@ -126,7 +144,7 @@ export function createPostrunServer(opts: ServerOptions): PostrunServer {
 
   const server = createServer((req, res) => {
     Promise.resolve()
-      .then(() => handle(req, res, { store, uiRoot, ingestToken, live, captureDir, health: opts.health ?? {}, ...(opts.control ? { control: opts.control } : {}) }))
+      .then(() => handle(req, res, { store, uiRoot, ingestToken, requireKey: opts.requireKey === true, live, captureDir, health: opts.health ?? {}, ...(opts.control ? { control: opts.control } : {}) }))
       .catch((err: unknown) => {
         // Never echo internal error text (paths, SQL) to the client.
         process.stderr.write(`postrun server: ${req.method ?? ""} ${req.url ?? ""}: ${(err as Error).message}\n`);
@@ -176,6 +194,13 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+/** The key as a bearer header, or as ?key= for downloads and the live stream. Compared in constant time. */
+function hasKey(req: IncomingMessage, url: URL, token: string): boolean {
+  if (bearerMatches(req.headers.authorization, token)) return true;
+  const q = url.searchParams.get("key");
+  return q !== null && q.length > 0 && bearerMatches(`Bearer ${q}`, token);
+}
+
 function text(res: ServerResponse, status: number, body: string, extra: Record<string, string | number> = {}): void {
   res.writeHead(status, { ...BASE_HEADERS, "content-type": "text/plain; charset=utf-8", ...extra });
   res.end(body);
@@ -185,6 +210,7 @@ interface Ctx {
   store: PostrunStore;
   uiRoot: string;
   ingestToken: string;
+  requireKey: boolean;
   live: LiveFeed;
   captureDir: string;
   health: Record<string, unknown>;
@@ -222,6 +248,12 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx): Prom
       return;
     }
     await handleIngest(req, res, ctx);
+    return;
+  }
+
+  // Everything else under /api needs the key when the server asks for one.
+  if (ctx.requireKey && url.pathname.startsWith("/api/") && !hasKey(req, url, ctx.ingestToken)) {
+    json(res, 401, { error: "this browser is not connected: run postrun open in a terminal" } satisfies ApiError);
     return;
   }
 

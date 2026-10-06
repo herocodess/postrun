@@ -8,7 +8,7 @@
 import { useEffect, useState, type MutableRefObject } from "react";
 import type { Step } from "@postrun/core/schema";
 import type { SessionSummary } from "@postrun/core/store";
-import { api, DEMO } from "@/lib/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 import { changesByFile, type Commit, type FileChange, riskFlagsOf } from "@/lib/review";
 
 type VerdictState = "approved" | "needs_attention";
@@ -48,7 +48,7 @@ export function VerdictPanel({
     }
     setSaving(true);
     try {
-      const r = await fetch(api.verdict(summary.id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: next, ...(nextNote.trim() ? { note: nextNote.trim() } : {}) }) });
+      const r = await apiFetch(api.verdict(summary.id), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: next, ...(nextNote.trim() ? { note: nextNote.trim() } : {}) }) });
       if (!r.ok) throw new Error(`could not save (${r.status})`);
       onSaved(next ? { state: next, ...(nextNote.trim() ? { note: nextNote.trim() } : {}) } : undefined);
       setMsg({ tone: "ok", text: next ? "Saved." : "Review cleared." });

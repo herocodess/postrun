@@ -9,7 +9,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Mark } from "@postrun/brand/logo";
-import { DEMO } from "@/lib/api";
+import { DEMO, hasKey, LOCKED_EVENT, scrubKeyFromAddress } from "@/lib/api";
 import { useLiveStatus, useLiveVersion } from "@/lib/live";
 import { CountUp } from "@/lib/motion";
 import { useSidebar } from "@/lib/sidebar";
@@ -97,6 +97,10 @@ function RecordingCard() {
     } else {
       note = `${agents || "No agents set up yet"}. ${s.recording.last_activity ? `Last activity ${ago(s.recording.last_activity)}` : "Nothing recorded yet"}.`;
     }
+  } else if (state.kind === "locked") {
+    tone = "paused";
+    label = "Not connected";
+    note = "Run postrun open to connect this browser.";
   } else if (state.kind === "unavailable") {
     note = "Development server: status is not available.";
   }
@@ -133,6 +137,47 @@ function usePill(active: number, mode: string) {
     };
   }, [active, mode]);
   return { nav, pill };
+}
+
+/**
+ * This browser has no key, or an old one: the local API refuses it so other accounts on a shared
+ * computer cannot read your sessions. `postrun open` connects it.
+ */
+function Connect() {
+  const [copied, setCopied] = useState(false);
+  return (
+    <section className="connect enter" aria-labelledby="connect-h">
+      <div className="connect-mark" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24">
+          <rect x="4.5" y="10.5" width="15" height="10" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <path className="connect-shackle" d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <circle cx="12" cy="15.5" r="1.4" fill="currentColor" />
+        </svg>
+      </div>
+      <h1 id="connect-h">Connect this browser</h1>
+      <p>
+        Your sessions only open in a browser connected from this computer, so other accounts on it cannot read them. Run this in a terminal, and Postrun opens here with
+        everything in place:
+      </p>
+      <div className="connect-cmd">
+        <code>postrun open</code>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            void navigator.clipboard?.writeText("postrun open").then(
+              () => setCopied(true),
+              () => undefined,
+            );
+            window.setTimeout(() => setCopied(false), 2000);
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <p className="muted">Already ran it in another browser? Each browser connects once. Postrun not running? Start it with postrun start first.</p>
+    </section>
+  );
 }
 
 /** Shown only when "Check for new versions" is on in Settings and npm has a newer Postrun. */
@@ -177,6 +222,20 @@ export function Shell({ children }: { children: ReactNode }) {
   const count = state.kind === "ready" ? state.status.storage.sessions : undefined;
   const active = NAV.findIndex((n) => n.match(pathname));
   const [sidebar, setSidebar] = useSidebar();
+  // Not connected: no key at all, or the API refused the one we have (it was replaced).
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    if (DEMO) return;
+    scrubKeyFromAddress();
+    const later = window.setTimeout(scrubKeyFromAddress, 0);
+    if (!hasKey()) setLocked(true);
+    const on = () => setLocked(true);
+    window.addEventListener(LOCKED_EVENT, on);
+    return () => {
+      window.clearTimeout(later);
+      window.removeEventListener(LOCKED_EVENT, on);
+    };
+  }, []);
   const { nav, pill } = usePill(active, sidebar);
 
   // [ collapses or expands the sidebar from anywhere, except while typing.
@@ -239,8 +298,8 @@ export function Shell({ children }: { children: ReactNode }) {
           </aside>
         )}
         <UpdateBanner />
-        <div className="wrap page-in" key={pathname}>
-          {children}
+        <div className="wrap page-in" key={locked ? "locked" : pathname}>
+          {locked || state.kind === "locked" ? <Connect /> : children}
         </div>
       </div>
     </div>

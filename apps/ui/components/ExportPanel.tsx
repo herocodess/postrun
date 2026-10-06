@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import type { ExportReviewResponse, SecretKind } from "@postrun/core/server/api";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ExportReviewResponse };
 
@@ -43,7 +43,7 @@ export function ExportPanel({ sessionId, onClose }: { sessionId: string; onClose
 
   useEffect(() => {
     let cancelled = false;
-    fetch(reviewUrl)
+    apiFetch(reviewUrl)
       .then(async (res) => {
         if (!res.ok) throw new Error(`GET ${reviewUrl} -> ${res.status}`);
         return (await res.json()) as ExportReviewResponse;

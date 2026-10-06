@@ -30,8 +30,13 @@ export function defaultSettingsPath(): string {
   return join(homedir(), ".claude", "settings.json");
 }
 
-export function captureEnv(captureDir: string, otlpPort = DEFAULT_OTLP_PORT): Record<string, string> {
+/** The header that carries the telemetry key, so only Claude Code (which reads it from settings) can write telemetry. */
+export const OTLP_KEY_HEADER = "x-postrun-key";
+const OTLP_HEADERS_KEY = "OTEL_EXPORTER_OTLP_HEADERS";
+
+export function captureEnv(captureDir: string, otlpPort = DEFAULT_OTLP_PORT, otlpKey?: string): Record<string, string> {
   return {
+    ...(otlpKey ? { [OTLP_HEADERS_KEY]: `${OTLP_KEY_HEADER}=${otlpKey}` } : {}),
     CLAUDE_CODE_ENABLE_TELEMETRY: "1",
     // Logs only. Metrics and traces are never read, so Claude Code is not asked to send them
     // (that costs CPU in Claude Code and disk here for nothing). See RETIRED_ENV.
@@ -117,7 +122,10 @@ const RETIRED_ENV: Array<{ key: string; ours: (value: unknown, env: Json) => boo
 ];
 
 /** Telemetry keys Postrun sets, other than POSTRUN_CAPTURE_DIR. */
-const TELEMETRY_KEYS = Object.keys(captureEnv("")).filter((k) => k !== "POSTRUN_CAPTURE_DIR");
+const TELEMETRY_KEYS = Object.keys(captureEnv("", DEFAULT_OTLP_PORT, "k")).filter((k) => k !== "POSTRUN_CAPTURE_DIR");
+
+/** The headers value is Postrun's when it is exactly its key header and nothing else. */
+const ownHeaders = (v: unknown): boolean => typeof v === "string" && new RegExp(`^${OTLP_KEY_HEADER}=[A-Za-z0-9_-]+$`).test(v);
 
 /**
  * Remove the telemetry keys Postrun set, in place. A key is Postrun's only while
@@ -129,7 +137,8 @@ function removeOwnTelemetry(env: Json, judgeBy: Json, before?: Json): string[] {
   const ours = captureEnv(String(judgeBy["POSTRUN_CAPTURE_DIR"]), Number(String(judgeBy["OTEL_EXPORTER_OTLP_ENDPOINT"]).split(":").pop()));
   const removed: string[] = [];
   for (const k of TELEMETRY_KEYS) {
-    if (!(k in env) || env[k] !== ours[k]) continue;
+    if (!(k in env)) continue;
+    if (k === OTLP_HEADERS_KEY ? !ownHeaders(env[k]) : env[k] !== ours[k]) continue;
     if (before && k !== "OTEL_EXPORTER_OTLP_ENDPOINT" && before[k] === env[k]) continue;
     delete env[k];
     removed.push(k);
@@ -194,6 +203,7 @@ export function mergeCaptureSettings(
   otlpPort = DEFAULT_OTLP_PORT,
   script = hookScriptPath(),
   telemetry = true,
+  otlpKey?: string,
 ): { settings: Json; report: MergeReport } {
   const report: MergeReport = { env_added: [], env_changed: [], env_removed: [], hooks_added: [], hooks_updated: [], hooks_deduplicated: [], changed: false };
   const out: Json = { ...existing };
@@ -202,7 +212,7 @@ export function mergeCaptureSettings(
   const currentEnv = existing["env"];
   if (currentEnv !== undefined && !isObject(currentEnv)) throw new Error(`settings "env" is not an object; refusing to merge`);
   const env: Json = { ...(currentEnv ?? {}) };
-  const wanted = telemetry ? captureEnv(captureDir, otlpPort) : { POSTRUN_CAPTURE_DIR: captureDir };
+  const wanted = telemetry ? captureEnv(captureDir, otlpPort, otlpKey) : { POSTRUN_CAPTURE_DIR: captureDir };
   if (!telemetry) {
     // Hooks only: take back any telemetry keys Postrun set earlier, never the user's own.
     for (const k of removeOwnTelemetry(env, currentEnv ?? {})) report.env_removed.push(k);
@@ -297,6 +307,8 @@ export interface ConfigureOptions {
   script?: string;
   /** Ask Claude Code for telemetry (cost, tokens). False records from hooks only. Default true. */
   telemetry?: boolean;
+  /** The telemetry key Claude Code sends in its export headers (~/.postrun/otlp-key). */
+  otlpKey?: string;
 }
 
 export interface ConfigureResult extends MergeReport {
@@ -370,7 +382,7 @@ export function configureClaudeCode(opts: ConfigureOptions): ConfigureResult {
 
   const existing = readSettings(settingsPath);
   const created = existing === undefined;
-  const { settings, report } = mergeCaptureSettings(existing ?? {}, opts.captureDir, otlpPort, script, opts.telemetry ?? true);
+  const { settings, report } = mergeCaptureSettings(existing ?? {}, opts.captureDir, otlpPort, script, opts.telemetry ?? true, opts.otlpKey);
 
   let backedUp = false;
   if (report.changed || created) {

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLiveVersion } from "@/lib/live";
 import { stagger, useArrivals } from "@/lib/motion";
-import { api, DEMO } from "@/lib/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 import type { Step, Turn } from "@postrun/core/schema";
 import type { SessionDeltaResponse, SessionDetailResponse } from "@postrun/core/server/api";
 import { DeletePanel } from "@/components/DeletePanel";
@@ -94,7 +94,7 @@ export function Report() {
     let cancelled = false;
     const loadFull = (): Promise<SessionDetailResponse> => {
       const promise = (async () => {
-        const res = await fetch(api.session(id));
+        const res = await apiFetch(api.session(id));
         if (!res.ok) throw new Error(`GET /api/sessions/${id} -> ${res.status}`);
         return (await res.json()) as SessionDetailResponse;
       })();
@@ -109,7 +109,7 @@ export function Report() {
       let have = current.current;
       if (!have && inflight.current?.id === id) have = await inflight.current.promise;
       if (!have || have.summary.id !== id) return loadFull();
-      const res = await fetch(api.sessionSince(id, have.as_of));
+      const res = await apiFetch(api.sessionSince(id, have.as_of));
       if (!res.ok) throw new Error(`GET /api/sessions/${id}?since -> ${res.status}`);
       const delta = (await res.json()) as SessionDeltaResponse;
       if (delta.reload) return loadFull();

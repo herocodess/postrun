@@ -12,7 +12,7 @@ import type { Dashboard as DashboardData, DashboardTotals } from "@postrun/core/
 import type { SessionSummary } from "@postrun/core/store";
 import { EmptySessions } from "@/components/EmptySessions";
 import { Strip, stripOf } from "@/components/Strip";
-import { api, DEMO } from "@/lib/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 import { useLiveVersion } from "@/lib/live";
 import { CountUp, stagger } from "@/lib/motion";
 
@@ -285,7 +285,7 @@ export function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(api.dashboard(days))
+    apiFetch(api.dashboard(days))
       .then(async (res) => {
         if (!res.ok) throw new Error(`GET /api/dashboard -> ${res.status}`);
         return (await res.json()) as DashboardData;

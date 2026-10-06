@@ -17,6 +17,7 @@ import { LOCALHOST } from "../server/server.js";
 import type { PostrunStore } from "../store/store.js";
 import { VERSION } from "./assets.js";
 import { installHook } from "./hook.js";
+import { loadOrCreateToken } from "../server/token.js";
 import { readConfig, writeConfig, type Paths } from "./paths.js";
 import { installService, removeService, serviceState } from "./service.js";
 
@@ -204,7 +205,7 @@ export function createControl(d: ControlDeps): AppControl & { startUpdateChecks(
       const foreign = foreignTelemetry(readSettingsEnv(p.claudeSettings));
       c.telemetry = foreign === undefined;
       writeConfig(p, c);
-      const r = configureClaudeCode({ captureDir: p.captures, otlpPort: c.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: c.telemetry });
+      const r = configureClaudeCode({ captureDir: p.captures, otlpPort: c.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: c.telemetry, otlpKey: loadOrCreateToken(p.otlpKey) });
       d.log(`setup from the review app: ${describeConfigure(r)}`);
       return { summary: r.changed || r.created ? "Claude Code is set up again. Restart any Claude Code session that is open." : "Claude Code was already set up. Nothing needed changing." };
     },

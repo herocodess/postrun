@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ProjectFilesResponse, ProjectsResponse, ProjectSummary } from "@postrun/core/server/api";
 import { SessionList } from "@/components/SessionList";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import { useLiveVersion } from "@/lib/live";
 import { CountUp } from "@/lib/motion";
 
@@ -22,8 +22,8 @@ export function Project() {
   useEffect(() => {
     let cancelled = false;
     void Promise.all([
-      fetch(api.projects()).then(async (r) => (r.ok ? ((await r.json()) as ProjectsResponse).projects : [])),
-      fetch(api.projectFiles(root)).then(async (r) => (r.ok ? ((await r.json()) as ProjectFilesResponse).files : [])),
+      apiFetch(api.projects()).then(async (r) => (r.ok ? ((await r.json()) as ProjectsResponse).projects : [])),
+      apiFetch(api.projectFiles(root)).then(async (r) => (r.ok ? ((await r.json()) as ProjectFilesResponse).files : [])),
     ])
       .then(([ps, fs]) => {
         if (cancelled) return;

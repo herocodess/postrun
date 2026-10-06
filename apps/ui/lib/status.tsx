@@ -10,10 +10,10 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { AppStatus } from "@postrun/core/server/api";
-import { api, DEMO } from "@/lib/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 import { useLiveVersion } from "@/lib/live";
 
-type StatusState = { kind: "loading" } | { kind: "ready"; status: AppStatus } | { kind: "unavailable" } | { kind: "offline" };
+type StatusState = { kind: "loading" } | { kind: "ready"; status: AppStatus } | { kind: "unavailable" } | { kind: "offline" } | { kind: "locked" };
 
 const DEMO_STATUS: AppStatus = {
   version: "0.2.0",
@@ -49,9 +49,10 @@ export function StatusProvider({ children }: { children: ReactNode }) {
       return;
     }
     let cancelled = false;
-    fetch(api.status())
+    apiFetch(api.status())
       .then(async (res) => {
         if (res.status === 501) return { kind: "unavailable" } as const;
+        if (res.status === 401) return { kind: "locked" } as const;
         if (!res.ok) throw new Error(String(res.status));
         return { kind: "ready", status: (await res.json()) as AppStatus } as const;
       })
@@ -63,11 +64,7 @@ export function StatusProvider({ children }: { children: ReactNode }) {
   }, [tick, live]);
 
   useEffect(() => {
-    // The demo's status is fixed, but it is set after the first paint so times match the visitor's clock and zone.
-    if (DEMO) {
-      setState((prev) => (prev.kind === "ready" ? prev : { kind: "ready", status: { ...DEMO_STATUS, recording: { ...DEMO_STATUS.recording, since: new Date().toISOString() } } }));
-      return;
-    }
+    if (DEMO) return;
     const t = setInterval(refresh, 15_000);
     return () => clearInterval(t);
   }, [refresh]);

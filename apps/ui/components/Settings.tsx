@@ -8,13 +8,13 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { AppSettings, AppStatus, DoctorCheck, DoctorResponse, SetupResponse } from "@postrun/core/server/api";
-import { api, DEMO } from "@/lib/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 import { ago, megabytes, useStatus } from "@/lib/status";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
 import { useSidebar } from "@/lib/sidebar";
 
 async function send<T>(url: string, method: "PUT" | "POST", body: unknown): Promise<T> {
-  const res = await fetch(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const res = await apiFetch(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(data.error ?? `${res.status}`);
   return data;
@@ -372,7 +372,7 @@ export function Settings() {
                 disabled={!live || busy !== undefined}
                 onClick={() =>
                   run("doctor", async () => {
-                    const r = await fetch(api.doctor());
+                    const r = await apiFetch(api.doctor());
                     setChecks(((await r.json()) as DoctorResponse).checks);
                   })
                 }

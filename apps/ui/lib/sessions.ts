@@ -6,7 +6,7 @@
 
 import type { SessionListResponse } from "@postrun/core/server/api";
 import type { SessionSummary } from "@postrun/core/store";
-import { api, DEMO } from "@/lib/api";
+import { api, apiFetch, DEMO } from "@/lib/api";
 
 export const PAGE_SIZE = 50;
 
@@ -89,7 +89,7 @@ function params(f: ListFilters, limit: number, cursor?: string): URLSearchParams
 
 export async function fetchSessions(f: ListFilters, limit: number, cursor?: string): Promise<SessionListResponse> {
   if (DEMO) return demoPage(f, limit, cursor);
-  const res = await fetch(`${api.sessionsBase()}?${params(f, limit, cursor)}`);
+  const res = await apiFetch(`${api.sessionsBase()}?${params(f, limit, cursor)}`);
   if (!res.ok) throw new Error(`GET /api/sessions -> ${res.status}`);
   const data = (await res.json()) as Partial<SessionListResponse> & Pick<SessionListResponse, "sessions" | "agents">;
   // A Postrun older than paging answers with every session and no totals: fill them in.
@@ -103,7 +103,7 @@ export async function fetchSessions(f: ListFilters, limit: number, cursor?: stri
 
 /** The demo's one JSON file, filtered and paged the way the server would. */
 async function demoPage(f: ListFilters, limit: number, cursor?: string): Promise<SessionListResponse> {
-  const res = await fetch(api.sessionsBase());
+  const res = await apiFetch(api.sessionsBase());
   if (!res.ok) throw new Error(`demo sessions -> ${res.status}`);
   const all = ((await res.json()) as SessionListResponse).sessions;
   const { from, to } = rangeBounds(f);

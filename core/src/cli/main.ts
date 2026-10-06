@@ -24,6 +24,7 @@ import { PostrunStore } from "../store/store.js";
 import { ensurePrivateDir, PRIVATE_DIR_MODE } from "../util/files.js";
 import { VERSION } from "./assets.js";
 import { installHook } from "./hook.js";
+import { loadOrCreateToken } from "../server/token.js";
 import { readPid, run, start, status, stop } from "./daemon.js";
 import { doctor, formatChecks, portFree } from "./doctor.js";
 import { paths, readConfig, writeConfig, type Paths } from "./paths.js";
@@ -79,6 +80,14 @@ async function ask(question: string, defaultYes: boolean): Promise<boolean> {
   } finally {
     rl.close();
   }
+}
+
+/**
+ * The review app's address with this computer's key in the fragment. A fragment never reaches a
+ * server or its logs; the app keeps the key in this browser and removes it from the address bar.
+ */
+function appLink(p: Paths, url: string): string {
+  return `${url}#key=${loadOrCreateToken(p.token)}`;
 }
 
 function openBrowser(url: string): boolean {
@@ -146,7 +155,7 @@ async function cmdSetup(argv: string[]): Promise<number> {
   if (hasClaude) {
     const foreign = foreignTelemetry(readSettingsEnv(p.claudeSettings));
     config.telemetry = foreign === undefined;
-    const r = configureClaudeCode({ captureDir: p.captures, otlpPort: config.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: config.telemetry });
+    const r = configureClaudeCode({ captureDir: p.captures, otlpPort: config.otlpPort, settingsPath: p.claudeSettings, script: p.hook, telemetry: config.telemetry, otlpKey: loadOrCreateToken(p.otlpKey) });
     out(`  Claude Code: ${r.changed || r.created ? "set up" : "already set up"} (${p.claudeSettings})`);
     if (r.backed_up) out(`    Your original settings are saved in ${r.backup_path}`);
     if (foreign) {
@@ -194,7 +203,7 @@ async function cmdSetup(argv: string[]): Promise<number> {
   out(`Postrun is recording. Review your sessions at ${url}`);
   if (hasClaude) out(`Restart any Claude Code session that is already open, so it is recorded too.`);
   out(`Check on it any time with postrun status, or postrun doctor if something looks wrong.`);
-  if (!a.flags.has("no-open") && interactive()) openBrowser(url);
+  if (!a.flags.has("no-open") && interactive()) openBrowser(appLink(p, url));
   return 0;
 }
 
@@ -239,12 +248,14 @@ async function cmdStatus(): Promise<number> {
 }
 
 async function cmdOpen(): Promise<number> {
-  const s = await status(paths());
+  const p = paths();
+  const s = await status(p);
   if (!s.running) {
     err("Postrun is not running. Start it with: postrun start");
     return 1;
   }
-  if (!openBrowser(s.url)) out(`Open ${s.url} in your browser.`);
+  // The link carries this computer's key, so this browser is connected from now on.
+  if (!openBrowser(appLink(p, s.url))) out(`Open this link in your browser (it connects the browser to Postrun):\n${appLink(p, s.url)}`);
   else out(s.url);
   return 0;
 }

@@ -17,6 +17,8 @@ export interface Paths {
   db: string;
   captures: string;
   token: string;
+  /** The telemetry key Claude Code sends with every export, so only it can write telemetry. */
+  otlpKey: string;
   bin: string;
   hook: string;
   pid: string;
@@ -34,6 +36,7 @@ export function paths(env: NodeJS.ProcessEnv = process.env): Paths {
     db: resolve(env["POSTRUN_DB"] ?? join(home, "postrun.db")),
     captures: resolve(env["POSTRUN_CAPTURE_DIR"] ?? join(home, "captures")),
     token: resolve(env["POSTRUN_INGEST_TOKEN_FILE"] ?? join(home, "ingest-token")),
+    otlpKey: join(home, "otlp-key"),
     bin: join(home, "bin"),
     hook: join(home, "bin", "capture-hook.sh"),
     pid: join(home, "postrun.pid"),

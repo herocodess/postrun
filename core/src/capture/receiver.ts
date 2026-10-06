@@ -12,7 +12,8 @@
  */
 
 import { createServer, type Server } from "node:http";
-import { appendFileSync } from "node:fs";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { appendFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { ensurePrivateDir, PRIVATE_FILE_MODE } from "../util/files.js";
@@ -70,6 +71,27 @@ export interface ReceiverOptions {
   log?: (line: string) => void;
   /** True while recording is paused: exports are acknowledged and dropped, never written. */
   paused?: () => boolean;
+  /**
+   * The telemetry key Claude Code sends as the x-postrun-key header (set in its settings by setup).
+   * Exports without it are acknowledged and dropped: nothing but Claude Code can write telemetry,
+   * and a session started before the key existed shows no errors, only no cost data.
+   */
+  key?: string;
+}
+
+/** One session's telemetry file stops growing here; a runaway or hostile sender cannot fill the disk. */
+export const MAX_SESSION_OTLP_BYTES = 256 * 1024 * 1024;
+
+function keyMatches(given: string | string[] | undefined, key: string): boolean {
+  if (typeof given !== "string") return false;
+  const a = createHash("sha256").update(given).digest();
+  const b = createHash("sha256").update(key).digest();
+  return timingSafeEqual(a, b);
+}
+
+/** Only exactly application/json (with parameters such as charset), never a type that merely contains it. */
+function isJson(ct: string | undefined): boolean {
+  return (ct ?? "").split(";")[0]!.trim().toLowerCase() === "application/json";
 }
 
 export interface OtlpReceiver {
@@ -92,6 +114,8 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
   const port = opts.port ?? DEFAULT_OTLP_PORT;
   const log = opts.log ?? (() => undefined);
   const counts: Record<string, number> = { "/v1/logs": 0, "/v1/metrics": 0, "/v1/traces": 0 };
+  let lastRejectLog = 0;
+  const capped = new Set<string>();
 
   const server = createServer((req, res) => {
     const path = req.url ?? "";
@@ -101,6 +125,14 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
     }
     if (req.method !== "POST" || !Object.hasOwn(SIGNALS, path)) {
       res.writeHead(404).end();
+      return;
+    }
+    // Claude Code's exporter is not a browser: it sends no Origin and no Sec-Fetch-Site. A page on
+    // any site that tries to post here (no-cors) carries one of them and is refused.
+    const site = req.headers["sec-fetch-site"];
+    if (req.headers.origin !== undefined || (site !== undefined && site !== "none")) {
+      res.writeHead(403).end();
+      req.destroy();
       return;
     }
     const declared = Number(req.headers["content-length"] ?? 0);
@@ -132,20 +164,37 @@ export function createOtlpReceiver(opts: ReceiverOptions): OtlpReceiver {
         // maxOutputLength bounds decompression so a small gzip body cannot expand without limit.
         if (req.headers["content-encoding"] === "gzip") body = gunzipSync(body, { maxOutputLength: MAX_BODY_BYTES });
         const ct = req.headers["content-type"] ?? "";
-        if (!ct.includes("application/json")) {
+        if (!isJson(ct)) {
           log(`${path}: got ${ct || "no content-type"}, expected application/json. Set OTEL_EXPORTER_OTLP_PROTOCOL=http/json before launching claude.`);
           res.writeHead(415).end();
           return;
         }
         const payload: unknown = JSON.parse(body.toString("utf8"));
-        if (SIGNALS[path] === "keep" && !opts.paused?.()) {
+        const keyed = !opts.key || keyMatches(req.headers["x-postrun-key"], opts.key);
+        if (!keyed) {
+          counts["rejected"] = (counts["rejected"] ?? 0) + 1;
+          const now = Date.now();
+          if (now - lastRejectLog > 60_000) {
+            lastRejectLog = now;
+            log(`${path}: telemetry without Postrun's key dropped (a Claude Code session started before the last setup? restart it for cost data)`);
+          }
+        }
+        if (SIGNALS[path] === "keep" && keyed && !opts.paused?.()) {
           const received_at = new Date().toISOString();
           // Synchronous appends: the line is on disk before Claude Code gets its 200, and a stop()
           // right after never loses an export. Exports are small and arrive every few seconds.
           for (const [sessionId, slice] of splitLogsBySession(payload)) {
             const dir = sessionDir(opts.captureDir, sessionId);
             ensurePrivateDir(dir);
-            appendFileSync(join(dir, SESSION_OTLP_FILE), JSON.stringify({ received_at, payload: slice }) + "\n", { mode: PRIVATE_FILE_MODE });
+            const file = join(dir, SESSION_OTLP_FILE);
+            if (existsSync(file) && statSync(file).size > MAX_SESSION_OTLP_BYTES) {
+              if (!capped.has(sessionId)) {
+                capped.add(sessionId);
+                log(`${path}: telemetry for session ${sessionId} is over ${MAX_SESSION_OTLP_BYTES / 1024 / 1024} MB; further exports are dropped`);
+              }
+              continue;
+            }
+            appendFileSync(file, JSON.stringify({ received_at, payload: slice }) + "\n", { mode: PRIVATE_FILE_MODE });
           }
         }
         counts[path] = (counts[path] ?? 0) + 1;

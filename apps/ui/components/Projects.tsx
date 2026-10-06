@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ProjectsResponse, ProjectSummary } from "@postrun/core/server/api";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
 import { useLiveVersion } from "@/lib/live";
 import { stagger } from "@/lib/motion";
 import { ago } from "@/lib/status";
@@ -23,7 +23,7 @@ export function Projects() {
   const live = useLiveVersion();
   useEffect(() => {
     let cancelled = false;
-    fetch(api.projects())
+    apiFetch(api.projects())
       .then(async (r) => {
         if (!r.ok) throw new Error(`GET /api/projects -> ${r.status}`);
         return ((await r.json()) as ProjectsResponse).projects;

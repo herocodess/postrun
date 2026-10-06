@@ -4594,3 +4594,79 @@ pre.diff {
     transition: none;
   }
 }
+
+/* ==== CONNECT THIS BROWSER ======================================================== */
+.connect {
+  max-width: 520px;
+  margin: 12vh auto 0;
+  text-align: center;
+}
+.connect h1 {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 18px 0 10px;
+}
+.connect p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.connect p.muted {
+  margin-top: 18px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.connect-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: var(--accent-dim);
+  color: var(--accent-2);
+  animation: connect-float 3.2s ease-in-out infinite;
+}
+.connect-shackle {
+  transform-origin: 16px 10px;
+  animation: connect-shackle 3.2s var(--ease-out) infinite;
+}
+@keyframes connect-float {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes connect-shackle {
+  0%,
+  60%,
+  100% {
+    transform: none;
+  }
+  75% {
+    transform: translateY(-1.5px) rotate(12deg);
+  }
+}
+.connect-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+}
+.connect-cmd code {
+  font: 14px var(--mono);
+  color: var(--text-primary);
+}
+.connect-cmd .btn {
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .connect-mark,
+  .connect-shackle {
+    animation: none;
+  }
+}

@@ -86,3 +86,45 @@ describe("review app routes", () => {
     expect((await put("/api/settings", { notify_failures: true })).status).toBe(501);
   });
 });
+
+describe("the key and the security headers", () => {
+  const KEY = "k".repeat(43);
+  let app: PostrunServer;
+  let url: string;
+  const store = new PostrunStore({ path: ":memory:" });
+  beforeAll(async () => {
+    store.ingest(record("a1", "/w/api", [{ type: "command", payload: { command: "ls" } }]));
+    const ui = mkdtempSync(join(tmpdir(), "postrun-ui-key-"));
+    writeFileSync(join(ui, "index.html"), "<html></html>");
+    app = createPostrunServer({ port: 0, store, uiDir: ui, ingestToken: KEY, requireKey: true });
+    url = (await app.start()).url;
+  });
+  afterAll(async () => {
+    await app.stop();
+    store.close();
+  });
+
+  it("refuses every API route without the key, and accepts it as a header or ?key=", async () => {
+    for (const path of ["/api/sessions", "/api/sessions/a1", "/api/dashboard?days=7", "/api/projects", "/api/export?ids=a1", "/api/backup", "/api/events"]) {
+      expect((await fetch(new URL(path, url))).status, path).toBe(401);
+    }
+    expect((await fetch(new URL("/api/sessions", url), { headers: { authorization: `Bearer ${"x".repeat(43)}` } })).status).toBe(401);
+    expect((await fetch(new URL("/api/sessions", url), { headers: { authorization: `Bearer ${KEY}` } })).status).toBe(200);
+    expect((await fetch(new URL(`/api/sessions/a1/export?key=${KEY}`, url))).status).toBe(200);
+    expect((await fetch(new URL("/api/sessions/a1", url), { method: "DELETE" })).status).toBe(401);
+    expect(store.getSession("a1")).toBeDefined();
+    // Health stays open (postrun status uses it); the page itself has no data and stays open too.
+    expect((await fetch(new URL("/api/health", url))).status).toBe(200);
+    expect((await fetch(url)).status).toBe(200);
+  });
+
+  it("forbids framing and sends a content security policy on pages and API responses", async () => {
+    for (const r of [await fetch(url), await fetch(new URL("/api/health", url))]) {
+      expect(r.headers.get("x-frame-options")).toBe("DENY");
+      expect(r.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    }
+    // A downloaded report keeps its own, stricter policy.
+    const ex = await fetch(new URL(`/api/sessions/a1/export?key=${KEY}`, url));
+    expect(ex.headers.get("content-security-policy")).toBe("sandbox");
+  });
+});
